@@ -105,6 +105,28 @@ search plugin.
 Planned: Serper · Parallel · Perplexity · more community providers (see
 [Provider development](#-provider-development)).
 
+### Provider characteristics at a glance
+
+| Dimension | Tavily | Exa | Firecrawl | Brave | You.com | Jina | SearXNG |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Positioning** | Default agent/RAG search | Semantic / neural retrieval | Search → Scrape → Crawl | Independent web index | General search + News | Search + Reader | Self-hosted meta search |
+| **Strengths** | Search+Extract+Crawl+Map in one API | Finds similar/relevant content, returns text/highlights | Dynamic pages → clean Markdown | Own index: Web/News/Images/Videos/LLM context | Up to 100 results, rich filters | `s.jina.ai` search + `r.jina.ai` URL→LLM text | Aggregates many sources, privacy, no profiling |
+| **Fetch** | ✅ Extract | ✅ returns content | ✅ Scrape/Crawl | — | — (has Livecrawl, adapter not wired) | ✅ Reader | — |
+| **Free tier** | 1,000 credits/mo | $20 signup + $10/mo | 1,000 credits/mo + 1,000 search credits | $5/mo ≈ 1,000 searches | $100 one-time | 10M tokens one-time | no platform quota |
+| **Billing** | credits (Basic=1) | per request ($7/1k) | 2 credits per 10 results | per request ($5/1k) | per call ($5/1k) | per token | none |
+| **Best for** | ⭐ general default | 🧠 research / semantic | 📖 read pages after search | 🌐 general realtime | 💰 large free experiments | 📄 web → LLM text | 🏠 permanent fallback / private |
+
+Notes:
+
+- **Tavily / Exa / Firecrawl / Jina** all carry content-fetch capabilities —
+  `web_search` finds URLs, then `web_fetch` reads the page.
+- **You.com** has an official Contents / Livecrawl API, but the current
+  `dsh-web-tools` You.com adapter is search-focused.
+- **Brave** requires a card on file for its free plan (anti-abuse).
+- **SearXNG** has no platform quota, but upstream search sources are not
+  unlimited — availability depends on instance config, network, and engines.
+- Free tiers and prices follow each provider's site and may change.
+
 ---
 
 ## 🆓 Free tiers & when to use each

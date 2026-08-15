@@ -52,54 +52,22 @@ DeepSeek Harness 的多 Provider Web Search / Fetch 插件。
 
 ### 各 Provider 的特点
 
-**Tavily**
+| 维度 | Tavily | Exa | Firecrawl | Brave | You.com | Jina | SearXNG |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **定位** | Agent / RAG 默认搜索 | 语义 / 神经检索 | Search → Scrape → Crawl | 独立 Web 索引 | 通用搜索 + News | Search + Reader | 自托管 Meta Search |
+| **核心强项** | Search+Extract+Crawl+Map 一套 API | 找相似/相关内容，返回文本/highlights | 动态网页 → 干净 Markdown | 自建索引，Web/News/Images/Videos/LLM context | 单次最多 100 结果，丰富过滤 | s.jina.ai 搜 + r.jina.ai URL→LLM 文本 | 聚合多上游源，隐私、无画像 |
+| **Fetch 能力** | ✅ Extract | ✅ 返回内容 | ✅ Scrape/Crawl | — | —（有 Livecrawl，Adapter 未接） | ✅ Reader | — |
+| **免费额度** | 1,000 credits/月 | $20 注册 + $10/月 | 1,000 credits/月 + 1,000 Search credits | $5/月 ≈ 1,000 次 | $100 一次性 | 10M tokens 一次性 | 无平台配额 |
+| **计费方式** | credits（Basic=1） | 按请求（$7/1k） | 每 10 结果 2 credits | 按请求（$5/1k） | 按调用（$5/1k） | 按 token | 无 |
+| **适合场景** | ⭐ 通用默认 Agent 搜索 | 🧠 研究 / 语义检索 | 📖 搜到 URL 后继续读页面 | 🌐 通用实时搜索 | 💰 大量免费实验 | 📄 网页转 LLM 文本 | 🏠 永久 fallback / 私有部署 |
 
-Tavily 的接口主要面向 Agent 和 RAG 场景。除了 Search，还提供 Extract、Crawl、Map 等能力。当前免费计划每月提供 1,000 credits，Basic Search 每次消耗 1 credit。
+要点注记：
 
-适合作为通用的默认搜索 Provider。
-
-**Exa**
-
-Exa 更偏语义和内容检索。Search 可以同时返回网页文本或 highlights，对“找类似项目、技术文章、论文、公司或主题相关页面”这类查询比较合适。
-
-当前新账号提供 $20 credits，免费层之后每月提供 $10 credits。
-
-**Firecrawl**
-
-Firecrawl 同时提供 Search、Scrape 和 Crawl。它更适合在找到 URL 后继续读取页面，尤其是需要处理动态网页或转换成 Markdown 的情况。
-
-当前 Free Plan 提供 1,000 credits/月；官方 Pricing 页面目前还单独列出了 1,000 Search credits。Search 当前按每 10 个结果 2 credits 计费。
-
-**Brave Search**
-
-Brave Search API 使用自己的 Web 搜索索引，返回 Web、News、Images、Videos 等搜索数据，也提供适合 LLM 使用的 context。
-
-Search 当前价格为 $5 / 1,000 requests，同时每月自动提供 $5 credits，因此仅按 Search 计算约等于 1,000 次/月。Brave 当前要求绑定银行卡用于免费计划的反滥用验证。
-
-**You.com**
-
-You.com 的 Web Search API 可以同时返回 Web 和 News 结果，单次最多支持 100 个结果，并提供语言、国家、时间和域名过滤。
-
-新账号当前提供一次性 $100 API credits。按照 Web Search $5 / 1,000 calls 的价格计算，如果只用于 Search，大约可以执行 20,000 次调用。
-
-You.com 另外提供 Contents / Livecrawl API，不过当前 `dsh-web-tools` 的 You.com Adapter 仍以 Search 为主。
-
-**Jina**
-
-Jina 的特点是 Search 与 Reader 可以配合使用：
-
-```text
-s.jina.ai  → 搜索
-r.jina.ai  → URL 转为适合 LLM 使用的文本
-```
-
-新用户当前提供 10M free tokens。Jina 按 token 计费，因此不能简单换算成固定搜索次数。
-
-**SearXNG**
-
-SearXNG 是开源 Meta Search，可以自己部署并聚合多个上游搜索源。它本身没有云平台 credits，也不需要向 `dsh-web-tools` 提供商业 API Key。
-
-需要注意，无平台额度不代表上游搜索源无限制；实际可用性仍受实例配置、网络和上游引擎限制。
+- **Tavily / Exa / Firecrawl / Jina** 都带内容获取能力——web_search 找到 URL 后可继续 web_fetch 读取正文。
+- **You.com** 官方有 Contents / Livecrawl API，但当前 dsh-web-tools 的 You.com Adapter 以 Search 为主。
+- **Brave** 免费计划要求绑定银行卡用于反滥用验证。
+- **SearXNG** 无平台额度，但不代表上游搜索源无限制——实际可用性受实例配置、网络和上游引擎限制。
+- 免费额度与价格以各 Provider 官网为准，可能随上游调整。
 
 ## 免费额度参考
 
