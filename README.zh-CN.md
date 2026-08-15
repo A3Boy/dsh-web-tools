@@ -61,7 +61,7 @@ DeepSeek Harness 的多 Provider Web Search / Fetch 插件。
 | **计费方式** | credits（Basic=1） | 按请求（$7/1k） | 每 10 结果 2 credits | 按请求（$5/1k） | 按调用（$5/1k） | 按 token | 无 |
 | **适合场景** | ⭐ 通用默认 Agent 搜索 | 🧠 研究 / 语义检索 | 📖 搜到 URL 后继续读页面 | 🌐 通用实时搜索 | 💰 大量免费实验 | 📄 网页转 LLM 文本 | 🏠 永久 fallback / 私有部署 |
 
-要点注记：
+注意⚠️：
 
 - **Tavily / Exa / Firecrawl / Jina** 都带内容获取能力——web_search 找到 URL 后可继续 web_fetch 读取正文。
 - **You.com** 官方有 Contents / Livecrawl API，但当前 dsh-web-tools 的 You.com Adapter 以 Search 为主。
