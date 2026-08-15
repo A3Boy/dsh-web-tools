@@ -75,11 +75,9 @@ export function WebToolsCard(_props: CardProps) {
     }
   };
 
-  const setDefaultProvider = (name: string) => void save({ defaultProvider: name });
   const setEnabled = (enabled: boolean) => void save({ enabled });
   const setMaxResults = (v: number) => void save({ maxResults: Math.min(10, Math.max(1, v)) });
   const setTimeoutMs = (v: number) => void save({ searchTimeoutMs: Math.min(60000, Math.max(1000, v)) });
-  const setFallbackOrder = (order: string[]) => void save({ fallbackOrder: order });
   const toggleProvider = (name: string, enabled: boolean) => {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
@@ -89,6 +87,47 @@ export function WebToolsCard(_props: CardProps) {
     providerBaseUrls[name] = baseUrl;
     void save({ providerBaseUrls });
   };
+
+  // ---- Search priority view model ----------------------------------------
+  // UI edits ONE ordered list: [defaultProvider, ...fallbackOrder].
+  // Persisted back as defaultProvider = list[0], fallbackOrder = list.slice(1).
+  // The Host schema never changes.
+  const orderedProviders = [
+    config.defaultProvider,
+    ...config.fallbackOrder.filter((n) => n !== config.defaultProvider),
+  ];
+  const providerOf = (name: string) => config.providers.find((p) => p.name === name);
+  const enabledNames = new Set(config.providers.filter((p) => p.enabled).map((p) => p.name));
+
+  const saveOrder = (ordered: string[]) => {
+    const next = ordered.filter((n, i) => ordered.indexOf(n) === i); // dedupe
+    const first = next[0] ?? config.defaultProvider;
+    void save({ defaultProvider: first, fallbackOrder: next.slice(1) });
+  };
+
+  const moveOrder = (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= orderedProviders.length) return;
+    const next = [...orderedProviders];
+    [next[index], next[target]] = [next[target], next[index]];
+    saveOrder(next);
+  };
+
+  const removeFromOrder = (name: string) => {
+    // First entry is the default — never removable directly; removing any
+    // other entry takes it out of the chain WITHOUT disabling the provider.
+    if (orderedProviders[0] === name) return;
+    saveOrder(orderedProviders.filter((n) => n !== name));
+  };
+
+  const addToOrder = (name: string) => {
+    if (orderedProviders.includes(name)) return;
+    saveOrder([...orderedProviders, name]);
+  };
+
+  const availableToAdd = config.providers
+    .filter((p) => p.enabled && !orderedProviders.includes(p.name))
+    .map((p) => p.name);
 
   const saveKey = async (provider: string) => {
     const value = keyDrafts[provider] ?? "";
@@ -135,8 +174,6 @@ export function WebToolsCard(_props: CardProps) {
     }
   };
 
-  const orderButtons = config.providers.filter((p) => p.name !== config.defaultProvider);
-
   return (
     <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -153,16 +190,6 @@ export function WebToolsCard(_props: CardProps) {
 
       {/* General */}
       <div style={{ border: "1px solid #444", borderRadius: 6, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label>默认搜索引擎</label>
-          <select value={config.defaultProvider} onChange={(e) => setDefaultProvider(e.target.value)}>
-            {config.providers.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <label>搜索结果数量</label>
           <input
@@ -183,29 +210,60 @@ export function WebToolsCard(_props: CardProps) {
             style={{ width: 80 }}
           />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <label>Fallback 顺序</label>
-          <select
-            value={config.fallbackOrder[0] ?? ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return setFallbackOrder([]);
-              const rest = config.fallbackOrder.filter((x) => x !== v);
-              setFallbackOrder([v, ...rest]);
-            }}
-          >
-            <option value="">(none)</option>
-            {orderButtons.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <span style={{ color: "#888" }}>
-            {config.fallbackOrder.length > 0
-              ? config.fallbackOrder.map((n) => config.providers.find((p) => p.name === n)?.label ?? n).join(" → ")
-              : "无备选，失败即报错"}
-          </span>
+
+        {/* Search priority: one ordered list, first entry = default */}
+        <div style={{ borderTop: "1px solid #333", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <strong>搜索优先级</strong>
+            <span style={{ color: "#888", fontSize: 12 }}>第一项为默认 Provider，其余按顺序用于故障切换</span>
+          </div>
+          {orderedProviders.map((name, i) => {
+            const p = providerOf(name);
+            const disabled = !p || !enabledNames.has(name);
+            return (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: 6, opacity: disabled ? 0.55 : 1 }}>
+                <span style={{ color: "#888", width: 18 }}>{i + 1}.</span>
+                <span style={{ fontWeight: i === 0 ? 700 : 400 }}>
+                  {p?.label ?? name}
+                  {i === 0 && <span style={{ color: "#2c6", fontSize: 11, marginLeft: 6 }}>默认</span>}
+                  {disabled && <span style={{ color: "#c33", fontSize: 11, marginLeft: 6 }}>Disabled</span>}
+                </span>
+                <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+                  <button onClick={() => moveOrder(i, -1)} disabled={i === 0} title="上移">↑</button>
+                  <button onClick={() => moveOrder(i, 1)} disabled={i === orderedProviders.length - 1} title="下移">↓</button>
+                  {i !== 0 && <button onClick={() => removeFromOrder(name)} title="移出优先级（不禁用 Provider）">×</button>}
+                </span>
+              </div>
+            );
+          })}
+          {availableToAdd.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                onClick={() => addToOrder(availableToAdd[0])}
+                disabled={availableToAdd.length === 0}
+              >
+                + 添加 Provider
+              </button>
+              {availableToAdd.length > 1 && (
+                <span style={{ color: "#888", fontSize: 12 }}>
+                  可添加：{availableToAdd.map((n) => providerOf(n)?.label ?? n).join(" · ")}
+                </span>
+              )}
+            </div>
+          )}
+          <div style={{ color: "#888", fontSize: 12, borderTop: "1px solid #333", paddingTop: 6 }}>
+            Effective order：
+            {orderedProviders.map((n, i) => {
+              const p = providerOf(n);
+              const d = !p || !enabledNames.has(n);
+              return (
+                <span key={n}>
+                  {i > 0 && <span style={{ color: "#666" }}> → </span>}
+                  <span style={{ color: d ? "#c33" : "#aab4c8" }}>{p?.label ?? n}</span>
+                </span>
+              );
+            })}
+          </div>
         </div>
       </div>
 

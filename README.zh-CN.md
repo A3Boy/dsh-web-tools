@@ -99,6 +99,30 @@ dsh-web-tools
 
 ---
 
+## 🆓 免费额度与适用场景
+
+截至 2026-08 各家官方免费额度——**不用押注一家搜索服务**，把每家的免费额度、搜索特色和自托管能力组合起来：
+
+| Provider | 免费额度 | 周期 | 适合什么 |
+|---|---|---|---|
+| **Tavily** | 1,000 credits | ♻️ 每月 | ⭐ 默认 Agent 搜索 |
+| **Exa** | $20 注册 + $10 | ♻️ $10/月 | 🧠 语义 / Research |
+| **Firecrawl** | 1,000 credits + 1,000 Search credits | ♻️ 每月 | 📖 Search + Scrape |
+| **Brave** | $5 ≈ 1,000 次搜索 | ♻️ 每月 | 🌐 通用独立 Web 索引 |
+| **You.com** | **$100** | 🎁 新账号一次性 | 💰 大量免费实验 |
+| **Jina** | **10M tokens** | 🎁 新账号一次性 | 📄 Search + Reader |
+| **SearXNG** | 无平台配额 | ♾️ 自托管 | 🏠 永久 fallback |
+
+> **不用押注一家搜索服务。** 把每家的免费额度、搜索特色和自托管能力组合起来，让 `web_search` 在一个 Provider 用不了时仍然继续工作。
+
+推荐默认顺序（也可作为 fallback 预设）：
+
+- **通用 Agent**：`Tavily → Exa → Brave → SearXNG`
+- **深度读网页**：Tavily / Exa 搜索 → Firecrawl / Jina 抓取
+- **最大化免费额度**：`You.com → Exa → Tavily → Brave → Firecrawl → SearXNG`
+
+---
+
 ## 📊 额度感知——官方时用官方，拿不到就诚实
 
 不同引擎的额度语义完全不同。`dsh-web-tools` 如实展示每一种，绝不伪装成统一的"剩余百分比"：

@@ -107,6 +107,33 @@ Planned: Serper · Parallel · Perplexity · more community providers (see
 
 ---
 
+## 🆓 Free tiers & when to use each
+
+Official free allowances as of 2026-08 — combine them instead of betting on a
+single provider:
+
+| Provider | Free allowance | Period | Best for |
+|---|---|---|---|
+| **Tavily** | 1,000 credits | ♻️ monthly | ⭐ default agent search |
+| **Exa** | $20 signup + $10 | ♻️ $10/mo | 🧠 semantic / research |
+| **Firecrawl** | 1,000 credits + 1,000 search credits | ♻️ monthly | 📖 search + scrape |
+| **Brave** | $5 ≈ 1,000 searches | ♻️ monthly | 🌐 general independent index |
+| **You.com** | **$100** | 🎁 one-time | 💰 large-scale experiments |
+| **Jina** | **10M tokens** | 🎁 one-time | 📄 search + reader |
+| **SearXNG** | no platform quota | ♾️ self-hosted | 🏠 permanent fallback |
+
+> **Don't bet on one search provider.** Combine each one's free allowance,
+> search character, and self-hosted option so `web_search` keeps working when
+> a single provider runs out.
+
+Suggested default orderings (also usable as fallback presets):
+
+- **General agent**: `Tavily → Exa → Brave → SearXNG`
+- **Deep page reading**: Tavily / Exa search → Firecrawl / Jina fetch
+- **Maximize free quota**: `You.com → Exa → Tavily → Brave → Firecrawl → SearXNG`
+
+---
+
 ## 📊 Quota awareness — official when possible, honest when not
 
 Different engines have completely different quota semantics. `dsh-web-tools`
