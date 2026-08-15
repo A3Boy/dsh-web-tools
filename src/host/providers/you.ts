@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — You.com provider adapter.
  *
  * API: POST https://api.you.com/llm/search (X-API-Key header).
@@ -6,7 +6,7 @@
  *   `data.attributes.balance` in USD cents — an official authoritative value.
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 
 const YOU_SEARCH_URL = "https://api.you.com/llm/search";
@@ -32,7 +32,7 @@ export const YouProvider: ProviderAdapter = {
       body: JSON.stringify({ query, num_web_results: maxResults }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("You.com", res);
     const raw = await res.json();
     const results = Array.isArray(raw?.hits) ? raw.hits : [];
     const sources = results
@@ -77,10 +77,3 @@ export async function youQuota(apiKey: string, signal?: AbortSignal): Promise<Qu
   };
 }
 
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `You.com auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "You.com rate limit exceeded (HTTP 429)", res.status);
-  if (res.status >= 500) throw providerError("server", `You.com server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `You.com request failed (HTTP ${res.status})`, res.status);
-}

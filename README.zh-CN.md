@@ -203,24 +203,40 @@ Tavily、Exa、Firecrawl、Jina 使用各自原生内容获取能力；Brave、Y
 
 ## 架构
 
-```text
-DSH Agent
-   │  web_search / web_fetch
-   ↓
-dsh-tool-web
-   ↓
-ctx.web (searchProvider: dsh-web-tools)
-   ↓
-SearchHubProvider
-   ├── Provider Registry
-   ├── Fallback
-   ├── Credential Pools
-   ├── Quota
-   ├── Health / Stats
-   └── Provider Adapters (Tavily · Exa · Firecrawl · Brave · You.com · Jina · SearXNG)
+```mermaid
+flowchart TD
+    Agent[DSH Agent] -->|web_search / web_fetch| Tool[dsh-tool-web]
+    Tool --> Web[ctx.web]
+    Web -->|searchProvider: dsh-web-tools| Hub[SearchHubProvider]
+
+    Hub --> Registry[Provider Registry]
+    Hub --> FB[Fallback]
+    Hub --> Pools[Credential Pools]
+    Hub --> Quota[Quota]
+    Hub --> Health[Health / Stats]
+
+    Registry --> T[Tavily]
+    Registry --> E[Exa]
+    Registry --> F[Firecrawl]
+    Registry --> B[Brave]
+    Registry --> Y[You.com]
+    Registry --> J[Jina]
+    Registry --> S[SearXNG]
 ```
 
-设置页与 Host：`Web Client → /web-tools/api/* → Host routes（config/credentials/test/quota）→ ctx.settings / ctx.credentials`。
+设置页与 Host：
+
+```mermaid
+flowchart LR
+    Client[Web Client] -->|/web-tools/api/*| Routes[Host routes]
+    Routes --> Cfg[config]
+    Routes --> Cred[credentials]
+    Routes --> Test[provider test]
+    Routes --> TS[test search]
+    Routes --> Q[quota]
+    Cfg --> S1[ctx.settings]
+    Cred --> S2[ctx.credentials]
+```
 
 路由不使用额外 LLM 请求，不增加模型可见 Tool。
 
@@ -229,7 +245,9 @@ SearchHubProvider
 | 验证 | 状态 |
 | --- | --- |
 | TypeScript / Build | ✅ |
-| Unit + route smoke | ✅ |
+| Unit（pool / fallback / Jina / Brave header） | ✅ |
+| Route smoke（config · credential 零泄漏 · quota · 持久化先后 · loopback/cross-site 403） | ✅ |
+| Runtime invariants（abort 不 fallback · timeout 真 abort 后 fallback · 401 仅标 key · fetch 多 key 轮换） | ✅ |
 | Tavily Search + Quota | ✅ E2E |
 | Exa Search + 凭据池 | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
@@ -242,8 +260,7 @@ npm install
 npx tsc -p tsconfig.json --noEmit           # Host
 npx tsc -p tsconfig.client.json --noEmit    # Client
 npx tsc -p tsconfig.build.json              # Build
-node --experimental-strip-types --test src/host/logic.test.ts   # Unit
-node --experimental-strip-types test/routes.smoke.mjs           # Smoke
+npm test                                    # Unit + route smoke + runtime invariants
 ```
 
 本地开发需要能解析 DSH peer dependencies（可链接到 DSH profile 的 `node_modules`）。插件未出现在 `--dump-config` 时检查 bundle 加载；设置卡未出现时完整重启 `dsh web`。

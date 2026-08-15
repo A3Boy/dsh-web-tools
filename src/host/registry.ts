@@ -9,10 +9,9 @@
  * @module
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
-import { buildPool, markUnhealthy, markUsed, poolSummary, resetHealth, selectIndex, type PoolEntry } from "./pool.ts";
-import { getProvider, PROVIDER_LIST } from "./providers/index.ts";
-import type { ProviderError } from "./providers/types.ts";
-import { isExhausted, type QuotaSnapshot } from "./quota.ts";
+import { buildPool, markUnhealthy, markUsed, selectIndex, type PoolEntry } from "./pool.ts";
+import { PROVIDERS } from "./providers/index.ts";
+import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export const PROVIDER_ID = "dsh-web-tools";
@@ -50,26 +49,35 @@ export class WebToolsWebError extends Error {
 export interface WebToolsRuntimeConfig {
   enabled: boolean;
   defaultProvider: string;
-  maxResults: number;
-  searchTimeoutMs: number;
+  /** Per-attempt budget for ONE provider call (the DSH tool owns the overall timeout). */
+  providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
-  maxFallbackProviders: number;
   providerBaseUrls: Record<string, string>;
   enabledProviders: Record<string, boolean>;
-  /** Optional per-provider quota snapshots (used only to skip known-exhausted). */
-  quotas?: Record<string, QuotaSnapshot>;
 }
 
 /** Live per-provider key pools, keyed by provider name. */
 export type Pools = Record<string, PoolEntry[]>;
 
-/** Build a WebToolsSearchProvider for `ctx.web.registerSearchProvider`. */
+/** Structural subset of a provider adapter the executor needs (injectable). */
+export interface ProviderAdapterLike {
+  name: string;
+  needsBaseUrl: boolean;
+  fetchCapable: boolean;
+  search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }> }>;
+  fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ text: string }>;
+}
+
+/** Build a WebToolsSearchProvider for `ctx.web.registerSearchProvider`.
+ *  `adapterRegistry` is injectable for tests; production uses the global
+ *  PROVIDERS map (passed by index.ts via the default). */
 export function createSearchProvider(
   resolveConfig: () => WebToolsRuntimeConfig,
   resolveKeys: (providerName: string) => Promise<string>,
   stats: {
     record: (entry: { provider: string; outcome: string; latencyMs: number }) => void;
   },
+  adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
 ): WebSearchProviderLike {
   const pools: Pools = {};
 
@@ -102,20 +110,25 @@ export function createSearchProvider(
     available() {
       const cfg = resolveConfig();
       if (!cfg.enabled) return false;
-      return PROVIDER_LIST.some((p) => {
-        if (cfg.enabledProviders[p.name] === false) return false;
-        return cfg.defaultProvider === p.name || cfg.fallbackOrder.includes(p.name);
+      const chain = fallbackChain({
+        defaultProvider: cfg.defaultProvider,
+        fallbackOrder: cfg.fallbackOrder,
+      });
+      return chain.some((name) => {
+        if (cfg.enabledProviders[name] === false) return false;
+        return adapterRegistry[name] !== undefined;
       });
     },
 
     async search(request: { query: string; maxResults?: number }, signal?: AbortSignal) {
       const cfg = resolveConfig();
       if (!cfg.enabled) throw new WebToolsWebError("web search is disabled");
-      const maxResults = request.maxResults ?? cfg.maxResults;
+      // maxResults is owned by the DSH tool layer (it always passes its own);
+      // the plugin does not override it.
+      const maxResults = request.maxResults;
       const chain = fallbackChain({
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
-        maxFallbackProviders: cfg.maxFallbackProviders,
       });
 
       const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
@@ -123,14 +136,11 @@ export function createSearchProvider(
 
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
-        // Quota-aware skip: only authoritative snapshots are trusted; a
-        // known-exhausted provider is skipped without burning a request.
-        const quota = cfg.quotas?.[providerName];
-        if (isExhausted(quota)) {
-          attempts.push({ provider: providerName, outcome: "skipped-exhausted" });
+        const adapter = adapterRegistry[providerName];
+        if (!adapter) {
+          attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
           continue;
         }
-        const adapter = getProvider(providerName);
         const entries = await refreshPool(providerName);
         if (entries.length === 0 && adapter.needsBaseUrl && !adapter.fetchCapable) {
           // keyless self-hosted (SearXNG) still usable without keys
@@ -139,16 +149,23 @@ export function createSearchProvider(
           continue;
         }
 
-        // Reset health once when the whole pool is exhausted.
-        if (entries.length > 0 && !entries.some((e) => e.healthy)) resetHealth(entries);
+        // Auth-invalid keys stay unhealthy until the credential actually
+        // changes (refreshPool preserves healthy=false for persisted keys).
+        // If the whole pool is unusable, skip this provider — do NOT reset.
+        const usable = entries.filter((e) => e.healthy);
+        if (usable.length === 0) {
+          attempts.push({ provider: providerName, outcome: "skipped-no-healthy-keys" });
+          continue;
+        }
 
         const index = selectIndex(entries);
         const entry = entries[index];
         const started = Date.now();
         try {
-          const outcome = await withTimeout(
-            adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
-            cfg.searchTimeoutMs,
+          const outcome = await runWithTimeout(
+            (signal) => adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
+            cfg.providerAttemptTimeoutMs,
+            signal,
           );
           if (entry) markUsed(entries, index);
           const latencyMs = Date.now() - started;
@@ -161,8 +178,10 @@ export function createSearchProvider(
             backend: providerName,
           };
         } catch (error) {
-          if (entry) markUnhealthy(entries, index);
           const err = toProviderError(error);
+          // Credential-health policy: only auth failures indict the KEY.
+          // 429/5xx/network/timeout are provider-side — the key stays healthy.
+          if (err.code === "auth") markUnhealthy(entries, index);
           const latencyMs = Date.now() - started;
           attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
           stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
@@ -193,12 +212,24 @@ export function createSearchProvider(
 export function createFetchProvider(
   resolveConfig: () => WebToolsRuntimeConfig,
   resolveKeys: (providerName: string) => Promise<string>,
+  adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
 ): WebFetchProviderLike {
   const pools: Pools = {};
   const poolOf = (providerName: string): PoolEntry[] => (pools[providerName] ??= []);
   const refreshPool = async (providerName: string): Promise<PoolEntry[]> => {
     const raw = await resolveKeys(providerName);
     const next = buildPool(raw);
+    const prev = poolOf(providerName);
+    // keep usage counters + health for persisted keys, so rotation works and
+    // auth-unhealthy keys stay unhealthy until the credential changes
+    const byKey = new Map(prev.map((e) => [e.key, e]));
+    for (const e of next) {
+      const old = byKey.get(e.key);
+      if (old) {
+        e.uses = old.uses;
+        e.healthy = old.healthy;
+      }
+    }
     pools[providerName] = next;
     return next;
   };
@@ -211,12 +242,11 @@ export function createFetchProvider(
       const chain = fallbackChain({
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
-        maxFallbackProviders: cfg.maxFallbackProviders,
       });
       return chain.some((name) => {
         if (cfg.enabledProviders[name] === false) return false;
-        const adapter = getProvider(name);
-        return adapter.fetchCapable;
+        const adapter = adapterRegistry[name];
+        return adapter !== undefined && adapter.fetchCapable;
       });
     },
     async fetch(request: { url: string }, signal?: AbortSignal) {
@@ -224,22 +254,24 @@ export function createFetchProvider(
       const chain = fallbackChain({
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
-        maxFallbackProviders: cfg.maxFallbackProviders,
       });
       let lastError: ProviderError | undefined;
 
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
-        const adapter = getProvider(providerName);
-        if (!adapter.fetchCapable) continue; // not a fetch backend, skip
+        const adapter = adapterRegistry[providerName];
+        if (!adapter || !adapter.fetchCapable) continue; // not a fetch backend, skip
         const entries = await refreshPool(providerName);
         if (entries.length === 0) continue; // no credentials for this backend
+        const usable = entries.filter((e) => e.healthy);
+        if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
         const index = selectIndex(entries);
         const entry = entries[index];
         try {
-          const { text } = await withTimeout(
-            adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
-            cfg.searchTimeoutMs,
+          const { text } = await runWithTimeout(
+            (sig) => adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[providerName], sig),
+            cfg.providerAttemptTimeoutMs,
+            signal,
           );
           if (entry) markUsed(entries, index);
           return {
@@ -250,8 +282,8 @@ export function createFetchProvider(
             backend: providerName,
           };
         } catch (error) {
-          if (entry) markUnhealthy(entries, index);
           const err = toProviderError(error);
+          if (err.code === "auth") markUnhealthy(entries, index);
           lastError = err;
           const decision = classifyFailure(err);
           if (decision === "terminal") throw toWebError(error);
@@ -287,23 +319,62 @@ function toWebError(error: unknown): WebToolsWebError {
   return err;
 }
 
-/** Race a promise against a timeout; abort-aware. */
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+/**
+ * Run a provider attempt with a real abort: the provider's fetch receives a
+ * signal that fires on EITHER the caller's cancellation OR this attempt's
+ * timeout, so a timeout genuinely aborts the in-flight HTTP request (no
+ * background request lingering / burning quota).
+ *
+ * Distinguishes the two cases:
+ *  - caller abort  → rejects with `aborted` (terminal; the chain stops)
+ *  - attempt timeout → rejects with `timeout` (retryable; fallback proceeds)
+ *
+ * @param run - the provider call; receives the merged abort signal.
+ * @param timeoutMs - per-attempt budget; <=0 disables the timer.
+ * @param externalSignal - the caller's AbortSignal (optional).
+ */
+async function runWithTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false; // set ONLY by our own timer, not the caller
+
+  const onExternalAbort = () => controller.abort(externalSignal?.reason);
+  if (externalSignal) {
+    if (externalSignal.aborted) throw providerErrorOf("aborted", "search aborted by caller");
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
   let timer: ReturnType<typeof setTimeout> | undefined;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new Error(`provider timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  }
+
   try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(providerErrorOf("timeout", `provider timed out after ${timeoutMs}ms`)), timeoutMs);
-      }),
-    ]);
+    const value = await run(controller.signal);
+    if (controller.signal.aborted) throw providerErrorOf(timedOut ? "timeout" : "aborted", controller.signal.reason?.message ?? "attempt aborted");
+    return value;
+  } catch (error) {
+    // If OUR timer fired, the provider's own abort (whatever code it raised)
+    // is a TIMEOUT — even if the adapter rethrew its own 'aborted'. External
+    // cancellation is only 'aborted' when the timer never fired.
+    if (controller.signal.aborted) {
+      throw providerErrorOf(timedOut ? "timeout" : "aborted", controller.signal.reason instanceof Error ? controller.signal.reason.message : String(controller.signal.reason ?? "aborted"));
+    }
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
   }
 }
 
-function providerErrorOf(code: string, message: string): ProviderError {
+/** Build a classified ProviderError with a code + message. */
+function providerErrorOf(code: ProviderErrorCode, message: string): ProviderError {
   const err = new Error(message) as ProviderError;
   err.code = code;
   return err;

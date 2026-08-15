@@ -10,7 +10,7 @@
  *
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
@@ -40,7 +40,7 @@ export const ExaProvider: ProviderAdapter = {
       }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Exa", res);
     const raw = await res.json();
     const results = Array.isArray(raw?.results) ? raw.results : [];
     const sources = results
@@ -68,7 +68,7 @@ export const ExaProvider: ProviderAdapter = {
       body: JSON.stringify({ urls: [url], highlights: true }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Exa", res);
     const data = await res.json();
     const result = data?.results?.[0];
     // Exa returns `highlights` (query-relevant excerpts) for token efficiency;
@@ -81,10 +81,3 @@ export const ExaProvider: ProviderAdapter = {
   },
 };
 
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `Exa auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "Exa rate limit exceeded (HTTP 429)", res.status);
-  if (res.status >= 500) throw providerError("server", `Exa server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `Exa request failed (HTTP ${res.status})`, res.status);
-}

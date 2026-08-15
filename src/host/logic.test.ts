@@ -51,7 +51,8 @@ test("resetHealth restores the pool", () => {
 
 test("hintOf masks keys", () => {
   const h = hintOf("tvly-dev-ABCDEFGHIJKLMNOP");
-  assert.ok(h.includes("tvly-dev-"));
+  assert.ok(h.startsWith("tvly-"));
+  assert.ok(h.endsWith("OP"));
   assert.ok(!h.includes("ABCDEFGHIJKLMNOP"));
 });
 
@@ -69,14 +70,13 @@ test("classifyFailure: retryable vs non-retryable vs terminal", () => {
   assert.equal(classifyFailure({ code: "aborted" }), "terminal");
 });
 
-test("fallbackChain: dedupes and caps", () => {
+test("fallbackChain: dedupes, keeps full order (no artificial cap)", () => {
   const chain = fallbackChain({
     defaultProvider: "tavily",
     fallbackOrder: ["exa", "tavily", "firecrawl", "searxng"],
-    maxFallbackProviders: 2,
   });
-  assert.deepEqual(chain, ["tavily", "exa", "firecrawl"]);
-  assert.deepEqual(fallbackChain({ defaultProvider: "tavily", fallbackOrder: [], maxFallbackProviders: 2 }), ["tavily"]);
+  assert.deepEqual(chain, ["tavily", "exa", "firecrawl", "searxng"]);
+  assert.deepEqual(fallbackChain({ defaultProvider: "tavily", fallbackOrder: [] }), ["tavily"]);
 });
 
 test("parseJinaBalance: finds the Balance left line", () => {

@@ -16,7 +16,6 @@ import { createSearchProvider, createFetchProvider, PROVIDER_ID } from "./regist
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { buildPool, selectIndex, markUsed } from "./pool.ts";
-import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import type { ProviderError } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
@@ -65,10 +64,8 @@ export function apply(ctx: WebToolsContext) {
     return {
       enabled: cfg.enabled !== false,
       defaultProvider: cfg.defaultProvider,
-      maxResults: cfg.maxResults,
-      searchTimeoutMs: cfg.searchTimeoutMs,
+      providerAttemptTimeoutMs: cfg.providerAttemptTimeoutMs,
       fallbackOrder: cfg.fallbackOrder,
-      maxFallbackProviders: cfg.maxFallbackProviders,
       providerBaseUrls: cfg.providerBaseUrls,
       enabledProviders: cfg.providerEnabled,
     };
@@ -111,54 +108,30 @@ export function apply(ctx: WebToolsContext) {
     }
   }
 
-  /** Run the full search path (default provider + fallback) for the card. */
+  /** Run the REAL search path (default provider + fallback) for the card.
+   *  Delegates to the same provider used by agent web_search, so Test Search
+   *  never drifts from production behavior. */
   async function testFullSearch(query: string, overrideProvider?: string) {
-    const cfg = readConfig();
-    const chain = overrideProvider
-      ? [overrideProvider]
-      : fallbackChain({
-          defaultProvider: cfg.defaultProvider,
-          fallbackOrder: cfg.fallbackOrder,
-          maxFallbackProviders: cfg.maxFallbackProviders,
-        });
-    const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
-    let lastError: ProviderError | undefined;
-
-    for (const providerName of chain) {
-      const adapter = getProvider(providerName);
-      const ref = credRefOf(providerName);
-      const cred = await readCredential(ctx, ref);
-      const entries = buildPool(cred.value ?? "");
-      const started = Date.now();
-      try {
-        const index = selectIndex(entries);
-        const outcome = await adapter.search(query, cfg.maxResults, entries[index]?.key ?? "", cfg.providerBaseUrls[providerName]);
-        markUsed(entries, index);
-        const latencyMs = Date.now() - started;
-        attempts.push({ provider: providerName, outcome: "success", latencyMs });
-        stats.record({ provider: providerName, outcome: "success", latencyMs, at: Date.now() });
-        return {
-          ok: true,
-          backend: providerName,
-          latencyMs,
-          resultCount: outcome.sources.length,
-          results: outcome.sources.slice(0, 5).map((s) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
-          attempts,
-        };
-      } catch (e) {
-        const err = toProviderError(e);
-        const latencyMs = Date.now() - started;
-        attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-        stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs, at: Date.now() });
-        lastError = err;
-        if (classifyFailure(err) === "non-retryable") break;
-      }
+    try {
+      const result = await provider.search(
+        { query, maxResults: 5 },
+        undefined, // no caller signal for a manual card test
+      );
+      return {
+        ok: true,
+        backend: (result as unknown as { backend?: string }).backend,
+        latencyMs: undefined,
+        resultCount: result.sources.length,
+        results: result.sources.slice(0, 5).map((s) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
+        attempts: (result as unknown as { attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }> }).attempts,
+      };
+    } catch (e) {
+      const err = toProviderError(e);
+      return {
+        ok: false,
+        error: { code: err.code, message: err.message },
+      };
     }
-    return {
-      ok: false,
-      attempts,
-      error: { code: lastError?.code ?? "unavailable", message: lastError?.message ?? "no usable provider" },
-    };
   }
 
   /** Quota snapshots for every provider (authoritative where available). */
@@ -192,9 +165,7 @@ export function apply(ctx: WebToolsContext) {
     () =>
       registerRoutes(ctx, {
         readConfig: () => readConfig() as unknown as Record<string, unknown>,
-        writeConfig: (patch) => {
-          configHandle.write(patch as Partial<WebToolsSettings>);
-        },
+        writeConfig: (patch) => configHandle.write(patch as Partial<WebToolsSettings>),
         readCredential: (ref) => readCredential(ctx, ref),
         writeCredential: (ref, value) => writeCredential(ctx, ref, value),
         testProviderSearch,

@@ -25,10 +25,11 @@ export const DEFAULT_PROVIDER = "tavily";
 export const DEFAULT_SETTINGS = {
   enabled: true,
   defaultProvider: DEFAULT_PROVIDER,
-  maxResults: 5,
-  searchTimeoutMs: 10000,
+  // Per-attempt budget for ONE provider call (the DSH tool owns the overall
+  // web_search timeout). Distinct from tool-level timeout: this is how long a
+  // single provider may run before we abort it and try the next one.
+  providerAttemptTimeoutMs: 10000,
   fallbackOrder: [] as string[],
-  maxFallbackProviders: 2,
   providerBaseUrls: {} as Record<string, string>,
   providerEnabled: {} as Record<string, boolean>,
 };
@@ -37,10 +38,8 @@ export const DEFAULT_SETTINGS = {
 export interface WebToolsSettings {
   enabled: boolean;
   defaultProvider: string;
-  maxResults: number;
-  searchTimeoutMs: number;
+  providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
-  maxFallbackProviders: number;
   providerBaseUrls: Record<string, string>;
   providerEnabled: Record<string, boolean>;
 }
@@ -49,10 +48,8 @@ export interface WebToolsSettings {
 export const Config: z<WebToolsSettings> = z.object({
   enabled: z.boolean(),
   defaultProvider: z.string(),
-  maxResults: z.number().step(1).min(1).max(10),
-  searchTimeoutMs: z.number().step(1).min(1000).max(60000),
+  providerAttemptTimeoutMs: z.number().step(1).min(1000).max(60000),
   fallbackOrder: z.array(z.string()),
-  maxFallbackProviders: z.number().step(1).min(0).max(5),
   providerBaseUrls: z.dict(z.string()),
   providerEnabled: z.dict(z.boolean()),
 });
@@ -61,8 +58,8 @@ export const Config: z<WebToolsSettings> = z.object({
 export interface ConfigHandle {
   /** Resolve the current effective section (re-read each call → live edits apply). */
   read: () => WebToolsSettings;
-  /** Write a partial patch into the namespace (Host-side authority). */
-  write: (patch: Partial<WebToolsSettings>) => void;
+  /** Write a partial patch into the namespace; resolves when persisted. */
+  write: (patch: Partial<WebToolsSettings>) => Promise<void>;
 }
 
 /**
@@ -85,9 +82,9 @@ export function installConfig(ctx: WebToolsContext): ConfigHandle {
 
   return {
     read: () => current(),
-    write: (patch) => {
+    write: async (patch) => {
       if (!scope) throw new Error("dsh-web-tools settings namespace is not mounted");
-      void scope.update(patch);
+      await scope.update(patch);
     },
   };
 }

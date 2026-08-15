@@ -56,8 +56,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "tsc -p tsconfig.build.json",
-    "test": "node --experimental-strip-types --test src/host/logic.test.ts",
-    "smoke": "node --experimental-strip-types test/routes.smoke.mjs",
+    "test": "node --experimental-strip-types --test src/host/logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
+    "smoke": "node --experimental-strip-types --test test/routes.smoke.mjs test/runtime.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@
  *   no separate balance endpoint, so quota is captured per search response.
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
@@ -34,10 +34,10 @@ export const BraveProvider: ProviderAdapter = {
       headers: { "x-subscription-token": apiKey, accept: "application/json" },
       signal,
     });
-    throwIfHttp(res);
-    // Capture the rate-limit headers on every successful search — no extra
-    // request needed; quota/describe reads the last-known snapshot.
-    lastKnownQuota = braveQuotaFromHeaders(res.headers);
+    throwIfHttp("Brave", res);
+    // Capture the rate-limit headers per KEY on every successful search — no
+    // extra request; quota/describe reads the snapshot for the current key.
+    lastKnownQuotaByKey.set(apiKey, braveQuotaFromHeaders(res.headers));
     const raw = await res.json();
     const results = Array.isArray(raw?.web?.results) ? raw.web.results : [];
     const sources = results
@@ -59,12 +59,12 @@ export const BraveProvider: ProviderAdapter = {
   },
 };
 
-/** Last-known Brave quota snapshot (updated on every successful search). */
-let lastKnownQuota: QuotaSnapshot | undefined;
+/** Last-known Brave quota snapshots, keyed by API key. */
+const lastKnownQuotaByKey = new Map<string, QuotaSnapshot>();
 
-/** Quota for the settings card: last-known snapshot from search headers. */
-export async function braveQuota(_apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
-  return lastKnownQuota ?? {
+/** Quota for the settings card: last-known snapshot for the given key. */
+export async function braveQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
+  return lastKnownQuotaByKey.get(apiKey) ?? {
     supported: false,
     authoritative: false,
     unit: "requests",
@@ -99,12 +99,4 @@ function parseBravePair(value: string | null): number | undefined {
   const parts = value.split(",").map((s) => Number(s.trim()));
   const monthly = parts[1] ?? parts[0];
   return Number.isFinite(monthly) ? monthly : undefined;
-}
-
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `Brave auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "Brave rate limit exceeded (HTTP 429)", res.status);
-  if (res.status >= 500) throw providerError("server", `Brave server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `Brave request failed (HTTP ${res.status})`, res.status);
 }

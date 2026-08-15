@@ -9,7 +9,7 @@
  *
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 const FIRECRAWL_SEARCH_URL = `${FIRECRAWL_BASE}/search`;
@@ -35,7 +35,7 @@ export const FirecrawlProvider: ProviderAdapter = {
       body: JSON.stringify({ query, limit: maxResults }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Firecrawl", res);
     const raw = await res.json();
     // v2 search returns { success, data: { web: [{url,title,description,...}] } }
     const results = Array.isArray(raw?.data?.web) ? raw.data.web : [];
@@ -60,7 +60,7 @@ export const FirecrawlProvider: ProviderAdapter = {
       body: JSON.stringify({ url, formats: ["markdown"] }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Firecrawl", res);
     const data = await res.json();
     const markdown = data?.data?.markdown;
     if (typeof markdown !== "string" || !markdown) throw providerError("server", `Firecrawl returned no content for ${url}`);
@@ -68,10 +68,3 @@ export const FirecrawlProvider: ProviderAdapter = {
   },
 };
 
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `Firecrawl auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "Firecrawl rate limit exceeded (HTTP 429)", res.status);
-  if (res.status >= 500) throw providerError("server", `Firecrawl server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `Firecrawl request failed (HTTP ${res.status})`, res.status);
-}

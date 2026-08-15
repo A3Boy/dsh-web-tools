@@ -21,12 +21,38 @@ export interface SearchOutcome {
   sources: Source[];
 }
 
+/** Machine classification of a provider failure (closed union). */
+export type ProviderErrorCode =
+  | "auth"
+  | "quota"
+  | "bad-request"
+  | "rate-limit"
+  | "timeout"
+  | "server"
+  | "network"
+  | "config"
+  | "aborted"
+  | "invalid-response";
+
 /** Classified failure raised by adapters (never thrown raw). */
 export interface ProviderError extends Error {
-  /** Machine code: auth | bad-request | rate-limit | timeout | server | network | unavailable | config */
-  code: string;
+  /** Machine code from {@link ProviderErrorCode}. */
+  code: ProviderErrorCode;
   /** Original HTTP status when applicable. */
   status?: number;
+}
+
+/**
+ * Classify an HTTP status uniformly across every adapter. Single source of
+ * truth for fallback semantics; adapters must NOT hand-roll their own mapping.
+ */
+export function classifyHttpStatus(status: number): ProviderErrorCode {
+  if (status === 401 || status === 403) return "auth";
+  if (status === 402) return "quota";
+  if (status === 408) return "timeout";
+  if (status === 429) return "rate-limit";
+  if (status >= 500) return "server";
+  return "bad-request";
 }
 
 /** Adapter metadata (static). */
@@ -65,9 +91,21 @@ export interface ProviderAdapter extends ProviderMeta {
 }
 
 /** Build a ProviderError with a classification code. */
-export function providerError(code: string, message: string, status?: number): ProviderError {
+export function providerError(code: ProviderErrorCode, message: string, status?: number): ProviderError {
   const err = new Error(message) as ProviderError;
   err.code = code;
   if (status !== undefined) err.status = status;
   return err;
+}
+
+/**
+ * Throw a classified ProviderError from a non-OK HTTP response, with a
+ * provider label for the message. Every adapter uses this — no per-adapter
+ * status mapping.
+ */
+export function throwIfHttp(label: string, res: Response): void {
+  if (res.ok) return;
+  const code = classifyHttpStatus(res.status);
+  const codeName = code;
+  throw providerError(code, `${label} failed (HTTP ${res.status}, ${codeName})`, res.status);
 }

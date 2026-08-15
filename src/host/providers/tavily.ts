@@ -3,7 +3,7 @@
  * Uses Tavily's REST API (POST https://api.tavily.com/search and /extract).
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -28,7 +28,7 @@ export const TavilyProvider: ProviderAdapter = {
       body: JSON.stringify({ api_key: apiKey, query, max_results: maxResults }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Tavily", res);
     const raw = await res.json();
     const results = Array.isArray(raw?.results) ? raw.results : [];
     const sources = results
@@ -55,7 +55,7 @@ export const TavilyProvider: ProviderAdapter = {
       body: JSON.stringify({ urls: [url] }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Tavily", res);
     const data = await res.json();
     const failed = Array.isArray(data?.failed_results) ? data.failed_results[0] : undefined;
     if (failed) throw providerError("server", `Tavily extract failed for ${failed.url ?? url}: ${failed.error ?? "unknown"}`);
@@ -64,12 +64,3 @@ export const TavilyProvider: ProviderAdapter = {
     return { text: content };
   },
 };
-
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `Tavily auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "Tavily rate limit exceeded (HTTP 429)", res.status);
-  if (res.status === 408) throw providerError("timeout", "Tavily timed out (HTTP 408)", res.status);
-  if (res.status >= 500) throw providerError("server", `Tavily server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `Tavily request failed (HTTP ${res.status})`, res.status);
-}

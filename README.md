@@ -230,25 +230,40 @@ Brave, You.com, and SearXNG are used for search.
 
 ## Architecture
 
-```text
-DSH Agent
-   │  web_search / web_fetch
-   ↓
-dsh-tool-web
-   ↓
-ctx.web (searchProvider: dsh-web-tools)
-   ↓
-SearchHubProvider
-   ├── Provider Registry
-   ├── Fallback
-   ├── Credential Pools
-   ├── Quota
-   ├── Health / Stats
-   └── Provider Adapters (Tavily · Exa · Firecrawl · Brave · You.com · Jina · SearXNG)
+```mermaid
+flowchart TD
+    Agent[DSH Agent] -->|web_search / web_fetch| Tool[dsh-tool-web]
+    Tool --> Web[ctx.web]
+    Web -->|searchProvider: dsh-web-tools| Hub[SearchHubProvider]
+
+    Hub --> Registry[Provider Registry]
+    Hub --> FB[Fallback]
+    Hub --> Pools[Credential Pools]
+    Hub --> Quota[Quota]
+    Hub --> Health[Health / Stats]
+
+    Registry --> T[Tavily]
+    Registry --> E[Exa]
+    Registry --> F[Firecrawl]
+    Registry --> B[Brave]
+    Registry --> Y[You.com]
+    Registry --> J[Jina]
+    Registry --> S[SearXNG]
 ```
 
-Settings ↔ Host: `Web Client → /web-tools/api/* → Host routes (config /
-credentials / test / quota) → ctx.settings / ctx.credentials`.
+Settings ↔ Host:
+
+```mermaid
+flowchart LR
+    Client[Web Client] -->|/web-tools/api/*| Routes[Host routes]
+    Routes --> Cfg[config]
+    Routes --> Cred[credentials]
+    Routes --> Test[provider test]
+    Routes --> TS[test search]
+    Routes --> Q[quota]
+    Cfg --> S1[ctx.settings]
+    Cred --> S2[ctx.credentials]
+```
 
 Routing uses no extra LLM requests and adds no model-visible tools.
 
@@ -257,7 +272,9 @@ Routing uses no extra LLM requests and adds no model-visible tools.
 | Item | Status |
 | --- | --- |
 | TypeScript / Build | ✅ |
-| Unit + route smoke | ✅ |
+| Unit (pool / fallback / Jina / Brave header) | ✅ |
+| Route smoke (config · credential no-leak · quota · persist-before-ok · loopback/cross-site 403) | ✅ |
+| Runtime invariants (abort no-fallback · timeout real-abort then fallback · 401 marks key · fetch key rotation) | ✅ |
 | Tavily Search + Quota | ✅ E2E |
 | Exa Search + credential pool | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
@@ -270,8 +287,7 @@ npm install
 npx tsc -p tsconfig.json --noEmit           # Host
 npx tsc -p tsconfig.client.json --noEmit    # Client
 npx tsc -p tsconfig.build.json              # Build
-node --experimental-strip-types --test src/host/logic.test.ts   # Unit
-node --experimental-strip-types test/routes.smoke.mjs           # Smoke
+npm test                                    # Unit + route smoke + runtime invariants
 ```
 
 Local development needs DSH peer deps resolvable (link to the DSH profile's

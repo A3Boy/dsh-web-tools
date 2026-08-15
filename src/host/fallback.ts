@@ -38,14 +38,16 @@ export function classifyFailure(opts: { code: string }): "retryable" | "non-retr
 }
 
 /**
- * Compute the fallback chain for one search.
+ * Compute the fallback chain for one operation: the default provider first,
+ * then every configured fallback entry in order (deduped). No artificial cap —
+ * the user configures the chain; total time is bounded by the attempt timeout
+ * and the DSH tool-level timeout.
  */
 export function fallbackChain(opts: {
   defaultProvider: string;
   fallbackOrder: string[];
-  maxFallbackProviders: number;
 }): string[] {
-  const { defaultProvider, fallbackOrder, maxFallbackProviders } = opts;
+  const { defaultProvider, fallbackOrder } = opts;
   const chain = [defaultProvider];
   const seen = new Set(chain);
   for (const name of fallbackOrder ?? []) {
@@ -53,7 +55,7 @@ export function fallbackChain(opts: {
     seen.add(name);
     chain.push(name);
   }
-  return chain.slice(0, 1 + Math.max(0, maxFallbackProviders ?? 2));
+  return chain;
 }
 
 /**

@@ -22,7 +22,7 @@ export const API_PREFIX = "/web-tools/api";
 /** Dependencies the routes need (injected from the plugin entry). */
 export interface RouteDeps {
   readConfig: () => Record<string, unknown>;
-  writeConfig: (patch: Record<string, unknown>) => void;
+  writeConfig: (patch: Record<string, unknown>) => Promise<void>;
   readCredential: (ref: string) => Promise<{ configured: boolean; source?: string; writable: boolean; value?: string }>;
   writeCredential: (ref: string, value: string) => Promise<void>;
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
@@ -62,13 +62,30 @@ async function readJsonBody(req: WebToolsHttpRequest): Promise<unknown> {
   }
 }
 
-/** Browser-trust fence: loopback hosts or the runtime's trusted-host list. */
-function isTrusted(req: WebToolsHttpRequest, trustedHosts: readonly string[]): boolean {
+/**
+ * Configuration-plane fence: LOOPBACK ONLY. Unlike the general /api gateway,
+ * these routes mutate settings and credentials — DSH treats that plane as
+ * privileged and `trustedHosts` is NOT authentication. A LAN host reaching
+ * this DSH instance must NOT be able to read or write provider config/keys.
+ *
+ * Also rejects cross-site browser requests via Sec-Fetch-Site when the header
+ * is present (defense against DNS-rebinding / cross-site POST).
+ */
+function isLoopback(req: WebToolsHttpRequest): boolean {
   const hostHeader = req.headers?.host;
   const host = typeof hostHeader === "string" ? hostHeader.split(":")[0].toLowerCase() : "";
   if (host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]") return true;
-  if (trustedHosts && trustedHosts.some((h) => h.toLowerCase().split(":")[0] === host)) return true;
+  // IPv4 loopback range (127.0.0.0/8) and IPv6 ::1 are covered above; any
+  // other host (LAN IP, tailnet name, etc.) is rejected.
   return false;
+}
+
+/** Reject cross-site browser requests when the browser declares a site. */
+function isSameOriginOrUnspecified(req: WebToolsHttpRequest): boolean {
+  const site = req.headers?.["sec-fetch-site"];
+  if (typeof site !== "string" || site.length === 0) return true;
+  // allowed: same-origin, same-site, none (typed/direct navigation); never cross-site
+  return site !== "cross-site";
 }
 
 // ---------------------------------------------------------------------------
@@ -100,33 +117,28 @@ async function handleConfigGet(deps: RouteDeps) {
       keyWritable: cred.writable,
       keyHint: pool.length > 0 ? poolSummary(pool)[0].hint : undefined,
       poolSize: pool.length,
-      pool: poolSummary(pool),
     });
   }
 
   return {
     enabled,
     defaultProvider,
-    maxResults: (cfg.maxResults as number) ?? 5,
-    searchTimeoutMs: (cfg.searchTimeoutMs as number) ?? 10000,
+    providerAttemptTimeoutMs: (cfg.providerAttemptTimeoutMs as number) ?? 10000,
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
-    maxFallbackProviders: (cfg.maxFallbackProviders as number) ?? 2,
     providers,
   };
 }
 
-function handleConfigSave(deps: RouteDeps, payload: unknown) {
+async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as Record<string, unknown>;
   const patch: Record<string, unknown> = {};
   if (typeof p.enabled === "boolean") patch.enabled = p.enabled;
   if (typeof p.defaultProvider === "string") patch.defaultProvider = p.defaultProvider;
-  if (typeof p.maxResults === "number") patch.maxResults = p.maxResults;
-  if (typeof p.searchTimeoutMs === "number") patch.searchTimeoutMs = p.searchTimeoutMs;
+  if (typeof p.providerAttemptTimeoutMs === "number") patch.providerAttemptTimeoutMs = p.providerAttemptTimeoutMs;
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;
-  if (typeof p.maxFallbackProviders === "number") patch.maxFallbackProviders = p.maxFallbackProviders;
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
-  deps.writeConfig(patch);
+  await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
 }
 
@@ -172,7 +184,7 @@ async function handleQuotaDescribe(deps: RouteDeps) {
 
 const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<unknown>> = {
   "config/get": (deps) => handleConfigGet(deps),
-  "config/save": (deps, payload) => Promise.resolve(handleConfigSave(deps, payload)),
+  "config/save": (deps, payload) => handleConfigSave(deps, payload),
   "credentials/set": (deps, payload) => handleCredentialSet(deps, payload),
   "credentials/describe": (deps) => handleCredentialDescribe(deps),
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
@@ -186,7 +198,8 @@ export function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => voi
     kind: "prefix",
     path: API_PREFIX,
     handler: async (req, res) => {
-      if (!isTrusted(req, ctx.webRuntime?.trustedHosts ?? [])) {
+      // Configuration plane: loopback-only + same-origin, never trustedHosts.
+      if (!isLoopback(req) || !isSameOriginOrUnspecified(req)) {
         writeError(res, 403, "forbidden", "forbidden");
         return;
       }

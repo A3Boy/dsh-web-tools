@@ -76,8 +76,9 @@ export function WebToolsCard(_props: CardProps) {
   };
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
-  const setMaxResults = (v: number) => void save({ maxResults: Math.min(10, Math.max(1, v)) });
-  const setTimeoutMs = (v: number) => void save({ searchTimeoutMs: Math.min(60000, Math.max(1000, v)) });
+  // Per-attempt timeout for ONE provider call (overall web_search timeout is
+  // owned by the DSH tool layer, so this card does not expose maxResults).
+  const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
   const toggleProvider = (name: string, enabled: boolean) => {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
@@ -191,24 +192,16 @@ export function WebToolsCard(_props: CardProps) {
       {/* General */}
       <div style={{ border: "1px solid #444", borderRadius: 6, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <label>搜索结果数量</label>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={config.maxResults}
-            onChange={(e) => setMaxResults(Number(e.target.value))}
-            style={{ width: 60 }}
-          />
-          <label style={{ marginLeft: 12 }}>超时 (ms)</label>
+          <label>单 Provider 超时 (ms)</label>
           <input
             type="number"
             min={1000}
             max={60000}
-            value={config.searchTimeoutMs}
-            onChange={(e) => setTimeoutMs(Number(e.target.value))}
+            value={config.providerAttemptTimeoutMs}
+            onChange={(e) => setAttemptTimeout(Number(e.target.value))}
             style={{ width: 80 }}
           />
+          <span style={{ color: "#888", fontSize: 12 }}>单个搜索源最多等待多久，超时后切换下一家（总超时由 DSH 工具层控制）</span>
         </div>
 
         {/* Search priority: one ordered list, first entry = default */}

@@ -26,11 +26,15 @@ export class PoolEntry {
   }
 }
 
-/** Short diagnostic hint ("tvly-XXXX…abcd"). */
+/**
+ * Short diagnostic hint: provider-known prefix (e.g. "tvly") + last 4 chars.
+ * Deliberately NOT the first 9 chars of the raw key — enough to identify a
+ * key without revealing a significant secret prefix.
+ */
 export function hintOf(key: string): string {
-  const head = key.slice(0, 9);
-  const tail = key.length > 13 ? key.slice(-4) : "";
-  return tail ? `${head}…${tail}` : head;
+  const prefix = key.slice(0, key.indexOf("-") > 0 ? key.indexOf("-") : 4);
+  const tail = key.length > 6 ? key.slice(-4) : key;
+  return `${prefix}-…${tail}`;
 }
 
 /**
@@ -69,13 +73,21 @@ export function resetHealth(entries: PoolEntry[]): void {
 /**
  * Build pool entries from a configured key string.
  * Accepted separators: comma, whitespace/newline, or semicolon.
+ * Duplicate keys are dropped (first occurrence keeps its order).
  * Empty input → empty pool (provider effectively unconfigured).
  * @param raw configured credential value.
  * @returns PoolEntry[]
  */
 export function buildPool(raw: string): PoolEntry[] {
   const parts = (raw ?? "").split(/[,\s;]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
-  return parts.map((key: string, order: number) => new PoolEntry(key, order));
+  const seen = new Set<string>();
+  const entries: PoolEntry[] = [];
+  for (const key of parts) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push(new PoolEntry(key, entries.length));
+  }
+  return entries;
 }
 
 /** Pool summary for diagnostics (no secrets). */

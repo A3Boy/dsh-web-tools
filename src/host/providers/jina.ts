@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — Jina provider adapter.
  *
  * Search: POST https://s.jina.ai/ (Authorization: Bearer) — Jina's search
@@ -9,7 +9,7 @@
  *   parse failure must degrade to "quota unavailable", never break search.
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 
 const JINA_SEARCH_URL = "https://s.jina.ai/";
@@ -35,7 +35,7 @@ export const JinaProvider: ProviderAdapter = {
       body: JSON.stringify({ q: query, count: maxResults }),
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Jina", res);
     const text = await res.text();
     const sources = parseJinaSearchText(text, maxResults);
     return { sources };
@@ -47,7 +47,7 @@ export const JinaProvider: ProviderAdapter = {
       headers: { authorization: `Bearer ${apiKey}` },
       signal,
     });
-    throwIfHttp(res);
+    throwIfHttp("Jina", res);
     return { text: await res.text() };
   },
 };
@@ -128,10 +128,3 @@ export async function jinaQuota(apiKey: string, signal?: AbortSignal): Promise<Q
   };
 }
 
-function throwIfHttp(res: Response) {
-  if (res.ok) return;
-  if (res.status === 401 || res.status === 403) throw providerError("auth", `Jina auth failed (HTTP ${res.status})`, res.status);
-  if (res.status === 429) throw providerError("rate-limit", "Jina rate limit exceeded (HTTP 429)", res.status);
-  if (res.status >= 500) throw providerError("server", `Jina server error (HTTP ${res.status})`, res.status);
-  throw providerError("bad-request", `Jina request failed (HTTP ${res.status})`, res.status);
-}

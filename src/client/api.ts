@@ -66,10 +66,8 @@ export interface ProviderView {
 export interface ConfigView {
   enabled: boolean;
   defaultProvider: string;
-  maxResults: number;
-  searchTimeoutMs: number;
+  providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
-  maxFallbackProviders: number;
   providers: ProviderView[];
 }
 
