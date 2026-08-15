@@ -322,7 +322,7 @@ dsh plugin --profile web remove dsh-web-tools
 
 ---
 
-## 🤖 让编码 Agent 帮你安装
+## 🤖 让 Agent 帮你安装
 
 复制给 Codex / Claude Code / 任意编码 Agent：
 
