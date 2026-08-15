@@ -1,0 +1,95 @@
+/**
+ * Unit tests for pool + fallback pure logic.
+ * Run: node --experimental-strip-types --test src/host/*.test.ts
+ */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
+import { classifyFailure, fallbackChain } from "./fallback.ts";
+import { parseJinaBalance } from "./providers/jina.ts";
+
+test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
+  const p = buildPool("k1, k2\nk3;k4  ,, k5");
+  assert.deepEqual(p.map((e: { key: string }) => e.key), ["k1", "k2", "k3", "k4", "k5"]);
+  assert.deepEqual(buildPool(""), []);
+  assert.deepEqual(buildPool("  , ; "), []);
+});
+
+test("selectIndex picks least-used with fixed tie-break", () => {
+  const p = buildPool("a,b,c");
+  assert.equal(selectIndex(p), 0);
+  markUsed(p, 0);
+  markUsed(p, 0);
+  markUsed(p, 1);
+  // uses: a=2, b=1, c=0 → c
+  assert.equal(selectIndex(p), 2);
+});
+
+test("selectIndex skips unhealthy keys", () => {
+  const p = buildPool("a,b,c");
+  markUnhealthy(p, 0);
+  markUnhealthy(p, 1);
+  assert.equal(selectIndex(p), 2);
+});
+
+test("selectIndex throws when all unhealthy or empty", () => {
+  const p = buildPool("a,b");
+  markUnhealthy(p, 0);
+  markUnhealthy(p, 1);
+  assert.throws(() => selectIndex(p), /no healthy/);
+  assert.throws(() => selectIndex([]), /empty/);
+});
+
+test("resetHealth restores the pool", () => {
+  const p = buildPool("a,b");
+  markUnhealthy(p, 0);
+  markUnhealthy(p, 1);
+  resetHealth(p);
+  assert.equal(selectIndex(p), 0);
+});
+
+test("hintOf masks keys", () => {
+  const h = hintOf("tvly-dev-ABCDEFGHIJKLMNOP");
+  assert.ok(h.includes("tvly-dev-"));
+  assert.ok(!h.includes("ABCDEFGHIJKLMNOP"));
+});
+
+test("classifyFailure: retryable vs non-retryable", () => {
+  assert.equal(classifyFailure({ code: "rate-limit" }), "retryable");
+  assert.equal(classifyFailure({ code: "timeout" }), "retryable");
+  assert.equal(classifyFailure({ code: "server" }), "retryable");
+  assert.equal(classifyFailure({ code: "network" }), "retryable");
+  assert.equal(classifyFailure({ code: "unavailable" }), "retryable");
+  assert.equal(classifyFailure({ code: "aborted" }), "retryable");
+  assert.equal(classifyFailure({ code: "auth" }), "retryable"); // bad key → fallback + mark unhealthy
+  assert.equal(classifyFailure({ code: "bad-request" }), "non-retryable");
+  assert.equal(classifyFailure({ code: "config" }), "non-retryable");
+  assert.equal(classifyFailure({ code: "mystery" }), "retryable");
+});
+
+test("fallbackChain: dedupes and caps", () => {
+  const chain = fallbackChain({
+    defaultProvider: "tavily",
+    fallbackOrder: ["exa", "tavily", "firecrawl", "searxng"],
+    maxFallbackProviders: 2,
+  });
+  assert.deepEqual(chain, ["tavily", "exa", "firecrawl"]);
+  assert.deepEqual(fallbackChain({ defaultProvider: "tavily", fallbackOrder: [], maxFallbackProviders: 2 }), ["tavily"]);
+});
+
+test("parseJinaBalance: finds the Balance left line", () => {
+  const sample = [
+    "Title: Jina Reader",
+    "",
+    "[Balance left: 8,211,345]",
+    "",
+    "Some content here",
+  ].join("\n");
+  assert.equal(parseJinaBalance(sample), 8211345);
+});
+
+test("parseJinaBalance: undefined on format change (never breaks search)", () => {
+  assert.equal(parseJinaBalance("no balance info here"), undefined);
+  assert.equal(parseJinaBalance("Balance: 100"), undefined); // no "left" keyword
+  assert.equal(parseJinaBalance(""), undefined);
+});

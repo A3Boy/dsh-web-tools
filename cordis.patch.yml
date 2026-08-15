@@ -1,0 +1,16 @@
+# dsh-web-tools — Host plugin patch layer
+#
+# - Re-enables the DSH native model-facing web tools (web_search / web_fetch),
+#   which the web-app bundle disables by default.
+# - Points ctx.web at the dsh-web-tools provider so the seam executes through
+#   our multi-provider pool instead of the bundled DeepSeek search.
+- id: tool-web
+  disabled: false
+
+- id: web
+  config:
+    searchProvider: dsh-web-tools
+
+- insert:
+    - id: dsh-web-tools
+      name: 'dsh-web-tools'
