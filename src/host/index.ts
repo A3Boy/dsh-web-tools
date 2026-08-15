@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, PROVIDER_ID } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { buildPool, selectIndex, markUsed } from "./pool.ts";
@@ -76,12 +76,16 @@ export function apply(ctx: WebToolsContext) {
     return cred.value ?? "";
   };
 
+  // ONE shared pool store for search + fetch: they see the same key usage
+  // and health, and rebuild only when a credential actually changes.
+  const poolStore = createPoolStore(resolveKeys);
+
   const provider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
-  });
+  }, undefined, poolStore);
   ctx.web.registerSearchProvider(provider as never);
 
-  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys);
+  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore);
   ctx.web.registerFetchProvider(fetchProvider as never);
 
   /** Run one real minimal search through a single provider (test connection). */
@@ -89,12 +93,18 @@ export function apply(ctx: WebToolsContext) {
     const adapter = getProvider(providerName);
     const ref = credRefOf(providerName);
     const cred = await readCredential(ctx, ref);
-    const entries = buildPool(cred.value ?? "");
     const started = Date.now();
     try {
-      const index = selectIndex(entries);
-      const outcome = await adapter.search(query, 1, entries[index]?.key ?? "", readConfig().providerBaseUrls[providerName]);
-      markUsed(entries, index);
+      // Keyless self-hosted providers (SearXNG) work without any key.
+      let key = "";
+      if (!(adapter.needsBaseUrl && !adapter.fetchCapable)) {
+        const entries = buildPool(cred.value ?? "");
+        if (entries.length === 0) throw Object.assign(new Error("no API key configured"), { code: "config" });
+        const index = selectIndex(entries);
+        key = entries[index].key;
+        markUsed(entries, index);
+      }
+      const outcome = await adapter.search(query, 1, key, readConfig().providerBaseUrls[providerName]);
       const latencyMs = Date.now() - started;
       return {
         ok: true,
@@ -111,7 +121,11 @@ export function apply(ctx: WebToolsContext) {
   /** Run the REAL search path (default provider + fallback) for the card.
    *  Delegates to the same provider used by agent web_search, so Test Search
    *  never drifts from production behavior. */
-  async function testFullSearch(query: string, overrideProvider?: string) {
+  /** Run the REAL search path (default provider + fallback) for the card.
+   *  Delegates to the same provider used by agent web_search, so Test Search
+   *  never drifts from production behavior. Total latency measured here. */
+  async function testFullSearch(query: string) {
+    const started = Date.now();
     try {
       const result = await provider.search(
         { query, maxResults: 5 },
@@ -120,7 +134,7 @@ export function apply(ctx: WebToolsContext) {
       return {
         ok: true,
         backend: (result as unknown as { backend?: string }).backend,
-        latencyMs: undefined,
+        latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
         attempts: (result as unknown as { attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }> }).attempts,
@@ -129,35 +143,68 @@ export function apply(ctx: WebToolsContext) {
       const err = toProviderError(e);
       return {
         ok: false,
+        latencyMs: Date.now() - started,
         error: { code: err.code, message: err.message },
       };
     }
   }
 
   /** Quota snapshots for every provider (authoritative where available). */
+  /** Quota cache: { fetchedAt, per provider snapshot }. */
+  let quotaCache: { fetchedAt: number; quotas: Record<string, QuotaSnapshot> } | null = null;
+  const QUOTA_CACHE_MS = 5 * 60 * 1000; // 5 min — quota is display-only, no 30s polling
+  const QUOTA_TIMEOUT_MS = 8000;
+
   async function describeQuotas(): Promise<Record<string, QuotaSnapshot>> {
-    const out: Record<string, QuotaSnapshot> = {};
-    for (const meta of PROVIDER_LIST) {
-      const ref = credRefOf(meta.name);
-      const cred = await readCredential(ctx, ref);
-      const key = cred.value ?? "";
-      const summary = stats.summary();
-      const localSearches = summary.byProvider[meta.name]?.success ?? 0;
-      const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * 700) / 1000)) : undefined;
-      try {
-        out[meta.name] = await quotaOf(meta.name, key, readConfig().providerBaseUrls[meta.name], localUsdCents);
-      } catch (e) {
-        out[meta.name] = {
+    if (quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
+
+    const cfg = readConfig();
+    const enabledNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
+    const summary = stats.summary();
+
+    // Parallel, timeout-bounded, only providers actually in the search chain.
+    const results = await Promise.allSettled(
+      PROVIDER_LIST.filter((meta) => enabledNames.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
+        const ref = credRefOf(meta.name);
+        const cred = await readCredential(ctx, ref);
+        // Multi-key pools: query quota with the FIRST key only; the card marks
+        // it as such. Passing the whole "k1,k2" string would corrupt auth.
+        const firstKey = buildPool(cred.value ?? "")[0]?.key ?? "";
+        const localSearches = summary.byProvider[meta.name]?.success ?? 0;
+        const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * 700) / 1000)) : undefined;
+        const snapshot = await withTimeoutMs(
+          quotaOf(meta.name, firstKey, cfg.providerBaseUrls[meta.name], localUsdCents),
+          QUOTA_TIMEOUT_MS,
+        );
+        return [meta.name, snapshot];
+      }),
+    );
+
+    const quotas: Record<string, QuotaSnapshot> = {};
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        const [name, snap] = r.value;
+        // mark multi-key pools so the card can annotate "shows Key 1"
+        const cred = await readCredential(ctx, credRefOf(name));
+        if (buildPool(cred.value ?? "").length > 1) {
+          snap.note = [snap.note, "显示池中第 1 把 Key 的额度"].filter(Boolean).join(" · ");
+        }
+        quotas[name] = snap;
+      } else {
+        const name = (r.reason as { provider?: string })?.provider ?? "unknown";
+        quotas[name] = {
           supported: false,
           authoritative: false,
           unit: "unknown",
           source: "dashboard",
           fetchedAt: Date.now(),
-          note: `Quota check failed: ${e instanceof Error ? e.message : String(e)}`,
+          note: `Quota check failed: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
         };
       }
     }
-    return out;
+
+    quotaCache = { fetchedAt: Date.now(), quotas };
+    return quotas;
   }
 
   // ---- fenced HTTP routes for the card ------------------------------------
@@ -184,6 +231,14 @@ function toProviderError(error: unknown): ProviderError {
   const err = new Error(message) as ProviderError;
   err.code = "network";
   return err;
+}
+
+/** Simple timeout wrapper for side-channel quota lookups (no abort needed). */
+function withTimeoutMs<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)),
+  ]);
 }
 
 export { PROVIDER_ID };

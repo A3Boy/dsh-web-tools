@@ -32,26 +32,38 @@ export function WebToolsCard(_props: CardProps) {
   const [testing, setTesting] = useState(false);
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
   const loadToken = useRef(0);
+  const mounted = useRef(true);
 
+  // Config loads first (the card renders instantly); quota loads in the
+  // background and is cached 5 min on the Host — no 30s polling.
   const load = async () => {
     const token = ++loadToken.current;
     try {
-      const [cfg, quota] = await Promise.all([api.configGet(), api.quotaDescribe()]);
+      const cfg = await api.configGet();
       if (token !== loadToken.current) return;
       setConfig(cfg);
-      setQuotas(quota.quotas);
       setError("");
     } catch (e) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
     }
   };
 
+  const loadQuotas = async () => {
+    try {
+      const quota = await api.quotaDescribe();
+      if (!mounted.current) return;
+      setQuotas(quota.quotas);
+    } catch {
+      // quota is display-only; failure must not disturb the card
+    }
+  };
+
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(), 30000); // refresh quotas periodically
+    void loadQuotas();
     return () => {
       loadToken.current += 1;
-      clearInterval(timer);
+      mounted.current = false;
     };
   }, []);
 
@@ -377,9 +389,9 @@ function ProviderRow(props: {
           {busy ? "…" : "Test"}
         </button>
       </div>
-      {p.pool.length > 1 && (
+      {p.poolSize > 1 && (
         <div style={{ color: "#888", fontSize: 12 }}>
-          {p.pool.map((e) => `${e.hint}${e.healthy ? "" : " (unhealthy)"}×${e.uses}`).join(" · ")}
+          {p.poolSize} 个 Key（凭据池，按最少使用优先轮换）
         </div>
       )}
     </div>

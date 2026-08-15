@@ -59,6 +59,50 @@ export interface WebToolsRuntimeConfig {
 /** Live per-provider key pools, keyed by provider name. */
 export type Pools = Record<string, PoolEntry[]>;
 
+/** A per-provider pool with the raw credential it was built from. */
+interface PoolSlot {
+  raw: string;
+  entries: PoolEntry[];
+}
+
+/**
+ * Shared credential pool store. One instance per plugin; Search and Fetch
+ * executors share it so they never fight over separate pools.
+ *
+ * - Rebuilds a provider's pool ONLY when its credential string changed
+ *   (avoids the concurrent-search race of replacing entries out from under an
+ *   in-flight request).
+ * - Preserves uses/health for keys that persist across rebuilds.
+ * - markUsed/markUnhealthy mutate the stable entries array in place.
+ */
+export function createPoolStore(resolveKeys: (providerName: string) => Promise<string>) {
+  const slots = new Map<string, PoolSlot>();
+
+  async function poolOf(providerName: string): Promise<PoolEntry[]> {
+    const raw = await resolveKeys(providerName);
+    const prev = slots.get(providerName);
+    if (prev && prev.raw === raw) return prev.entries;
+
+    const next = buildPool(raw);
+    if (prev) {
+      const byKey = new Map(prev.entries.map((e) => [e.key, e]));
+      for (const e of next) {
+        const old = byKey.get(e.key);
+        if (old) {
+          e.uses = old.uses;
+          e.healthy = old.healthy;
+        }
+      }
+    }
+    slots.set(providerName, { raw, entries: next });
+    return next;
+  }
+
+  return { poolOf };
+}
+
+export type PoolStore = ReturnType<typeof createPoolStore>;
+
 /** Structural subset of a provider adapter the executor needs (injectable). */
 export interface ProviderAdapterLike {
   name: string;
@@ -78,31 +122,9 @@ export function createSearchProvider(
     record: (entry: { provider: string; outcome: string; latencyMs: number }) => void;
   },
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
+  poolStore?: PoolStore,
 ): WebSearchProviderLike {
-  const pools: Pools = {};
-
-  function poolOf(providerName: string): PoolEntry[] {
-    if (!pools[providerName]) pools[providerName] = [];
-    return pools[providerName];
-  }
-
-  /** Rebuild a provider's pool from its credential (called each search; keys may rotate). */
-  async function refreshPool(providerName: string): Promise<PoolEntry[]> {
-    const raw = await resolveKeys(providerName);
-    const next = buildPool(raw);
-    const prev = poolOf(providerName);
-    // keep usage counters for keys that persist, so rotation doesn't reset fairness
-    const byKey = new Map(prev.map((e) => [e.key, e]));
-    for (const e of next) {
-      const old = byKey.get(e.key);
-      if (old) {
-        e.uses = old.uses;
-        e.healthy = old.healthy;
-      }
-    }
-    pools[providerName] = next;
-    return next;
-  }
+  const pools = poolStore ?? createPoolStore(resolveKeys);
 
   return {
     id: PROVIDER_ID,
@@ -141,7 +163,7 @@ export function createSearchProvider(
           attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
           continue;
         }
-        const entries = await refreshPool(providerName);
+        const entries = await pools.poolOf(providerName);
         if (entries.length === 0 && adapter.needsBaseUrl && !adapter.fetchCapable) {
           // keyless self-hosted (SearXNG) still usable without keys
         } else if (entries.length === 0) {
@@ -152,46 +174,77 @@ export function createSearchProvider(
         // Auth-invalid keys stay unhealthy until the credential actually
         // changes (refreshPool preserves healthy=false for persisted keys).
         // If the whole pool is unusable, skip this provider — do NOT reset.
-        const usable = entries.filter((e) => e.healthy);
+        let usable = entries.filter((e) => e.healthy);
         if (usable.length === 0) {
           attempts.push({ provider: providerName, outcome: "skipped-no-healthy-keys" });
           continue;
         }
 
-        const index = selectIndex(entries);
-        const entry = entries[index];
-        const started = Date.now();
-        try {
-          const outcome = await runWithTimeout(
-            (signal) => adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
-            cfg.providerAttemptTimeoutMs,
-            signal,
-          );
-          if (entry) markUsed(entries, index);
-          const latencyMs = Date.now() - started;
-          attempts.push({ provider: providerName, outcome: "success", latencyMs });
-          stats.record({ provider: providerName, outcome: "success", latencyMs });
-          return {
-            ...outcome,
-            truncated: false,
-            attempts,
-            backend: providerName,
-          };
-        } catch (error) {
-          const err = toProviderError(error);
-          // Credential-health policy: only auth failures indict the KEY.
-          // 429/5xx/network/timeout are provider-side — the key stays healthy.
-          if (err.code === "auth") markUnhealthy(entries, index);
-          const latencyMs = Date.now() - started;
-          attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-          stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-          lastError = err;
-          const decision = classifyFailure(err);
-          // Caller cancellation terminates the whole chain — never fall back.
-          if (decision === "terminal") throw toWebError(error);
-          if (decision === "non-retryable") break;
-          // retryable → fall through to the next provider in the chain
+        // Provider-internal key failover: on AUTH failures only, try the next
+        // healthy key in the SAME provider before falling back to another
+        // provider. Non-auth failures (429/5xx/network/timeout) do not rotate
+        // keys — they fall through to the next provider directly.
+        let providerLevelDecision: "next-provider" | "break" | "terminal" | null = null;
+        while (usable.length > 0) {
+          const index = selectIndex(entries);
+          const entry = entries[index];
+          const started = Date.now();
+          try {
+            const outcome = await runWithTimeout(
+              (signal) => adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
+              cfg.providerAttemptTimeoutMs,
+              signal,
+            );
+            if (entry) markUsed(entries, index);
+            const latencyMs = Date.now() - started;
+            attempts.push({ provider: providerName, outcome: "success", latencyMs });
+            stats.record({ provider: providerName, outcome: "success", latencyMs });
+            return {
+              ...outcome,
+              truncated: false,
+              attempts,
+              backend: providerName,
+            };
+          } catch (error) {
+            const err = toProviderError(error);
+            const latencyMs = Date.now() - started;
+            const decision = classifyFailure(err);
+            // Caller cancellation terminates the whole chain — never fall back.
+            if (decision === "terminal") {
+              providerLevelDecision = "terminal";
+              lastError = err;
+              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              break;
+            }
+            if (decision === "non-retryable") {
+              providerLevelDecision = "break";
+              lastError = err;
+              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              break;
+            }
+            // retryable:
+            if (err.code === "auth") {
+              // key indicted → mark unhealthy, try the next key in this pool
+              markUnhealthy(entries, index);
+              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              usable = entries.filter((e) => e.healthy);
+              continue;
+            }
+            // non-auth retryable (429/5xx/network/timeout) → next provider
+            lastError = err;
+            attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+            stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+            providerLevelDecision = "next-provider";
+            break;
+          }
         }
+
+        if (providerLevelDecision === "terminal") throw toWebError(lastError);
+        if (providerLevelDecision === "break") break;
+        // else fall through to the next provider in the chain
       }
 
       const reason = lastError
@@ -213,26 +266,9 @@ export function createFetchProvider(
   resolveConfig: () => WebToolsRuntimeConfig,
   resolveKeys: (providerName: string) => Promise<string>,
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
+  poolStore?: PoolStore,
 ): WebFetchProviderLike {
-  const pools: Pools = {};
-  const poolOf = (providerName: string): PoolEntry[] => (pools[providerName] ??= []);
-  const refreshPool = async (providerName: string): Promise<PoolEntry[]> => {
-    const raw = await resolveKeys(providerName);
-    const next = buildPool(raw);
-    const prev = poolOf(providerName);
-    // keep usage counters + health for persisted keys, so rotation works and
-    // auth-unhealthy keys stay unhealthy until the credential changes
-    const byKey = new Map(prev.map((e) => [e.key, e]));
-    for (const e of next) {
-      const old = byKey.get(e.key);
-      if (old) {
-        e.uses = old.uses;
-        e.healthy = old.healthy;
-      }
-    }
-    pools[providerName] = next;
-    return next;
-  };
+  const pools = poolStore ?? createPoolStore(resolveKeys);
 
   return {
     id: `${PROVIDER_ID}-fetch`,
@@ -261,7 +297,7 @@ export function createFetchProvider(
         if (cfg.enabledProviders[providerName] === false) continue;
         const adapter = adapterRegistry[providerName];
         if (!adapter || !adapter.fetchCapable) continue; // not a fetch backend, skip
-        const entries = await refreshPool(providerName);
+        const entries = await pools.poolOf(providerName);
         if (entries.length === 0) continue; // no credentials for this backend
         const usable = entries.filter((e) => e.healthy);
         if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
@@ -339,36 +375,54 @@ async function runWithTimeout<T>(
   externalSignal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
-  let timedOut = false; // set ONLY by our own timer, not the caller
+  // Explicit abort-cause state. A caller abort CLEARS the timer immediately,
+  // so a late timer callback can never flip a caller cancellation into a
+  // timeout (which would wrongly trigger fallback).
+  let abortCause: "caller" | "timeout" | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const onExternalAbort = () => controller.abort(externalSignal?.reason);
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+
+  const onExternalAbort = () => {
+    abortCause = "caller";
+    clearTimer();
+    controller.abort(externalSignal?.reason);
+  };
+
   if (externalSignal) {
     if (externalSignal.aborted) throw providerErrorOf("aborted", "search aborted by caller");
     externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     timer = setTimeout(() => {
-      timedOut = true;
+      if (abortCause !== undefined) return; // already aborted by caller
+      abortCause = "timeout";
       controller.abort(new Error(`provider timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   }
 
   try {
     const value = await run(controller.signal);
-    if (controller.signal.aborted) throw providerErrorOf(timedOut ? "timeout" : "aborted", controller.signal.reason?.message ?? "attempt aborted");
+    if (controller.signal.aborted) {
+      throw providerErrorOf(abortCause === "timeout" ? "timeout" : "aborted", controller.signal.reason?.message ?? "attempt aborted");
+    }
     return value;
   } catch (error) {
     // If OUR timer fired, the provider's own abort (whatever code it raised)
     // is a TIMEOUT — even if the adapter rethrew its own 'aborted'. External
-    // cancellation is only 'aborted' when the timer never fired.
+    // cancellation is only 'aborted' when abortCause is not "timeout".
     if (controller.signal.aborted) {
-      throw providerErrorOf(timedOut ? "timeout" : "aborted", controller.signal.reason instanceof Error ? controller.signal.reason.message : String(controller.signal.reason ?? "aborted"));
+      throw providerErrorOf(abortCause === "timeout" ? "timeout" : "aborted", controller.signal.reason instanceof Error ? controller.signal.reason.message : String(controller.signal.reason ?? "aborted"));
     }
     throw error;
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimer();
     if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
   }
 }

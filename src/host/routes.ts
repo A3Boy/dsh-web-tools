@@ -15,6 +15,7 @@ import { poolSummary } from "./pool.ts";
 import { buildPool } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { ConfigView, ProviderView } from "../shared/api-types.ts";
 
 /** Route prefix (client fetches `/web-tools/api/<method>`). */
 export const API_PREFIX = "/web-tools/api";
@@ -26,7 +27,7 @@ export interface RouteDeps {
   readCredential: (ref: string) => Promise<{ configured: boolean; source?: string; writable: boolean; value?: string }>;
   writeCredential: (ref: string, value: string) => Promise<void>;
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
-  testFullSearch: (query: string, provider?: string) => Promise<Record<string, unknown>>;
+  testFullSearch: (query: string) => Promise<Record<string, unknown>>;
   describeQuotas: () => Promise<Record<string, QuotaSnapshot>>;
 }
 
@@ -63,28 +64,60 @@ async function readJsonBody(req: WebToolsHttpRequest): Promise<unknown> {
 }
 
 /**
- * Configuration-plane fence: LOOPBACK ONLY. Unlike the general /api gateway,
- * these routes mutate settings and credentials — DSH treats that plane as
- * privileged and `trustedHosts` is NOT authentication. A LAN host reaching
- * this DSH instance must NOT be able to read or write provider config/keys.
+ * Configuration-plane fence: LOOPBACK ONLY + same-origin.
  *
- * Also rejects cross-site browser requests via Sec-Fetch-Site when the header
- * is present (defense against DNS-rebinding / cross-site POST).
+ * Unlike the general /api gateway, these routes mutate settings and
+ * credentials — DSH treats that plane as privileged and `trustedHosts` is NOT
+ * authentication. A LAN host reaching this DSH instance must NOT be able to
+ * read or write provider config/keys.
+ *
+ * Mirrors the official fence shape: the Host header is parsed as an authority
+ * (handles IPv6 `[::1]:port`), and when an Origin header is present its host
+ * must match the request Host (DNS-rebinding defense). Sec-Fetch-Site:
+ * cross-site is additionally rejected when the browser declares it.
  */
+
+/** Parse the Host header as an authority; returns hostname (lowercased) or "". */
+function authorityHost(hostHeader: string | string[] | undefined): string {
+  if (typeof hostHeader !== "string") return "";
+  try {
+    return new URL(`http://${hostHeader}`).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isLoopbackHost(host: string): boolean {
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]") return true;
+  // IPv4 loopback range 127.0.0.0/8
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  return v4 !== null && Number(v4[1]) === 127;
+}
+
 function isLoopback(req: WebToolsHttpRequest): boolean {
-  const hostHeader = req.headers?.host;
-  const host = typeof hostHeader === "string" ? hostHeader.split(":")[0].toLowerCase() : "";
-  if (host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]") return true;
-  // IPv4 loopback range (127.0.0.0/8) and IPv6 ::1 are covered above; any
-  // other host (LAN IP, tailnet name, etc.) is rejected.
-  return false;
+  return isLoopbackHost(authorityHost(req.headers?.host));
+}
+
+/**
+ * Same-origin check: when an Origin header is present, its host must equal
+ * the request Host. Absent Origin → allowed (typed navigation / non-browser).
+ */
+function isSameOrigin(req: WebToolsHttpRequest): boolean {
+  const origin = req.headers?.["origin"];
+  if (typeof origin !== "string" || origin.length === 0) return true;
+  try {
+    const originHost = new URL(origin).hostname.toLowerCase();
+    const requestHost = authorityHost(req.headers?.host);
+    return originHost === requestHost;
+  } catch {
+    return false;
+  }
 }
 
 /** Reject cross-site browser requests when the browser declares a site. */
-function isSameOriginOrUnspecified(req: WebToolsHttpRequest): boolean {
+function isNotCrossSite(req: WebToolsHttpRequest): boolean {
   const site = req.headers?.["sec-fetch-site"];
   if (typeof site !== "string" || site.length === 0) return true;
-  // allowed: same-origin, same-site, none (typed/direct navigation); never cross-site
   return site !== "cross-site";
 }
 
@@ -92,14 +125,14 @@ function isSameOriginOrUnspecified(req: WebToolsHttpRequest): boolean {
 // endpoint implementations
 // ---------------------------------------------------------------------------
 
-async function handleConfigGet(deps: RouteDeps) {
+async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const cfg = deps.readConfig();
   const enabled = cfg.enabled !== false;
   const defaultProvider = (cfg.defaultProvider as string) ?? "tavily";
   const enabledMap = (cfg.providerEnabled as Record<string, boolean>) ?? {};
   const baseUrls = (cfg.providerBaseUrls as Record<string, string>) ?? {};
 
-  const providers = [];
+  const providers: ProviderView[] = [];
   for (const meta of PROVIDER_LIST) {
     const ref = credRefOf(meta.name);
     const cred = await deps.readCredential(ref);
@@ -169,9 +202,9 @@ async function handleTestProvider(deps: RouteDeps, payload: unknown) {
 }
 
 async function handleTestSearch(deps: RouteDeps, payload: unknown) {
-  const p = (payload ?? {}) as { query?: string; provider?: string };
+  const p = (payload ?? {}) as { query?: string };
   if (!p.query || !p.query.trim()) throw new Error("missing query");
-  return deps.testFullSearch(p.query, p.provider);
+  return deps.testFullSearch(p.query);
 }
 
 async function handleQuotaDescribe(deps: RouteDeps) {
@@ -199,7 +232,7 @@ export function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => voi
     path: API_PREFIX,
     handler: async (req, res) => {
       // Configuration plane: loopback-only + same-origin, never trustedHosts.
-      if (!isLoopback(req) || !isSameOriginOrUnspecified(req)) {
+      if (!isLoopback(req) || !isSameOrigin(req) || !isNotCrossSite(req)) {
         writeError(res, 403, "forbidden", "forbidden");
         return;
       }

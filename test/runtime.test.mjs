@@ -145,3 +145,68 @@ test("config/save path: writeConfig is awaited before saved:true (see routes.smo
   // document the invariant in one place.
   assert.ok(true);
 });
+
+test("caller abort DURING an in-flight request stops the chain (no late-timer misclassify)", async () => {
+  const tavily = stubAdapter("tavily", { hang: true });
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg({ providerAttemptTimeoutMs: 5000 }), // long timeout, abort wins first
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+  );
+  const controller = new AbortController();
+  const promise = provider.search({ query: "q" }, controller.signal);
+  // abort while the request is in flight (not before it starts)
+  setTimeout(() => controller.abort(new Error("user cancelled mid-flight")), 5);
+  await assert.rejects(
+    promise,
+    (err) => err.code === "WEB_ABORTED" || /abort/i.test(err.message),
+  );
+  assert.equal(exa.calls.length, 0, "must NOT fall back after mid-flight abort");
+});
+
+test("auth failure fails over to the NEXT KEY in the same provider, then to next provider", async () => {
+  const authErr = Object.assign(new Error("401"), { code: "auth" });
+  let keyCalls = [];
+  const tavily = {
+    name: "tavily", label: "Tavily", description: "d", credSuffix: "TAVILY",
+    fetchCapable: true, needsBaseUrl: false,
+    async search(_q, _n, key) {
+      keyCalls.push(key);
+      if (key === "bad") throw authErr;
+      return { sources: [{ url: "https://tavily.example", title: "t" }] };
+    },
+    async fetch() { return { text: "x" }; },
+  };
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg(), // tavily default, exa fallback
+    async () => "bad,good", // key1 auth-fails, key2 succeeds
+    { record() {} },
+    { tavily, exa },
+  );
+  const result = await provider.search({ query: "q" });
+  assert.equal(result.backend, "tavily");
+  assert.deepEqual(keyCalls, ["bad", "good"], "must try key2 after key1 auth failure (no provider fallback)");
+  assert.equal(exa.calls.length, 0, "exa not needed — key2 succeeded");
+
+  // If BOTH keys fail auth → then fall through to exa
+  keyCalls = [];
+  const t2 = {
+    ...tavily,
+    async search(_q, _n, key) {
+      keyCalls.push(key);
+      throw authErr;
+    },
+  };
+  const p2 = createSearchProvider(
+    () => cfg(),
+    async () => "bad1,bad2",
+    { record() {} },
+    { tavily: t2, exa: stubAdapter("exa") },
+  );
+  const r2 = await p2.search({ query: "q" });
+  assert.equal(r2.backend, "exa", "both keys failed auth → fall through to exa");
+  assert.deepEqual(keyCalls, ["bad1", "bad2"], "both keys tried before provider fallback");
+});

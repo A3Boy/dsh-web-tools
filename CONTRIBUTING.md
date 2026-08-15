@@ -17,10 +17,10 @@ npx tsc -p tsconfig.json --noEmit
 npx tsc -p tsconfig.client.json --noEmit
 # build to lib/
 npx tsc -p tsconfig.build.json
-# unit tests
-node --experimental-strip-types --test src/host/logic.test.ts
-# route smoke test
-node --experimental-strip-types test/routes.smoke.mjs
+# full test suite (unit + route smoke + runtime invariants)
+npm test
+# route smoke only
+npm run smoke
 ```
 
 ## Adding a new provider
@@ -33,8 +33,11 @@ node --experimental-strip-types test/routes.smoke.mjs
    only when it is an official API; otherwise use `best_effort_api` /
    `local_estimate` / `dashboard` and never let quota failure break search.
 3. Register it in `src/host/providers/index.ts` (`PROVIDERS` map + `PROVIDER_LIST`).
-4. Classify HTTP failures with the right `code` (`auth`, `rate-limit`,
-   `timeout`, `server`, `network`, `bad-request`) so fallback behaves correctly.
+4. Classify HTTP failures through the shared `classifyHttpStatus()` /
+   `throwIfHttp(label, res)` helpers (in `types.ts`) — never hand-roll a
+   per-adapter mapping. The `ProviderErrorCode` union is closed:
+   `auth | quota | bad-request | rate-limit | timeout | server | network |
+   config | aborted | invalid-response`.
 5. Add a real-search verification (like the ones documented in the README) and
    unit tests for any parsing logic.
 

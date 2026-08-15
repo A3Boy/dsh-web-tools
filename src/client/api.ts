@@ -46,67 +46,19 @@ export async function call<T>(method: string, payload?: unknown): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// typed endpoint wrappers
+// typed endpoint wrappers (wire types shared with the Host — see shared/api-types)
 // ---------------------------------------------------------------------------
 
-export interface ProviderView {
-  name: string;
-  label: string;
-  description: string;
-  enabled: boolean;
-  baseUrl?: string;
-  credRef: string;
-  keyConfigured: boolean;
-  keyWritable: boolean;
-  keyHint?: string;
-  poolSize: number;
-  pool: Array<{ hint: string; uses: number; healthy: boolean }>;
-}
+import type { ConfigView, CredentialsView, QuotaDescribeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
 
-export interface ConfigView {
-  enabled: boolean;
-  defaultProvider: string;
-  providerAttemptTimeoutMs: number;
-  fallbackOrder: string[];
-  providers: ProviderView[];
-}
-
-export interface QuotaView {
-  supported: boolean;
-  authoritative: boolean;
-  unit: string;
-  remaining?: number;
-  limit?: number;
-  resetAt?: string;
-  breakdown?: Record<string, number>;
-  source: string;
-  note?: string;
-}
-
-export interface TestSearchView {
-  ok: boolean;
-  backend?: string;
-  latencyMs?: number;
-  resultCount?: number;
-  results?: Array<{ title: string; url: string; snippet: string }>;
-  attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }>;
-  error?: { code: string; message: string };
-}
-
-export interface TestProviderView {
-  ok: boolean;
-  latencyMs?: number;
-  resultCount?: number;
-  title?: string;
-  error?: { code: string; message: string };
-}
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
   configSave: (payload: Record<string, unknown>) => call<{ saved: true }>("config/save", payload),
-  credentialsDescribe: () => call<{ credentials: Record<string, { configured: boolean; source?: string; writable: boolean }> }>("credentials/describe"),
+  credentialsDescribe: () => call<CredentialsView>("credentials/describe"),
   credentialsSet: (provider: string, value: string) => call<{ configured: boolean; poolSize: number }>("credentials/set", { provider, value }),
   testProvider: (provider: string, query?: string) => call<TestProviderView>("test/provider", { provider, query }),
-  testSearch: (query: string, provider?: string) => call<TestSearchView>("test/search", { query, provider }),
-  quotaDescribe: () => call<{ quotas: Record<string, QuotaView> }>("quota/describe"),
+  testSearch: (query: string) => call<TestSearchView>("test/search", { query }),
+  quotaDescribe: () => call<QuotaDescribeView>("quota/describe"),
 };

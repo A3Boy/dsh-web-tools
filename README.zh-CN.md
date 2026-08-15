@@ -133,7 +133,9 @@ Tavily → Exa → Brave → SearXNG
 Settings → Plugins → Plugin configuration → dsh-web-tools
 ```
 
-管理：启用开关、默认 Provider、fallback 顺序、结果数、超时、Provider 启用/禁用、API Key / 凭据池、Base URL、连接测试、Quota 状态、Test Search。
+管理：启用开关、默认 Provider、fallback 顺序、单 Provider 超时、Provider 启用/禁用、API Key / 凭据池、Base URL、连接测试、Quota 状态、Test Search。
+
+> 搜索结果数量由 DSH 工具层（`web_search`）控制，插件不覆盖。整体搜索超时也由 DSH 工具层控制；设置页的"单 Provider 超时"指单个搜索源最多等待多久，超时后切换下一家。
 
 <!-- 截图：Provider 配置 / Test Search -->
 <!-- ![Provider Settings](assets/settings-providers.png) -->
@@ -152,7 +154,7 @@ Tavily
 └── Key C
 ```
 
-多个 Key 按 **least-used-first** 选择；失败的 Key 标记 unhealthy 暂时跳过；全部不可用时重置健康状态。Key 用逗号/空格/换行/分号分隔。
+多个 Key 按 **least-used-first** 选择。**只有认证失败（401/403）会把 Key 标记为 unhealthy**，且保持到凭据内容变化；429/5xx/网络/超时是 Provider 侧问题，Key 保持健康。认证失败会在同一 Provider 内自动尝试下一把 Key，全部失败才切换 Provider。Key 用逗号/空格/换行/分号分隔。
 
 凭据池用于团队 Key、不同 Workspace、Key rollover、环境隔离等正常场景，不用于绕过 Provider 限制。
 
@@ -160,19 +162,19 @@ Tavily
 
 不同 Provider 单位不同（credits / requests / tokens / USD / self-hosted），插件不强行换算成百分比。
 
-Quota 分为 **authoritative** 和 **best-effort** 两类。只有 Provider 官方返回的额度参与"额度耗尽"判断；best-effort 或本地估算不参与。
+Quota 分为 **authoritative** 和 **best-effort** 两类，用于设置页展示。**Quota 不参与搜索路由**——搜索失败由真实请求错误（402/429 等）触发 fallback。
 
 | Provider | 数据来源 | 状态 |
 | --- | --- | --- |
 | Tavily | 官方 `/usage` | ✅ 已实现 |
 | Firecrawl | 官方 `/v2/team/credit-usage` | ✅ 已实现 |
 | You.com | 官方 Account Balance API | ✅ 已实现 |
-| Exa | Team Management usage / key budget | Adapter 已有，设置 UI 待补 |
+| Exa | 无公开余额 API | 本地估算（非权威） |
 | Brave | `X-RateLimit-*` 响应头 | 解析已有，完整展示待补 |
 | Jina | Reader 余额信息 | Best-effort |
 | SearXNG | 无平台额度 | Self-hosted |
 
-额度查询失败只影响展示，不影响搜索。
+多 Key 池的 Provider（如 Tavily）只查询池中第一把 Key 的额度，设置页会标注"显示第 1 把 Key 的额度"。额度查询失败只影响展示，不影响搜索；结果缓存 5 分钟，不轮询。
 
 ## Search & Fetch
 
@@ -182,7 +184,7 @@ web_search → 候选 URL → web_fetch → 读取正文
 
 Tavily、Exa、Firecrawl、Jina 使用各自原生内容获取能力；Brave、You.com、SearXNG 主要作 Search 使用。
 
-> **当前限制**：`web_fetch` 按搜索优先级逐个尝试具备 Fetch 能力的 Provider（不再只走默认 Provider），但不会沿用 `web_search` 本次实际命中的 Provider。
+> **说明**：`web_fetch` 按搜索优先级逐个尝试具备 Fetch 能力的 Provider，但**不沿用 `web_search` 本次实际命中的 Provider**，也不保证返回目标网页的真实 HTTP status/final URL（Provider 原生 extract 通常直接给正文）。需要严格 Fetch 语义（真实 status/重定向/截断）时，可依赖 DSH 官方 HTTP Fetch，而用本插件 Provider 的 extract 增强正文。
 
 ## Security & Privacy
 
@@ -196,8 +198,8 @@ Tavily、Exa、Firecrawl、Jina 使用各自原生内容获取能力；Brave、Y
 ## Compatibility / Limitations
 
 * 针对 DeepSeek Harness `0.1.0-rc.6` 开发测试；DSH 仍处 developer preview，可能有不兼容变更。
-* 设置 UI 的完整 fallback 顺序编辑仍待完善（Host 已支持完整顺序）。
-* Exa Team Management usage 设置页待补；Brave quota 完整展示待接入。
+* Brave quota 完整展示待接入（响应头解析已有）。
+* `web_fetch` 不保证真实 HTTP status/final URL 语义（见 Search & Fetch 说明）。
 * SearXNG 质量取决于实例及其启用的上游引擎。
 * 免费额度/价格来自上游，可能变动。
 
@@ -271,10 +273,10 @@ Provider Adapter 位于 `src/host/providers/`。新增 Provider 实现 `Provider
 
 ## Roadmap
 
-* 完整搜索优先级排序 UI
-* Exa Team Management usage 设置 / Brave quota 展示
+* Brave quota 完整展示（响应头解析已有）
 * Serper、Parallel（OAuth）、Perplexity Provider
 * Provider 实际搜索对比、用量历史
+* 可选：`web_fetch` 回归 DSH 官方 HTTP Fetch 语义
 
 ## 让编码 Agent 安装
 

@@ -146,9 +146,14 @@ Configuration entry:
 Settings → Plugins → Plugin configuration → dsh-web-tools
 ```
 
-Manages: enable toggle, default provider, fallback order, max results, timeout,
+Manages: enable toggle, default provider, fallback order, per-attempt timeout,
 provider enable/disable, API keys / credential pools, base URLs, connection
 tests, quota state, test search.
+
+> Result count and the overall search timeout are owned by the DSH tool layer
+> (`web_search`); the plugin does not override them. The settings page's
+> per-attempt timeout is how long a single provider may run before the plugin
+> aborts it and tries the next one.
 
 <!-- Screenshots: provider config / test search -->
 <!-- ![Provider Settings](assets/settings-providers.png) -->
@@ -179,19 +184,23 @@ rollover, environment isolation) — not for bypassing provider limits.
 Providers use different units (credits / requests / tokens / USD /
 self-hosted); the plugin does not force them into one percentage.
 
-Quota is split into **authoritative** and **best-effort**. Only provider-
-returned authoritative quota participates in "exhausted" routing decisions;
-best-effort or local estimates never do.
+Quota is split into **authoritative** and **best-effort** for display in the
+settings page. **Quota does not drive search routing** — fallback is triggered
+by real request failures (402 / 429, etc.).
 
 | Provider | Data source | Status |
 | --- | --- | --- |
 | Tavily | Official `/usage` | ✅ implemented |
 | Firecrawl | Official `/v2/team/credit-usage` | ✅ implemented |
 | You.com | Official Account Balance API | ✅ implemented |
-| Exa | Team Management usage / key budget | adapter ready, UI pending |
+| Exa | no public balance API | local estimate (non-authoritative) |
 | Brave | `X-RateLimit-*` headers | parsing ready, full display pending |
 | Jina | Reader balance info | best-effort |
 | SearXNG | no platform quota | self-hosted |
+
+For multi-key pools, quota queries the FIRST key in the pool; the settings
+page marks it as such. Quota failures only affect display; results are cached
+5 minutes (no polling).
 
 A quota lookup failure only affects display — never search.
 
@@ -204,9 +213,12 @@ web_search → candidate URLs → web_fetch → read page content
 Tavily, Exa, Firecrawl, and Jina use their native content-fetch capabilities;
 Brave, You.com, and SearXNG are used for search.
 
-> **Current limitation**: `web_fetch` tries fetch-capable providers in search
-> priority order (no longer only the default provider), but it does not reuse
-> the provider that `web_search` actually hit.
+> **Note**: `web_fetch` walks fetch-capable providers in search priority order,
+> but it does NOT reuse the provider that `web_search` actually hit, and it
+> does not guarantee the target page's real HTTP status / final URL (provider
+> native extract usually returns clean text). For strict Fetch semantics
+> (real status / redirects / truncation), rely on DSH's official HTTP Fetch;
+> use this plugin's provider extract for content enhancement.
 
 ## Security & Privacy
 
@@ -222,9 +234,9 @@ Brave, You.com, and SearXNG are used for search.
 
 * Developed and tested against DeepSeek Harness `0.1.0-rc.6`; DSH is a
   developer preview and may introduce breaking changes.
-* The settings UI's full fallback ordering editor is still being finished
-  (the Host already supports full ordering).
-* Exa Team Management usage settings and Brave quota display are pending.
+* Brave quota full display is pending (header parsing exists).
+* `web_fetch` does not guarantee real HTTP status / final URL semantics (see
+  Search & Fetch).
 * SearXNG quality depends on the instance and the upstream engines it enables.
 * Free tiers/pricing come from upstream and may change.
 
@@ -303,10 +315,10 @@ implementing the `ProviderAdapter` contract and registering it; provide Fetch
 
 ## Roadmap
 
-* Full search-priority ordering UI
-* Exa Team Management usage settings / Brave quota display
+* Brave quota full display (header parsing exists)
 * Serper, Parallel (OAuth), Perplexity providers
 * Real per-provider comparison and usage history
+* Optional: route `web_fetch` back to DSH's official HTTP Fetch semantics
 
 ## Install with your coding agent
 
