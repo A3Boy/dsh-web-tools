@@ -55,17 +55,18 @@ test("hintOf masks keys", () => {
   assert.ok(!h.includes("ABCDEFGHIJKLMNOP"));
 });
 
-test("classifyFailure: retryable vs non-retryable", () => {
+test("classifyFailure: retryable vs non-retryable vs terminal", () => {
   assert.equal(classifyFailure({ code: "rate-limit" }), "retryable");
   assert.equal(classifyFailure({ code: "timeout" }), "retryable");
   assert.equal(classifyFailure({ code: "server" }), "retryable");
   assert.equal(classifyFailure({ code: "network" }), "retryable");
   assert.equal(classifyFailure({ code: "unavailable" }), "retryable");
-  assert.equal(classifyFailure({ code: "aborted" }), "retryable");
   assert.equal(classifyFailure({ code: "auth" }), "retryable"); // bad key → fallback + mark unhealthy
   assert.equal(classifyFailure({ code: "bad-request" }), "non-retryable");
   assert.equal(classifyFailure({ code: "config" }), "non-retryable");
   assert.equal(classifyFailure({ code: "mystery" }), "retryable");
+  // caller cancellation terminates the whole chain — never fallback
+  assert.equal(classifyFailure({ code: "aborted" }), "terminal");
 });
 
 test("fallbackChain: dedupes and caps", () => {

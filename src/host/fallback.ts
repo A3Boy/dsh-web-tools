@@ -8,23 +8,29 @@
  *   unhealthy and the UI shows an auth error, but the search continues.
  * Non-retryable (never fall back): 400 invalid query, schema/config bugs,
  * programming errors — silently switching would hide broken configuration.
+ * Terminal: caller cancellation (aborted) — the whole chain must stop
+ * immediately, never continue to the next provider.
  * @module
  */
 
 /** Error kinds the fallback treats as retryable. */
-export const RETRYABLE = new Set(["rate-limit", "timeout", "server", "network", "unavailable", "aborted", "auth"]);
+export const RETRYABLE = new Set(["rate-limit", "timeout", "server", "network", "unavailable", "auth"]);
 
 /** Error kinds that never trigger fallback. */
 export const NON_RETRYABLE = new Set(["bad-request", "config"]);
+
+/** Error kinds that terminate the whole chain (caller cancellation). */
+export const TERMINAL = new Set(["aborted"]);
 
 /**
  * Classify a provider failure.
  * @param opts
  * @param opts.code machine code from the provider adapter.
- * @returns {"retryable"|"non-retryable"}
+ * @returns {"retryable"|"non-retryable"|"terminal"}
  */
-export function classifyFailure(opts: { code: string }): "retryable" | "non-retryable" {
+export function classifyFailure(opts: { code: string }): "retryable" | "non-retryable" | "terminal" {
   const { code } = opts;
+  if (TERMINAL.has(code)) return "terminal";
   if (RETRYABLE.has(code)) return "retryable";
   if (NON_RETRYABLE.has(code)) return "non-retryable";
   // unknown codes are treated as retryable (conservative: try the next provider)
@@ -56,7 +62,7 @@ export function fallbackChain(opts: {
 export function attemptRecord(opts: {
   provider: string;
   attempt: number;
-  outcome: "retryable" | "non-retryable" | "success";
+  outcome: "retryable" | "non-retryable" | "terminal" | "success";
   latencyMs?: number;
 }): { provider: string; attempt: number; outcome: string; latencyMs?: number } {
   const { provider, attempt, outcome, latencyMs } = opts;

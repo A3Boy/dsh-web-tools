@@ -167,8 +167,11 @@ export function createSearchProvider(
           attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
           stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
           lastError = err;
-          if (classifyFailure(err) === "non-retryable") break;
-          // fall through to the next provider in the chain
+          const decision = classifyFailure(err);
+          // Caller cancellation terminates the whole chain — never fall back.
+          if (decision === "terminal") throw toWebError(error);
+          if (decision === "non-retryable") break;
+          // retryable → fall through to the next provider in the chain
         }
       }
 
@@ -205,32 +208,61 @@ export function createFetchProvider(
     available() {
       const cfg = resolveConfig();
       if (!cfg.enabled) return false;
-      const adapter = getProvider(cfg.defaultProvider);
-      return adapter.fetchCapable;
+      const chain = fallbackChain({
+        defaultProvider: cfg.defaultProvider,
+        fallbackOrder: cfg.fallbackOrder,
+        maxFallbackProviders: cfg.maxFallbackProviders,
+      });
+      return chain.some((name) => {
+        if (cfg.enabledProviders[name] === false) return false;
+        const adapter = getProvider(name);
+        return adapter.fetchCapable;
+      });
     },
     async fetch(request: { url: string }, signal?: AbortSignal) {
       const cfg = resolveConfig();
-      const adapter = getProvider(cfg.defaultProvider);
-      if (!adapter.fetchCapable) {
-        throw new WebToolsWebError(`provider "${cfg.defaultProvider}" has no native fetch`);
+      const chain = fallbackChain({
+        defaultProvider: cfg.defaultProvider,
+        fallbackOrder: cfg.fallbackOrder,
+        maxFallbackProviders: cfg.maxFallbackProviders,
+      });
+      let lastError: ProviderError | undefined;
+
+      for (const providerName of chain) {
+        if (cfg.enabledProviders[providerName] === false) continue;
+        const adapter = getProvider(providerName);
+        if (!adapter.fetchCapable) continue; // not a fetch backend, skip
+        const entries = await refreshPool(providerName);
+        if (entries.length === 0) continue; // no credentials for this backend
+        const index = selectIndex(entries);
+        const entry = entries[index];
+        try {
+          const { text } = await withTimeout(
+            adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
+            cfg.searchTimeoutMs,
+          );
+          if (entry) markUsed(entries, index);
+          return {
+            url: request.url,
+            statusCode: 200,
+            body: { kind: "text" as const, content: text },
+            truncated: false,
+            backend: providerName,
+          };
+        } catch (error) {
+          if (entry) markUnhealthy(entries, index);
+          const err = toProviderError(error);
+          lastError = err;
+          const decision = classifyFailure(err);
+          if (decision === "terminal") throw toWebError(error);
+          if (decision === "non-retryable") break;
+          // retryable → next fetch-capable provider in the chain
+        }
       }
-      const entries = await refreshPool(cfg.defaultProvider);
-      const index = selectIndex(entries);
-      const entry = entries[index];
-      try {
-        const { text } = await withTimeout(
-          adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[cfg.defaultProvider], signal),
-          cfg.searchTimeoutMs,
-        );
-        return {
-          url: request.url,
-          statusCode: 200,
-          body: { kind: "text" as const, content: text },
-          truncated: false,
-        };
-      } catch (error) {
-        throw toWebError(error);
-      }
+      const reason = lastError
+        ? `${lastError.code}: ${lastError.message}`
+        : "no fetch-capable provider";
+      throw new WebToolsWebError(`web fetch failed: ${reason}`);
     },
   };
 }
@@ -250,7 +282,8 @@ function toProviderError(error: unknown): ProviderError {
 function toWebError(error: unknown): WebToolsWebError {
   const p = toProviderError(error);
   const err = new WebToolsWebError(p.message);
-  err.code = p.code === "auth" || p.code === "config" ? "WEB_PROVIDER_ERROR" : "WEB_PROVIDER_ERROR";
+  // preserve cancellation semantics: aborted stays aborted
+  if (p.code === "aborted") err.code = "WEB_ABORTED";
   return err;
 }
 
