@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center">
+  <img src="assets/logo.png" alt="dsh-web-tools" width="180" />
+</p>
+
 # 🔎 dsh-web-tools
 
 **One Web interface. Every search provider underneath.**
