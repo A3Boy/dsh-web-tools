@@ -4,14 +4,15 @@
   <img src="assets/logo.png" alt="dsh-web-tools" width="180" />
 </p>
 
-# 🔎 dsh-web-tools
+# dsh-web-tools
 
-**One Web interface. Every search provider underneath.**
+A multi-provider Web Search / Fetch plugin for DeepSeek Harness.
 
-`dsh-web-tools` is a unified Web Search & Fetch layer for DeepSeek Harness —
-multi-provider routing, BYOK credentials, quota awareness, health monitoring,
-deterministic fallback, and self-hosted search, all behind the native
-`web_search` / `web_fetch` tools.
+`dsh-web-tools` connects multiple search services through DSH's native
+`ctx.web` and manages providers, credentials, quota state, and fallback from a
+single settings page. The agent still uses DSH's existing `web_search` and
+`web_fetch` — it never needs to know whether the underlying service is Tavily,
+Exa, Brave, or something else.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -23,87 +24,40 @@ deterministic fallback, and self-hosted search, all behind the native
 
 </div>
 
----
+<!-- Replace with a real Settings screenshot before release -->
 
-## 🖥️ At a glance
+<!-- ![dsh-web-tools Settings](assets/settings.png) -->
 
-<!-- TODO: 截图占位 — 原生设置卡实际渲染图（Settings → Plugins → Plugin configuration） -->
-<!-- 之后在此插入真实截图，例如： ![dsh-web-tools settings](assets/settings.png) -->
+## Features
 
-| | Capability | What it solves |
-|---|---|---|
-| 🌐 | **Unified Search** | Tavily / Exa / Brave / Firecrawl / Jina / You.com / SearXNG under one provider |
-| 🔑 | **BYOK & Credential Pools** | Per-provider legitimate credentials, no shared keys |
-| 📊 | **Quota Awareness** | Official balance / usage / rate-limit / best-effort shown honestly |
-| ❤️ | **Health Monitoring** | Auth errors, rate limits, exhaustion, timeouts — tracked & surfaced |
-| 🔄 | **Deterministic Fallback** | Clear provider order on failure, no agent replanning |
-| 📖 | **Search + Fetch** | Search results → page content → full web-agent chain |
-| 🏠 | **Self-hosted** | SearXNG first-class; no commercial API required |
-| 🖥️ | **Native Settings UI** | Providers, keys, quota, fallback, test search — all in DSH settings |
+* Supports Tavily, Exa, Firecrawl, Brave, You.com, Jina, and SearXNG.
+* Exposes capabilities through DSH's native `web_search` / `web_fetch` — no
+  extra model tools like `tavily_search` or `exa_search`.
+* Configurable default search provider and an ordered fallback chain.
+* Each provider can hold multiple credentials, selected least-used-first.
+* Tracks provider/credential states: auth failure, rate limit, timeout, quota
+  exhaustion, etc.
+* Reads balance or quota info when the upstream provides an API, and marks the
+  data source.
+* Tavily, Exa, Firecrawl, and Jina support content fetching after search.
+* SearXNG can be the default source or a fallback — no commercial Search API
+  required.
+* Ships a DSH web settings card: providers, credentials, timeouts, search
+  parameters, connection tests, and test search.
 
----
+## Supported Providers
 
-## ✨ Why dsh-web-tools?
+| Provider | Search | Fetch | Quota / Usage | Notes |
+| --- | :---: | :---: | --- | --- |
+| [Tavily](https://tavily.com) | ✅ | ✅ | Official `/usage` | Agent/RAG-oriented Search, Extract, Crawl |
+| [Exa](https://exa.ai) | ✅ | ✅ | Usage / Key Budget | Semantic search; returns page text and highlights |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | Official Credit Usage | Search, Scrape, Crawl — good for reading pages after search |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | Rate-limit headers | Uses Brave's independent web index |
+| [You.com](https://you.com) | ✅ | — | Official Balance API | Web + News; many results per call |
+| [Jina](https://jina.ai) | ✅ | ✅ | Best-effort token balance | Search + Reader; turns pages into LLM-friendly text |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | No platform quota | Self-hosted meta search |
 
-DeepSeek Harness already ships a native Web capability (`ctx.web`) and several
-search providers. But each provider's credentials, quota, health, routing, and
-configuration remain independent — *you* manage the differences:
-
-```text
-Without dsh-web-tools
-
-DSH
-├── DeepSeek provider
-├── Exa provider
-├── Perplexity provider
-├── Firecrawl community provider
-└── ...
-        ↓
-you manage config, keys, state, and switching yourself
-```
-
-```text
-With dsh-web-tools
-
-DSH Agent
-   │
-web_search / web_fetch
-   │
-dsh-web-tools
-   │
-├── Routing
-├── Credential Pool
-├── Quota
-├── Health
-├── Fallback
-└── Diagnostics
-        │
-   ┌────┼────┬─────┬─────┐
- Tavily Exa Brave Firecrawl ...
-```
-
-`dsh-web-tools` is a **Web Provider orchestration layer** — not another
-search plugin.
-
----
-
-## 🔌 Supported Providers
-
-| Provider | Search | Fetch | Quota | Quota source | Self-hosted |
-| --- | :---: | :---: | :---: | --- | :---: |
-| [Tavily](https://tavily.com) | ✅ | ✅ | ✅ | Official `/usage` | — |
-| [Exa](https://exa.ai) | ✅ | ✅ | ⚠️ | Usage / Key Budget | — |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | ✅ | Official Credit Usage | ⚠️ |
-| [Brave](https://search.brave.com) | ✅ | — | ✅ | Rate-limit headers | — |
-| [You.com](https://you.com) | ✅ | — | ✅ | Official Balance API | — |
-| [Jina](https://jina.ai) | ✅ | ✅ | ⚠️ | Best-effort token balance | — |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | ∞ | No provider quota | ✅ |
-
-> Quota information never participates in search correctness. If quota
-> detection fails, search remains available.
-
-Planned: Serper · Parallel · Perplexity · more community providers (see
-[Provider development](#-provider-development)).
+Planned: Serper, Parallel, Perplexity.
 
 ### Provider characteristics at a glance
 
@@ -116,7 +70,7 @@ Planned: Serper · Parallel · Perplexity · more community providers (see
 | **Billing** | credits (Basic=1) | per request ($7/1k) | 2 credits per 10 results | per request ($5/1k) | per call ($5/1k) | per token | none |
 | **Best for** | ⭐ general default | 🧠 research / semantic | 📖 read pages after search | 🌐 general realtime | 💰 large free experiments | 📄 web → LLM text | 🏠 permanent fallback / private |
 
-Notes:
+Notes ⚠️:
 
 - **Tavily / Exa / Firecrawl / Jina** all carry content-fetch capabilities —
   `web_search` finds URLs, then `web_fetch` reads the page.
@@ -127,350 +81,476 @@ Notes:
   unlimited — availability depends on instance config, network, and engines.
 - Free tiers and prices follow each provider's site and may change.
 
----
+## Free tier reference
 
-## 🆓 Free tiers & when to use each
+Compiled from official pages as of **2026-08-16**. Free plans and prices may
+change — always check each provider's site.
 
-Official free allowances as of 2026-08 — combine them instead of betting on a
-single provider:
+| Provider | Current free allowance | Type |
+| --- | --- | --- |
+| Tavily | 1,000 credits / month | monthly refresh |
+| Exa | $20 signup credits; then $10 / month | signup + monthly refresh |
+| Firecrawl | 1,000 credits / month; Pricing also lists +1,000 search credits | monthly refresh |
+| Brave Search | $5 credits / month, ~1,000 searches | monthly refresh |
+| You.com | $100 credits for new accounts | one-time |
+| Jina | 10M tokens for new users | one-time |
+| SearXNG | No platform quota | self-hosted |
 
-| Provider | Free allowance | Period | Best for |
-|---|---|---|---|
-| **Tavily** | 1,000 credits | ♻️ monthly | ⭐ default agent search |
-| **Exa** | $20 signup + $10 | ♻️ $10/mo | 🧠 semantic / research |
-| **Firecrawl** | 1,000 credits + 1,000 search credits | ♻️ monthly | 📖 search + scrape |
-| **Brave** | $5 ≈ 1,000 searches | ♻️ monthly | 🌐 general independent index |
-| **You.com** | **$100** | 🎁 one-time | 💰 large-scale experiments |
-| **Jina** | **10M tokens** | 🎁 one-time | 📄 search + reader |
-| **SearXNG** | no platform quota | ♾️ self-hosted | 🏠 permanent fallback |
+If you are unsure where to start, begin with Tavily or Exa; add Brave for
+traditional web coverage, and Firecrawl or Jina when you need to keep reading
+pages. SearXNG fits as a self-hosted option or a last-resort fallback.
 
-> **Don't bet on one search provider.** Combine each one's free allowance,
-> search character, and self-hosted option so `web_search` keeps working when
-> a single provider runs out.
+## Provider priority & fallback
 
-Suggested default orderings (also usable as fallback presets):
-
-- **General agent**: `Tavily → Exa → Brave → SearXNG`
-- **Deep page reading**: Tavily / Exa search → Firecrawl / Jina fetch
-- **Maximize free quota**: `You.com → Exa → Tavily → Brave → Firecrawl → SearXNG`
-
----
-
-## 📊 Quota awareness — official when possible, honest when not
-
-Different engines have completely different quota semantics. `dsh-web-tools`
-shows each honestly instead of faking a uniform "percentage left":
+The Host decides the attempt order for one search from:
 
 ```text
-Tavily        823 / 1,000 credits        Official
-Firecrawl     711 / 1,000 credits        Official · Reset Sep 1
-Brave         943 requests remaining     Response Header · Updated 3 min ago
-Jina          8.2M tokens left           Best effort
-Exa           $3.82 used this month      Account balance unavailable
-SearXNG       Self-hosted                No provider quota
+defaultProvider
+fallbackOrder[]
+maxFallbackProviders
 ```
 
-- **Official when possible**: Tavily `/usage`, Firecrawl credit-usage,
-  You.com balance, Brave rate-limit headers (captured on every search — zero
-  extra requests).
-- **Honest when not**: Exa usage needs Team Management credentials; Jina is a
-  best-effort parse; unsupported providers show `Unavailable`, never a guess.
-- **Quota is observability, not a search dependency** — a quota failure never
-  breaks a search. Quota-aware routing only *skips* providers confirmed
-  exhausted with authoritative data.
+For example:
 
----
+```text
+Tavily → Exa → Brave → SearXNG
+```
 
-## 🔑 BYOK + Credential Pools
+After a Tavily request fails, only errors classified as recoverable move on to
+the next provider.
 
-No shared keys — **Bring Your Own Key**. Each provider can hold multiple
-legitimate credentials, selected **least-used-first**; failed credentials are
-auto-degraded with health state.
+Currently fallback is triggered by:
+
+```text
+401 / 403
+408
+429
+5xx
+network error
+request timeout
+provider unavailable
+request cancelled
+```
+
+A credential that fails authentication is marked unhealthy while the search
+continues to the next provider.
+
+These errors do NOT switch providers:
+
+```text
+400 bad request
+local configuration error
+```
+
+Unknown provider errors currently try the next provider.
+
+Each search records the providers actually attempted, result states, and
+latency, so issues can be diagnosed from the settings page or logs.
+
+### Sorting in the settings page
+
+The Host already supports a full ordered `fallbackOrder`.
+
+The current settings card can change the default provider and fallback config;
+a complete ordered-sorting interaction is still being finished. The plan is to
+let the settings page edit the whole search priority directly, instead of only
+adjusting the first fallback entry.
+
+Internal config stays:
+
+```text
+defaultProvider + fallbackOrder
+```
+
+UI changes never alter the Host's routing contract.
+
+## Credential pools
+
+Each provider can hold multiple API keys.
 
 ```text
 Tavily
- ├─ Key A
- ├─ Key B
- └─ Key C
+├── Key A
+├── Key B
+└── Key C
 ```
 
-For: team workspaces · multiple legitimate API keys · key rollover ·
-separate environments · BYOK · credential fault isolation · key rotation.
+The current selection policy is **least-used-first**:
 
-> Credential Pools serve legitimate multi-key scenarios — not quota evasion.
+1. Pick the healthy credential with the fewest uses.
+2. Ties break by configured order.
+3. A key that fails a call is marked unhealthy and temporarily skipped.
+4. When every key in the pool is unavailable, health resets so later requests
+   can retry.
 
----
+Credential values can be separated by commas, whitespace, newlines, or
+semicolons.
 
-## 🔄 Deterministic fallback
+Credential pools are for legitimate multi-credential scenarios (team keys,
+different workspaces, key rollover, environment isolation) — not for bypassing
+a provider's account or service limits.
+
+## Quota tracking
+
+Different providers use different quota units, so the plugin does not force
+them into one fake percentage.
+
+Possible types:
 
 ```text
-Tavily
-  │
-  └─ HTTP 429
-       ↓
-      Exa
-       │
-       └─ timeout
-            ↓
-           Brave
-            │
-            └─ 5 results
-                 ↓
-            web_search success
+credits
+requests
+tokens
+USD
+self-hosted
 ```
 
-<!-- TODO: 截图占位 — fallback 实际发生的界面/日志状态 -->
-<!-- 之后在此插入真实截图，例如： ![fallback in action](assets/fallback.png) -->
+The implementation distinguishes authoritative from non-authoritative data.
+Only provider-returned authoritative quota may drive the router's
+"exhausted" decision; best-effort or local estimates never do.
 
-**Provider failure does not have to become Agent failure.**
+| Provider | Data source | Current status |
+| --- | --- | --- |
+| Tavily | Official `/usage` | implemented |
+| Firecrawl | Official `/v2/team/credit-usage` | implemented |
+| You.com | Official Account Balance API | implemented |
+| Exa | Team Management usage / key budget | adapter present, settings UI in progress |
+| Brave | `X-RateLimit-*` in search responses | header parsing present, full quota display in progress |
+| Jina | balance info in Reader responses | best-effort |
+| SearXNG | no platform quota | self-hosted |
 
-Fallback triggers on recoverable failures: 408 / 429 / 5xx · network ·
-timeout · provider unavailable · confirmed-bad credential · authoritatively
-exhausted quota. No fallback on 400 / config errors. Deterministic order,
-transparent to the agent — no extra tool calls, no replanning.
+A quota lookup failure only affects the status display — it never affects a
+provider's Search capability.
 
----
+## Search & Fetch
 
-## 📖 Search + Fetch
-
-The full web-agent chain works end to end:
+The agent side still uses:
 
 ```text
-web_search  →  candidate URLs  →  web_fetch  →  page content  →  answer
+web_search
+web_fetch
 ```
 
-Providers with native extract capabilities (Tavily, Exa, Firecrawl, Jina) use
-them; others fall through cleanly.
-
----
-
-## 🖥️ Settings UI & Test Search
-
-Everything is configured in DSH's native settings — no YAML, no `.env`:
+Typical flow:
 
 ```text
-Settings → Plugins → Plugin configuration → dsh-web-tools
+web_search
+    ↓
+candidate URLs
+    ↓
+web_fetch
+    ↓
+read page content
 ```
 
-- Default provider · fallback order · max results · timeout
-- Per-provider enable/disable, API keys, multi-credential pools, base URL
-- **Test connection** per provider (real minimal request; distinguishes
-  401 / 429 / timeout)
-- **Test Search** — run a real query, see the actual provider, latency, and
-  results, without opening an agent conversation
+Today the Tavily, Exa, Firecrawl, and Jina adapters can use their native
+content-fetch capabilities. Brave, You.com, and SearXNG are currently used as
+search providers.
 
----
+## Settings page
 
-## 🏠 Self-hosted, first-class
-
-SearXNG is a first-class provider, not a temporary fallback:
-
-- As a fallback behind cloud search: `Tavily → Exa → Brave → SearXNG`
-- Or **purely self-hosted**: no commercial search API at all
-
-For privacy-first, local, homelab, and enterprise-network setups.
-
----
-
-## 🚀 Quick Start
-
-```bash
-dsh plugin --profile web add dsh-web-tools
-```
+After installing into the `web` profile, the configuration entry is:
 
 ```text
-Restart dsh web
-→ Settings
+Settings
 → Plugins
+→ Plugin configuration
 → dsh-web-tools
 ```
 
-That's it. Source install / junction / peer-dependency notes live in
-[Development](#-development) and
-[Troubleshooting](#troubleshooting).
+The settings card currently manages:
 
----
+* plugin enable state
+* default provider
+* fallback config
+* max results
+* search timeout
+* provider enable / disable
+* API keys / credential pools
+* provider base URLs
+* provider connection tests
+* quota status
+* test search
 
-## 🏗️ Architecture
+Test Search runs a real search and returns the actual provider used, latency,
+and results — no agent session needed.
 
-```
-DSH Agent
-   ↓   only sees web_search / web_fetch
-dsh-tool-web (official tools, re-enabled by this plugin)
-   ↓
-ctx.web (searchProvider: dsh-web-tools)
-   ↓
-dsh-web-tools SearchHubProvider
-   ├── Router    deterministic fallback + quota-aware skip
-   ├── Pools     per-engine credential rotation (least-used-first)
-   ├── Quota     official / response-header / best-effort / local estimate
-   ├── Health    runtime credential & provider state
-   └── Providers Tavily · Exa · Firecrawl · Brave · You.com · Jina · SearXNG
-```
+<!-- Consider adding two real screenshots:
+![Provider Settings](assets/settings-providers.png)
+![Test Search](assets/test-search.png)
+-->
 
-```
-Settings card (client)
-   ↓ fetch /web-tools/api/* (fenced, loopback only)
-Host routes (config/save · credentials/set · test/* · quota/describe)
-   ↓
-ctx.settings (dsh-web-tools namespace, non-secret config)
-ctx.credentials (WEB_TOOLS_<PROVIDER>, credential pools)
+## SearXNG
+
+Once SearXNG is configured, place it anywhere in the search priority:
+
+```text
+Tavily → Exa → Brave → SearXNG
 ```
 
----
+Or configure only SearXNG and skip commercial search providers entirely.
 
-## 🛡️ Security & Privacy
+This suits local deployments, homelabs, enterprise intranets, or environments
+that want to control their own search infrastructure.
 
-- Credentials are resolved on the **DSH Host**.
-- Full API keys are **never returned to the browser** — only
-  `configured` / masked state.
-- Logs and test responses mask credential material.
-- **No usage telemetry** is sent to dsh-web-tools or anywhere else.
-- No shared keys, no mandatory proxy server.
-- Configuration writes are restricted to the **local configuration plane**
-  (loopback fence).
-- SearXNG can be used without any commercial search provider.
+## Install
 
----
-
-## ✅ Verified
-
-| Area | Status |
-|---|---|
-| Host typecheck | ✅ |
-| Client typecheck | ✅ |
-| Unit tests (pool / fallback / Jina balance / Brave headers) | ✅ 12 passing |
-| Route smoke (config · credentials-no-leak · quota · test · fence 403) | ✅ |
-| Tavily real search + official quota | ✅ |
-| Exa real search (2 keys) + credential-pool rotation | ✅ |
-| Firecrawl real search + scrape + official quota | ✅ |
-| Web profile installation (`dsh --dump-config`) | ✅ |
-| Non-loopback config write rejected | ✅ |
-
-Run locally: see [Development](#-development).
-
----
-
-## ⚙️ Configuration
-
-Credential refs (comma-separated values → credential pool):
-
-| Provider | Credential ref | Notes |
-|---|---|---|
-| Tavily | `WEB_TOOLS_TAVILY` | comma-separated keys |
-| Exa | `WEB_TOOLS_EXA` | highlights mode |
-| Firecrawl | `WEB_TOOLS_FIRECRAWL` | /search + /scrape |
-| Brave | `WEB_TOOLS_BRAVE` | X-Subscription-Token |
-| You.com | `WEB_TOOLS_YOU` | USD balance |
-| Jina | `WEB_TOOLS_JINA` | s.jina.ai + r.jina.ai |
-| SearXNG | `WEB_TOOLS_SEARXNG` | baseUrl (self-hosted) |
-
-Settings namespace: `dsh-web-tools` (enabled, defaultProvider, maxResults,
-searchTimeoutMs, fallbackOrder, maxFallbackProviders, providerBaseUrls,
-providerEnabled).
-
----
-
-## 🧱 Design boundaries
-
-`dsh-web-tools` is **not**:
-
-- a new Agent
-- a Web Search planner
-- an MCP proxy
-- an AI provider selector
-- a hosted search gateway
-- a shared API-key service
-- a replacement for DSH `web_search` / `web_fetch`
-
-It is a **provider orchestration layer** behind DSH's native Web capability.
-
----
-
-## 📦 Install / Update / Remove
+The repo can be installed directly from GitHub:
 
 ```bash
-# install
-dsh plugin --profile web add dsh-web-tools
+dsh plugin --profile web add github:A3Boy/dsh-web-tools
+```
 
-# update
+After installing, restart the running `dsh web`, then open the plugin settings
+page to configure providers.
+
+Check the composed profile:
+
+```bash
+dsh --profile web --dump-config
+```
+
+Update:
+
+```bash
 dsh plugin --profile web update dsh-web-tools
+```
 
-# remove
+Remove:
+
+```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
 
-Removing the plugin removes its runtime and UI integration **without modifying
-DSH core** — no leftover prompts, tool definitions, or global hooks.
+The plugin integrates as a DSH profile bundle — no DeepSeek Harness core
+changes required.
 
----
+> If an npm package is published later, the npm install command becomes the
+> default while keeping the GitHub install path.
 
-## 🤖 Install with your coding agent
+## Configuration
 
-Copy this to Codex / Claude Code / any coding agent:
+Sensitive credentials are stored by DSH Credentials.
+
+Current credential refs:
+
+| Provider | Credential ref | Notes |
+| --- | --- | --- |
+| Tavily | `WEB_TOOLS_TAVILY` | multiple keys supported |
+| Exa | `WEB_TOOLS_EXA` | multiple keys supported |
+| Firecrawl | `WEB_TOOLS_FIRECRAWL` | Search + Scrape |
+| Brave | `WEB_TOOLS_BRAVE` | `X-Subscription-Token` |
+| You.com | `WEB_TOOLS_YOU` | Search + Balance |
+| Jina | `WEB_TOOLS_JINA` | Search + Reader |
+| SearXNG | `WEB_TOOLS_SEARXNG` | self-hosted config |
+
+Non-sensitive config lives in the `dsh-web-tools` settings namespace.
+
+Main keys:
+
+```text
+enabled
+defaultProvider
+fallbackOrder
+maxFallbackProviders
+maxResults
+searchTimeoutMs
+providerBaseUrls
+providerEnabled
+```
+
+## Architecture
+
+```text
+DSH Agent
+   │
+   │ web_search / web_fetch
+   ↓
+dsh-tool-web
+   ↓
+ctx.web
+   │ searchProvider: dsh-web-tools
+   ↓
+SearchHubProvider
+   ├── Provider Registry
+   ├── Fallback
+   ├── Credential Pools
+   ├── Quota
+   ├── Health / Stats
+   └── Provider Adapters
+        ├── Tavily
+        ├── Exa
+        ├── Firecrawl
+        ├── Brave
+        ├── You.com
+        ├── Jina
+        └── SearXNG
+```
+
+Settings page ↔ Host:
+
+```text
+Web Client
+   ↓
+/web-tools/api/*
+   ↓
+Host routes
+   ├── config
+   ├── credentials
+   ├── provider test
+   ├── test search
+   └── quota
+   ↓
+ctx.settings / ctx.credentials
+```
+
+Provider routing uses no extra LLM requests and adds no model-visible tools.
+
+## Security
+
+API keys are resolved only on the Host — full credentials are never returned
+to the browser.
+
+Also:
+
+* The browser only gets configured/masked credential state.
+* Test results and logs never return full API keys.
+* Config writes are restricted to the local configuration plane.
+* No `dsh-web-tools` remote server is required.
+* No shared API keys.
+* The plugin does not upload search usage telemetry.
+* It can run with self-hosted SearXNG only.
+
+## Current verification
+
+The repo currently passes:
+
+| Item | Status |
+| --- | --- |
+| Host TypeScript typecheck | ✅ |
+| Client TypeScript typecheck | ✅ |
+| Unit tests (pool / fallback / Jina balance / Brave header) | ✅ 12 passing |
+| Route smoke (config · credential hiding · quota · test · loopback fence) | ✅ |
+| Tavily real search + official quota | ✅ |
+| Exa real search + dual-key credential pool | ✅ |
+| Firecrawl real search + fetch + quota | ✅ |
+| Web profile `--dump-config` install check | ✅ |
+| Non-loopback config write rejected | ✅ |
+
+Brave, You.com, Jina, and SearXNG have adapters but are not yet marked at the
+same real-E2E level as Tavily / Exa / Firecrawl; this table will be updated as
+they are verified.
+
+## Current limitations
+
+* Host supports full `fallbackOrder`; the settings UI's full ordering editor
+  is still pending.
+* Exa Team Management usage has an adapter; the settings page still needs the
+  corresponding configuration.
+* Brave rate-limit header parsing exists; full quota/describe display is not
+  wired yet.
+* Provider free tiers and pricing come from upstream services, are not a
+  stable API of this project, and may change.
+* Self-hosted SearXNG quality and stability depend on the instance and the
+  upstream engines it enables.
+
+## Development
+
+```bash
+npm install
+
+# Host
+npx tsc -p tsconfig.json --noEmit
+
+# Client
+npx tsc -p tsconfig.client.json --noEmit
+
+# Build
+npx tsc -p tsconfig.build.json
+
+# Unit tests
+node --experimental-strip-types --test src/host/logic.test.ts
+
+# Route smoke tests
+node --experimental-strip-types test/routes.smoke.mjs
+```
+
+Local development needs DSH peer dependencies resolvable — linking the
+development directory to the DSH profile's `node_modules` works.
+
+If the plugin does not appear in:
+
+```bash
+dsh --profile web --dump-config
+```
+
+first check that the profile loads the `dsh-web-tools` bundle.
+
+If the settings card does not appear, fully restart `dsh web`. The client
+bundle loads at process startup.
+
+## Provider development
+
+Provider adapters live in:
+
+```text
+src/host/providers/
+```
+
+Adding a provider means implementing the `ProviderAdapter` contract and
+registering it in the provider registry.
+
+A search adapter converts the third-party API response into the plugin's
+unified result; if the provider also supports Fetch or Quota, provide those
+implementations too.
+
+The agent side needs no new tools.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for more conventions.
+
+## Roadmap
+
+* Full search-priority / fallback ordering UI
+* Exa Team Management usage settings
+* Brave quota/describe integration
+* Serper provider
+* Parallel provider with OAuth balance
+* Perplexity provider
+* Real per-provider search comparison and testing
+* Usage history display
+
+The roadmap is not a fixed version commitment; order may change based on
+implementation and upstream API changes.
+
+## Install with your coding agent
+
+<details>
+<summary>Expand the prompt</summary>
 
 ```text
 Install dsh-web-tools from:
 https://github.com/A3Boy/dsh-web-tools
 
 Requirements:
-- Prefer `dsh plugin --profile web add dsh-web-tools`.
-- Do not read or print API key values.
+- Use the current DSH profile's standard plugin install flow.
+- Do not read, print, or ask me to paste API keys.
 - Do not modify DeepSeek Harness core.
-- Validate the composed profile after installation
-  (`dsh --profile web --dump-config`).
-- Do not restart an existing DSH process without asking.
-- Report whether dsh-web-tools appears in the Web profile.
+- After installing, check the composed config with
+  `dsh --profile web --dump-config`.
+- Do not terminate or restart a running DSH process without asking.
+- Report whether the plugin made it into the web profile.
 ```
 
----
+</details>
 
-## 🔌 Provider development
+## Contributing
 
-Adding a provider is implementing the `ProviderAdapter` contract
-(`src/host/providers/types.ts`) and registering it in
-`src/host/providers/index.ts` — the agent tool surface never changes.
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and PRs are welcome.
 
----
+To add a new search provider, review the existing adapters and
+[CONTRIBUTING.md](CONTRIBUTING.md) first, and keep the provider layer simple —
+no new agent tools or extra routing layers.
 
-## 🗺️ Roadmap
-
-- **V1.1** — Exa Team-Management usage wiring in the settings UI
-- **V1.2** — Serper · Parallel (OAuth balance) · Perplexity (experimental)
-- **V2** — usage history chart · provider comparison benchmark ·
-  Brave header quota into quota/describe
-
----
-
-## 🛠️ Development
-
-```bash
-npm install
-npx tsc -p tsconfig.json --noEmit           # Host type-check
-npx tsc -p tsconfig.client.json --noEmit    # Client type-check
-npx tsc -p tsconfig.build.json              # build lib/
-node --experimental-strip-types --test src/host/logic.test.ts   # unit tests
-node --experimental-strip-types test/routes.smoke.mjs           # route smoke
-```
-
-Local development needs the DSH peer deps resolvable — a junction to the DSH
-profile's `node_modules` works.
-
-### Troubleshooting
-
-- **Plugin not in `--dump-config`** — ensure `dsh-web-tools` is in
-  `dsh.profile.bundles` in the profile's `package.json` (auto for npm installs).
-- **Settings card missing** — restart `dsh web` fully; the client bundle loads
-  at startup.
-
----
-
-## 🤝 Contributing
-
-PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the provider-adapter
-guide and conventions.
-
-## 📄 License
+## License
 
 [MIT](LICENSE) © A3Boy
