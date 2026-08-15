@@ -2,7 +2,7 @@
  * dsh-web-tools — provider registry.
  * @module
  */
-import { BraveProvider, braveQuotaFromHeaders } from "./brave.ts";
+import { BraveProvider, braveQuota } from "./brave.ts";
 import { ExaProvider } from "./exa.ts";
 import { FirecrawlProvider } from "./firecrawl.ts";
 import { JinaProvider, jinaQuota } from "./jina.ts";
@@ -26,7 +26,7 @@ export const PROVIDERS: Record<string, ProviderWithQuota> = {
   tavily: { ...TavilyProvider, quota: (key, _base, signal) => tavilyQuota(key, signal) },
   exa: ExaProvider,
   firecrawl: { ...FirecrawlProvider, quota: (key, _base, signal) => firecrawlQuota(key, signal) },
-  brave: BraveProvider,
+  brave: { ...BraveProvider, quota: (key, _base, signal) => braveQuota(key, _base, signal) },
   you: { ...YouProvider, quota: (key, _base, signal) => youQuota(key, signal) },
   jina: { ...JinaProvider, quota: (key, _base, signal) => jinaQuota(key, signal) },
   searxng: SearxngProvider,

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance } from "./providers/jina.ts";
+import { braveQuotaFromHeaders } from "./providers/brave.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -92,4 +93,26 @@ test("parseJinaBalance: undefined on format change (never breaks search)", () =>
   assert.equal(parseJinaBalance("no balance info here"), undefined);
   assert.equal(parseJinaBalance("Balance: 100"), undefined); // no "left" keyword
   assert.equal(parseJinaBalance(""), undefined);
+});
+
+test("braveQuotaFromHeaders: reads the monthly window from rate-limit headers", () => {
+  const headers = new Headers({
+    "x-ratelimit-limit": "1, 15000",
+    "x-ratelimit-remaining": "0, 14523",
+    "x-ratelimit-reset": "1, 1234567",
+  });
+  const q = braveQuotaFromHeaders(headers, 1000);
+  assert.equal(q.supported, true);
+  assert.equal(q.authoritative, true);
+  assert.equal(q.unit, "requests");
+  assert.equal(q.remaining, 14523);
+  assert.equal(q.limit, 15000);
+  assert.equal(q.source, "response_header");
+  assert.equal(q.fetchedAt, 1000);
+});
+
+test("braveQuotaFromHeaders: missing headers → undefined fields, still usable", () => {
+  const q = braveQuotaFromHeaders(new Headers(), 0);
+  assert.equal(q.remaining, undefined);
+  assert.equal(q.limit, undefined);
 });

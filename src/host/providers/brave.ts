@@ -35,6 +35,9 @@ export const BraveProvider: ProviderAdapter = {
       signal,
     });
     throwIfHttp(res);
+    // Capture the rate-limit headers on every successful search — no extra
+    // request needed; quota/describe reads the last-known snapshot.
+    lastKnownQuota = braveQuotaFromHeaders(res.headers);
     const raw = await res.json();
     const results = Array.isArray(raw?.web?.results) ? raw.web.results : [];
     const sources = results
@@ -55,6 +58,21 @@ export const BraveProvider: ProviderAdapter = {
     throw providerError("config", "Brave does not provide native fetch");
   },
 };
+
+/** Last-known Brave quota snapshot (updated on every successful search). */
+let lastKnownQuota: QuotaSnapshot | undefined;
+
+/** Quota for the settings card: last-known snapshot from search headers. */
+export async function braveQuota(_apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
+  return lastKnownQuota ?? {
+    supported: false,
+    authoritative: false,
+    unit: "requests",
+    source: "dashboard",
+    fetchedAt: Date.now(),
+    note: "Run a search first — Brave reports quota in search response headers",
+  };
+}
 
 /** Parse Brave quota from the search response headers (monthly window). */
 export function braveQuotaFromHeaders(headers: Headers, fetchedAt = Date.now()): QuotaSnapshot {

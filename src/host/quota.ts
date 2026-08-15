@@ -36,6 +36,8 @@ export interface QuotaSnapshot {
   unit: QuotaUnit;
   /** Remaining amount (in `unit`). */
   remaining?: number;
+  /** Used amount (in `unit`) — for usage/cost endpoints that report usage. */
+  used?: number;
   /** Limit in the same unit (may be undefined for usd balances). */
   limit?: number;
   /** ISO timestamp when the quota resets, when known. */
