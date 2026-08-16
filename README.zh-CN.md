@@ -99,7 +99,7 @@ dsh plugin --profile web remove dsh-web-tools
 | [Tavily](https://tavily.com) | ✅ | ✅ | ✅ |
 | [Exa](https://exa.ai) | ✅ | ✅ | — |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | ✅ |
-| [Parallel](https://parallel.ai) | ✅ | ✅ | Dashboard |
+| [Parallel](https://parallel.ai) | ✅ | ✅ | 开发中 |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | ✅ |
 | [You.com](https://you.com) | ✅ | — | ✅ |
 | [Jina](https://jina.ai) | ✅ | ✅ | Best effort |
