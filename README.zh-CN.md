@@ -170,7 +170,7 @@ Quota 分为 **authoritative** 和 **best-effort** 两类，用于设置页展�
 | Firecrawl | 官方 `/v2/team/credit-usage` | ✅ 已实现 |
 | You.com | 官方 Account Balance API | ✅ 已实现 |
 | Exa | 无公开余额 API | 本地估算（非权威） |
-| Brave | `X-RateLimit-*` 响应头 | 解析已有，完整展示待补 |
+| Brave | `X-RateLimit-*` 响应头 | ✅ 已实现（搜索时捕获，UI 显示剩余请求 + 更新时间） |
 | Jina | Reader 余额信息 | Best-effort |
 | SearXNG | 无平台额度 | Self-hosted |
 
@@ -198,7 +198,6 @@ Tavily、Exa、Firecrawl、Jina 使用各自原生内容获取能力；Brave、Y
 ## Compatibility / Limitations
 
 * 针对 DeepSeek Harness `0.1.0-rc.6` 开发测试；DSH 仍处 developer preview，可能有不兼容变更。
-* Brave quota 完整展示待接入（响应头解析已有）。
 * `web_fetch` 不保证真实 HTTP status/final URL 语义（见 Search & Fetch 说明）。
 * SearXNG 质量取决于实例及其启用的上游引擎。
 * 免费额度/价格来自上游，可能变动。
@@ -273,7 +272,6 @@ Provider Adapter 位于 `src/host/providers/`。新增 Provider 实现 `Provider
 
 ## Roadmap
 
-* Brave quota 完整展示（响应头解析已有）
 * Serper、Parallel（OAuth）、Perplexity Provider
 * Provider 实际搜索对比、用量历史
 * 可选：`web_fetch` 回归 DSH 官方 HTTP Fetch 语义

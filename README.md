@@ -194,7 +194,7 @@ by real request failures (402 / 429, etc.).
 | Firecrawl | Official `/v2/team/credit-usage` | ✅ implemented |
 | You.com | Official Account Balance API | ✅ implemented |
 | Exa | no public balance API | local estimate (non-authoritative) |
-| Brave | `X-RateLimit-*` headers | parsing ready, full display pending |
+| Brave | `X-RateLimit-*` headers | ✅ implemented (captured on search; UI shows remaining requests + updated time) |
 | Jina | Reader balance info | best-effort |
 | SearXNG | no platform quota | self-hosted |
 
@@ -234,7 +234,6 @@ Brave, You.com, and SearXNG are used for search.
 
 * Developed and tested against DeepSeek Harness `0.1.0-rc.6`; DSH is a
   developer preview and may introduce breaking changes.
-* Brave quota full display is pending (header parsing exists).
 * `web_fetch` does not guarantee real HTTP status / final URL semantics (see
   Search & Fetch).
 * SearXNG quality depends on the instance and the upstream engines it enables.
@@ -315,7 +314,6 @@ implementing the `ProviderAdapter` contract and registering it; provide Fetch
 
 ## Roadmap
 
-* Brave quota full display (header parsing exists)
 * Serper, Parallel (OAuth), Perplexity providers
 * Real per-provider comparison and usage history
 * Optional: route `web_fetch` back to DSH's official HTTP Fetch semantics

@@ -41,6 +41,7 @@ export interface QuotaView {
   resetAt?: string;
   breakdown?: Record<string, number>;
   source: string;
+  fetchedAt?: number;
   note?: string;
 }
 

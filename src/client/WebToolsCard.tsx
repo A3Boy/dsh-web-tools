@@ -49,6 +49,9 @@ const COPY = {
     refreshQuota: "刷新额度",
     resetLabel: "重置",
     usageLabel: "消耗",
+    requestsRemaining: "剩余请求",
+    updatedAgo: (mins: number) => `更新于 ${mins} 分钟前`,
+    updatedJustNow: "刚刚更新",
     baseUrlLabel: "Base URL",
     apiKeyLabel: "API Key",
     apiKeyPool: (n: number) => `s (池 x${n})`,
@@ -94,6 +97,9 @@ const COPY = {
     refreshQuota: "Refresh quota",
     resetLabel: "Reset",
     usageLabel: "Usage",
+    requestsRemaining: "requests remaining",
+    updatedAgo: (mins: number) => `Updated ${mins} min ago`,
+    updatedJustNow: "Updated just now",
     baseUrlLabel: "Base URL",
     apiKeyLabel: "API Key",
     apiKeyPool: (n: number) => `s (pool x${n})`,
@@ -494,13 +500,25 @@ function ProviderRow(props: {
           {quota.supported && quota.authoritative && quota.unit === "credits" && quota.remaining !== undefined && (
             <QuotaBar label={`${quota.remaining} / ${quota.limit ?? "?"} credits`} remaining={quota.remaining} limit={quota.limit} />
           )}
-          {quota.supported && quota.authoritative && quota.unit !== "credits" && quota.remaining !== undefined && (
+          {quota.supported && quota.authoritative && quota.unit === "requests" && quota.remaining !== undefined && (
+            <QuotaBar
+              label={`${quota.remaining} ${t("requestsRemaining")}${quota.limit !== undefined ? ` / ${quota.limit}` : ""}`}
+              remaining={quota.remaining}
+              limit={quota.limit}
+            />
+          )}
+          {quota.supported && quota.authoritative && quota.unit !== "credits" && quota.unit !== "requests" && quota.remaining !== undefined && (
             <div>
               {quota.unit === "usd_cents" ? `$${(quota.remaining / 100).toFixed(2)}` : quota.remaining} {quota.unit}
               {quota.limit !== undefined && ` / ${quota.limit}`}
             </div>
           )}
           {quota.note && <div style={{ color: "#888" }}>{quota.note}</div>}
+          {quota.fetchedAt && (
+            <div style={{ color: "#888", fontSize: 12 }}>
+              {quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)))}
+            </div>
+          )}
           {quota.resetAt && <div style={{ color: "#888" }}>{t("resetLabel")}: {new Date(quota.resetAt).toLocaleDateString()}</div>}
           {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
             <div style={{ color: "#888" }}>{t("usageLabel")}: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" · ")}</div>
