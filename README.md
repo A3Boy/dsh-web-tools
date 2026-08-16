@@ -337,11 +337,11 @@ The Web settings panel communicates with local Host routes:
 
 ```mermaid
 flowchart LR
-    Client[Web Client] --> Routes[/web-tools/api/*]
-    Routes --> Settings[ctx.settings]
-    Routes --> Credentials[ctx.credentials]
-    Routes --> Tests[Provider Test / Test Search]
-    Routes --> Quota
+    Client["Web Client"] --> Routes["Host routes<br/>/web-tools/api/*"]
+    Routes --> Settings["ctx.settings"]
+    Routes --> Credentials["ctx.credentials"]
+    Routes --> Tests["Provider Test / Test Search"]
+    Routes --> Quota["Quota"]
 ```
 
 Provider selection and fallback happen inside the plugin. No additional LLM call is required, and the plugin does not register a separate model-visible tool for each provider.
