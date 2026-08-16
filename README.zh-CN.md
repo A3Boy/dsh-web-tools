@@ -1,16 +1,16 @@
 <div align="center">
 
 <p align="center">
-  <img src="assets/logo.png" alt="dsh-web-tools" width="180" />
+  <img src="assets/logo.png" alt="dsh-web-tools" width="160" />
 </p>
 
 # dsh-web-tools
 
-**给 DeepSeek Harness 的 `web_search` / `web_fetch` 增加可配置的多搜索源后端。**
+DeepSeek Harness 的多搜索源 Web Provider 插件。
 
-同时配置 Tavily、Exa、Firecrawl、Brave、You.com、Jina 或 SearXNG；某个搜索源限流、额度耗尽或不可用时，按设定顺序自动切换到下一家。Agent 仍然使用 DSH 原来的 `web_search` / `web_fetch`，不增加任何新工具。
+同时配置 Tavily、Exa、Firecrawl、Brave、You.com、Jina 和 SearXNG，并为它们设置搜索顺序。当前 Provider 限流、认证失败、超时或不可用时，插件可以继续尝试后面的 Provider。
 
-**BYOK** · API Key 保存在 DSH Credentials 中，请求直接发给对应 Provider，本项目不提供中转服务器。
+Agent 侧仍然使用 DSH 原有的 `web_search` 和 `web_fetch`。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -21,140 +21,154 @@
 </div>
 
 <p align="center">
-  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools 设置页" />
+  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools 设置页总览" />
 </p>
 
-> 7 Providers · Native DSH tools · Fallback · BYOK · SearXNG
+## 功能
 
----
+- Tavily、Exa、Firecrawl、Brave、You.com、Jina、SearXNG
+- 自定义搜索优先级和 fallback
+- 每个 Provider 支持多个 API Key
+- Provider / Credential 健康状态
+- 上游支持时显示余额、额度或 Rate Limit
+- Tavily、Exa、Firecrawl、Jina 支持网页正文获取
+- SearXNG 自托管
+- DSH Web 设置页
+- Provider 连接测试和 Test Search
+- API Key 使用 DSH Credentials 保存
 
-## 为什么用它
+插件不提供代理服务器或共享 Key。请求从本机 DSH Host 直接发送给配置的 Provider。
 
-* **7 个搜索 Provider**：Tavily、Exa、Firecrawl、Brave、You.com、Jina、SearXNG
-* **保持 DSH 原生工具**：模型只看到 `web_search` / `web_fetch`，没有 `tavily_search` 之类的 Provider 专属 Tool
-* **自定义优先级**：默认 Provider + 有序 fallback 链
-* **多 API Key + 健康状态 + 额度**：凭据池、Provider health、quota 状态
-* **原生 DSH 设置页**：Provider、凭据、测试连接、Test Search 全在一个页面
+## 安装
 
-## 快速开始
-
-### Requirements
-
-* DeepSeek Harness：目前针对 `0.1.0-rc.6` 开发和测试
-* 使用 DSH `web` profile
-* 安装外部 bundle 需要 `pnpm`
-* 商业 Provider 使用自己的 API Key；SearXNG 可无商业 API Key 使用
-
-### 安装
+目前针对 DeepSeek Harness `0.1.0-rc.6` 的 `web` profile 开发和测试。
 
 ```bash
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
-重启 `dsh web`，然后打开插件设置页配置 Provider。插件通过 DSH 官方 **Profile Bundle** 机制接入，不修改 Harness core。
+重启 `dsh web` 后，打开：
+
+```text
+Settings → Web Search（一级页面）
+```
+
+检查插件是否进入当前 profile：
 
 ```bash
-# 检查组合配置
 dsh --profile web --dump-config
+```
 
-# 更新 / 移除
+更新或移除：
+
+```bash
 dsh plugin --profile web update dsh-web-tools
 dsh plugin --profile web remove dsh-web-tools
 ```
 
-### 配置 Provider
+插件通过 DSH Profile Bundle 加载，不需要修改 Harness 源码。
 
-1. `Settings → 网页搜索`（Web Search 一级页面）
-2. 填入各 Provider 的 API Key（多个 Key 用逗号分隔 → 凭据池）
-3. 选择默认 Provider，调整 fallback 顺序
-4. 用 **Test Search** 直接跑一次真实搜索验证
+## Provider
 
-## Providers
-
-| Provider | Search | Fetch | 更适合 |
+| Provider | Search | Fetch | 主要特点 |
 | --- | :---: | :---: | --- |
-| [Tavily](https://tavily.com) | ✅ | ✅ | 通用 Agent 搜索 |
-| [Exa](https://exa.ai) | ✅ | ✅ | 语义检索、研究 |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | 搜索后继续读取网页 |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | 传统 Web 搜索 |
-| [You.com](https://you.com) | ✅ | — | Web / News |
-| [Jina](https://jina.ai) | ✅ | ✅ | 网页正文读取 |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | 自托管 |
+| [Tavily](https://tavily.com) | ✅ | ✅ | 面向 Agent / RAG 的搜索与正文提取 |
+| [Exa](https://exa.ai) | ✅ | ✅ | 语义搜索、网页内容和 highlights |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | Search + Scrape，适合继续读取网页 |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | 独立 Web 搜索索引 |
+| [You.com](https://you.com) | ✅ | — | Web / News Search |
+| [Jina](https://jina.ai) | ✅ | ✅ | Search + Reader |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | 自托管 Meta Search |
 
-不知道选哪家：
+简单选型：
 
-* **通用**：Tavily
-* **研究 / 语义搜索**：Exa
-* **需要读取正文**：Firecrawl / Jina
-* **传统 Web 搜索**：Brave
-* **自托管 / 隐私**：SearXNG
+| 需求 | 可以先试 |
+| --- | --- |
+| 普通 Agent 搜索 | Tavily |
+| 语义检索、技术研究 | Exa |
+| 搜索后继续抓正文 | Firecrawl / Jina |
+| 常规 Web 搜索 | Brave |
+| Web / News | You.com |
+| 自己部署 | SearXNG |
 
 <details>
-<summary><b>Provider 选型参考</b>：免费额度与价格（2026-08-16）</summary>
+<summary><strong>免费额度与价格参考</strong>（2026-08-16）</summary>
 
-| Provider | 免费额度 | 类型 | 计费 |
-| --- | --- | --- | --- |
-| Tavily | 1,000 credits / 月 | 每月刷新 | credits（Basic=1） |
-| Exa | $20 注册 + $10/月 | 注册 + 每月 | 按请求（$7/1k） |
-| Firecrawl | 1,000 credits + 1,000 Search credits / 月 | 每月刷新 | 每 10 结果 2 credits |
-| Brave | $5/月 ≈ 1,000 次 | 每月刷新 | 按请求（$5/1k） |
-| You.com | $100 一次性 | 一次性 | 按调用（$5/1k） |
-| Jina | 10M tokens 一次性 | 一次性 | 按 token |
-| SearXNG | 无平台额度 | 自托管 | 无 |
+这里仅作为选型参考，上游可能随时调整价格和免费计划。
 
-价格与免费额度来自上游官网，可能随上游调整，使用前以各 Provider 官网为准。
+| Provider | 当前免费额度 | 备注 |
+| --- | --- | --- |
+| Tavily | 1,000 credits / 月 | Basic Search = 1 credit |
+| Exa | 注册 $20 credits，之后 $10 / 月 | Search 当前 $7 / 1k requests |
+| Firecrawl | 1,000 credits / 月 | Search = 2 credits / 10 results |
+| Brave | $5 credits / 月 | Search 当前 $5 / 1k requests |
+| You.com | 新账号 $100 credits | 官网当前另列 Search 100 calls/day free |
+| Jina | 新 API Key 10M tokens | `s.jina.ai` 按 token 消耗 |
+| SearXNG | 无平台额度 | 成本取决于自己的实例和上游 |
 
 </details>
 
-## Fallback
+## 搜索顺序
 
-一次搜索的尝试顺序：
-
-```text
-Tavily → Exa → Brave → SearXNG
-```
-
-默认 Provider 出现**可恢复故障**时自动切下一家：
+设置页直接维护一个有序列表：
 
 ```text
-401 / 403 · 408 · 429 · 5xx · 网络错误 · 超时 · Provider unavailable
+1. Tavily        Default
+2. Exa
+3. Brave
+4. SearXNG
 ```
 
-认证失败的凭据会被标记 unhealthy，同时继续尝试下一家。
+第一项是默认 Provider，后面的 Provider 按顺序用于 fallback。
 
-例如当前 Provider 失败后，可以继续尝试后面的 Provider：
+Provider 可以：
+
+- 上移 / 下移
+- 加入搜索链
+- 从搜索链移除
+- 单独启用或禁用
+
+“从搜索链移除”和“禁用 Provider”是两件事。一个已配置的 Provider 可以保留用于测试，而不参与自动 fallback。
+
+例如：
+
+```text
+Tavily
+  ↓ 429
+Exa
+  ↓ timeout
+Brave
+  ↓
+success
+```
+
+Test Search 中的真实 fallback 示例：
 
 <p align="center">
-  <img src="assets/fallback-demo.png" width="850" alt="Provider fallback（Test Search 中的尝试链）" />
+  <img src="assets/fallback-demo.png" width="850" alt="Test Search 中的 Provider fallback" />
 </p>
 
-以下错误**不**切换 Provider：`400 bad request`、本地配置错误。
-
-调用方主动取消（abort）会**立即终止整个搜索链**，不会切换到下一家。
-
-## Settings
-
-配置入口：
+当前会继续尝试下一 Provider 的错误包括：
 
 ```text
-Settings → 网页搜索（Web Search 一级页面）
+401 / 403
+408
+429
+5xx
+network error
+timeout
+provider unavailable
 ```
 
-管理：启用开关、默认 Provider、fallback 顺序、单 Provider 超时、Provider 启用/禁用、API Key / 凭据池、Base URL、连接测试、Quota 状态、Test Search。
+认证失败时会先尝试当前 Provider 的下一把健康 Key；该 Provider 已没有可用 Key 时再进入下一 Provider。
 
-> 搜索结果数量由 DSH 工具层（`web_search`）控制，插件不覆盖。整体搜索超时也由 DSH 工具层控制；设置页的"单 Provider 超时"指单个搜索源最多等待多久，超时后切换下一家。
+`400 bad request` 和本地配置错误不会 fallback
 
-Test Search 会实际发出一次搜索，并显示命中的 Provider、延迟和返回结果：
+调用方主动取消请求时，整个链立即终止，也不会继续请求下一 Provider。
 
-<p align="center">
-  <img src="assets/test-search.png" width="850" alt="Test Search 结果" />
-</p>
+## 多 Key
 
-## Credentials & Quota
-
-### 凭据池
-
-每个 Provider 可配置多个 API Key：
+每个 Provider 可以配置多个 API Key：
 
 ```text
 Tavily
@@ -163,27 +177,52 @@ Tavily
 └── Key C
 ```
 
-多个 Key 按 **least-used-first** 选择。**只有认证失败（401/403）会把 Key 标记为 unhealthy**，且保持到凭据内容变化；429/5xx/网络/超时是 Provider 侧问题，Key 保持健康。认证失败会在同一 Provider 内自动尝试下一把 Key，全部失败才切换 Provider。Key 用逗号/空格/换行/分号分隔。
+Key 使用 least-used-first：
 
-凭据池用于团队 Key、不同 Workspace、Key rollover、环境隔离等正常场景，不用于绕过 Provider 限制。
+1. 从健康的 Key 中选择调用次数最少的一把。
+2. 次数相同时按配置顺序选择。
+3. `401 / 403` 会把当前 Key 标记为不可用，并尝试下一把 Key。
+4. `429 / 5xx / network / timeout` 不会把 Key 判定为失效，而是直接进入下一 Provider。
+5. Key 的健康状态会一直保留到凭据配置发生变化。
 
-### 额度
+多个 Key 可以使用逗号、空格、换行或分号分隔。
 
-不同 Provider 单位不同（credits / requests / tokens / USD / self-hosted），插件不强行换算成百分比。
+这个功能用于团队凭据、不同 Workspace、Key rollover 和环境隔离等正常场景，请遵守各 Provider 的账户和配额规则。
 
-Quota 分为 **authoritative** 和 **best-effort** 两类，用于设置页展示。**Quota 不参与搜索路由**——搜索失败由真实请求错误（402/429 等）触发 fallback。
+## 额度
+
+Provider 对额度的定义并不统一：
+
+```text
+Tavily      credits
+Firecrawl   credits
+Brave       requests
+You.com     USD
+Jina        tokens
+SearXNG     self-hosted
+```
+
+插件保留上游自己的单位，不统一换算成百分比。
 
 | Provider | 数据来源 | 状态 |
 | --- | --- | --- |
-| Tavily | 官方 `/usage` | ✅ 已实现 |
-| Firecrawl | 官方 `/v2/team/credit-usage` | ✅ 已实现 |
-| You.com | 官方 Account Balance API | ✅ 已实现 |
-| Exa | 无公开余额 API | 本地估算（非权威） |
-| Brave | `X-RateLimit-*` 响应头 | ✅ 已实现（搜索时捕获，UI 显示剩余请求 + 更新时间） |
-| Jina | Reader 余额信息 | Best-effort |
+| Tavily | 官方 `/usage` | ✅ |
+| Firecrawl | 官方 `/v2/team/credit-usage` | ✅ |
+| You.com | 官方 Account Balance API | ✅ |
+| Brave | `X-RateLimit-*` 响应头 | ✅ |
+| Exa | 无普通 Search Key 可用的公开余额接口 | 本地估算 |
+| Jina | Reader 返回的余额信息 | Best-effort |
 | SearXNG | 无平台额度 | Self-hosted |
 
-多 Key 池的 Provider 会逐把 Key 查询额度并合并为**池总额度**（remaining/limit 求和）。额度查询失败只影响展示，不影响搜索；结果缓存 5 分钟，不轮询。
+Quota 分为权威数据和 best-effort 数据，只用于设置页展示。
+
+当前搜索 fallback 以真实请求结果为准，例如 `402`、`429` 或其他 Provider 错误；Quota 查询失败不会影响搜索。
+
+对于多 Key Provider，额度面板会逐把 Key 查询额度，并合并为一个池总额（remaining / limit 求和）。
+
+Quota 结果缓存 5 分钟，不做后台轮询。
+
+设置页中的额度展示示例：
 
 <table>
   <tr>
@@ -198,129 +237,213 @@ Quota 分为 **authoritative** 和 **best-effort** 两类，用于设置页展�
   </tr>
 </table>
 
-## Search & Fetch
+## 网页读取
+
+典型调用过程：
 
 ```text
-web_search → 候选 URL → web_fetch → 读取正文
+web_search
+    ↓
+候选 URL
+    ↓
+web_fetch
+    ↓
+正文
 ```
 
-Tavily、Exa、Firecrawl、Jina 使用各自原生内容获取能力；Brave、You.com、SearXNG 主要作 Search 使用。
+Tavily、Exa、Firecrawl 和 Jina 使用各自的正文提取接口。
 
-> **说明**：`web_fetch` 按搜索优先级逐个尝试具备 Fetch 能力的 Provider，但**不沿用 `web_search` 本次实际命中的 Provider**，也不保证返回目标网页的真实 HTTP status/final URL（Provider 原生 extract 通常直接给正文）。需要严格 Fetch 语义（真实 status/重定向/截断）时，可依赖 DSH 官方 HTTP Fetch，而用本插件 Provider 的 extract 增强正文。
+`web_fetch` 会按照同一搜索优先级，寻找下一个支持 Fetch 的 Provider，但它不会绑定到上一次 `web_search` 实际命中的 Provider。
 
-## Security & Privacy
+例如搜索由 Brave 完成：
 
-* API Key 只在 Host 侧解析，**完整凭据永不返回浏览器**（浏览器只看到 configured/masked 状态）。
-* 测试结果与日志不返回完整 API Key。
-* 配置写入限制在本地配置平面。
-* **不经过 dsh-web-tools 自己的远程服务器**，不提供共享 Key。
-* 不上传 Search usage telemetry。
-* 可只使用自托管 SearXNG。
+```text
+Brave Search
+    ↓
+URL
+    ↓
+Tavily / Exa / Firecrawl / Jina Fetch
+```
 
-## Compatibility / Limitations
+这里需要注意一个语义差异：这些 Provider 的 Extract / Reader 接口主要返回正文，因此插件目前不能保证 `web_fetch` 返回目标 URL 的真实 HTTP status、最终重定向地址等信息。
 
-* 针对 DeepSeek Harness `0.1.0-rc.6` 开发测试；DSH 仍处 developer preview，可能有不兼容变更。
-* `web_fetch` 不保证真实 HTTP status/final URL 语义（见 Search & Fetch 说明）。
-* SearXNG 质量取决于实例及其启用的上游引擎。
-* 免费额度/价格来自上游，可能变动。
+如果任务需要严格的 HTTP Fetch 语义，可以使用 DSH 自带的 HTTP Fetch，把本插件的 Fetch 当作正文提取能力。
+
+## 设置
+
+配置入口：
+
+```text
+Settings → Web Search（一级页面）
+```
+
+目前可以管理：
+
+- 插件启用状态
+- 搜索优先级
+- 单 Provider 超时
+- Provider 启用 / 禁用
+- API Key / 多 Key
+- 自定义 Base URL
+- Provider 连接测试
+- Quota
+- Test Search
+
+Test Search 会实际发出一次搜索，并显示命中的 Provider、延迟和返回结果：
+
+<p align="center">
+  <img src="assets/test-search.png" width="850" alt="Test Search 结果" />
+</p>
+
+搜索结果数量仍由 DSH `web_search` 工具层控制。
+
+DSH 也负责一次完整 `web_search` 的总超时；这里配置的是单个 Provider 一次尝试最多等待多久。
+
+## SearXNG
+
+SearXNG 可以和其他 Provider 一样放进搜索顺序：
+
+```text
+Tavily → Exa → Brave → SearXNG
+```
+
+也可以只配置 SearXNG。
+
+SearXNG 本身没有云端 API 额度，不过实际搜索是否稳定仍取决于自己的实例、网络和启用的上游搜索引擎。
+
+## 安全
+
+- API Key 只在 DSH Host 侧解析。
+- 完整凭据不会返回给 Web Client。
+- 前端只拿到配置状态或掩码后的凭据信息。
+- 测试结果和日志不会返回完整 API Key。
+- 配置写操作限制在本地配置平面。
+- 请求不经过本项目维护的中转服务器。
+- 插件不上传 Search usage telemetry。
+- 可以只使用自托管 SearXNG。
+
+## 兼容性和已知限制
+
+- 当前针对 DeepSeek Harness `0.1.0-rc.6` 开发和测试。DSH 仍处于 developer preview，未来版本可能需要适配。
+- Provider 原生 Extract / Reader 不等价于严格的 HTTP Fetch。
+- SearXNG 的结果和稳定性取决于实例本身以及启用的上游引擎。
+- Provider 免费额度和价格不是本项目 API 的一部分，可能随上游调整。
+- 多 Key Provider 的额度面板会合并所有 Key 展示池总额。
 
 ## 架构
 
 ```mermaid
 flowchart TD
-    Agent[DSH Agent] -->|web_search / web_fetch| Tool[dsh-tool-web]
-    Tool --> Web[ctx.web]
-    Web -->|searchProvider: dsh-web-tools| Hub[SearchHubProvider]
+    Agent["DSH Agent"] -->|"web_search / web_fetch"| Tool["dsh-tool-web"]
+    Tool --> Web["ctx.web"]
+    Web --> Hub["dsh-web-tools"]
 
-    Hub --> Registry[Provider Registry]
-    Hub --> FB[Fallback]
-    Hub --> Pools[Credential Pools]
-    Hub --> Quota[Quota]
-    Hub --> Health[Health / Stats]
+    Hub --> Registry["Provider Registry"]
+    Hub --> Fallback["Fallback"]
+    Hub --> Pools["Credential Pools"]
+    Hub --> Quota["Quota"]
+    Hub --> Stats["Health / Stats"]
 
-    Registry --> T[Tavily]
-    Registry --> E[Exa]
-    Registry --> F[Firecrawl]
-    Registry --> B[Brave]
-    Registry --> Y[You.com]
-    Registry --> J[Jina]
-    Registry --> S[SearXNG]
+    Registry --> Tavily["Tavily"]
+    Registry --> Exa["Exa"]
+    Registry --> Firecrawl["Firecrawl"]
+    Registry --> Brave["Brave"]
+    Registry --> You["You.com"]
+    Registry --> Jina["Jina"]
+    Registry --> SearXNG["SearXNG"]
 ```
 
-设置页与 Host：
+Web 设置页通过本地 Host routes 读写插件配置：
 
 ```mermaid
 flowchart LR
-    Client[Web Client] -->|/web-tools/api/*| Routes[Host routes]
-    Routes --> Cfg[config]
-    Routes --> Cred[credentials]
-    Routes --> Test[provider test]
-    Routes --> TS[test search]
-    Routes --> Q[quota]
-    Cfg --> S1[ctx.settings]
-    Cred --> S2[ctx.credentials]
+    Client["Web Client"] --> Routes["Host routes<br/>/web-tools/api/*"]
+    Routes --> Settings["ctx.settings"]
+    Routes --> Credentials["ctx.credentials"]
+    Routes --> Tests["Provider Test / Test Search"]
+    Routes --> Quota["Quota"]
 ```
 
-路由不使用额外 LLM 请求，不增加模型可见 Tool。
+Provider 选择和 fallback 在插件内部完成，不需要额外 LLM 请求，也不会为每个 Provider 注册一套模型工具。
 
 ## 验证
 
-| 验证 | 状态 |
+| 项目 | 状态 |
 | --- | --- |
 | TypeScript / Build | ✅ |
-| Unit（pool / fallback / Jina / Brave header） | ✅ |
-| Route smoke（config · credential 零泄漏 · quota · 持久化先后 · loopback/cross-site 403） | ✅ |
-| Runtime invariants（abort 不 fallback · timeout 真 abort 后 fallback · 401 仅标 key · fetch 多 key 轮换） | ✅ |
+| Pool / fallback / Jina / Brave header 单元测试 | ✅ |
+| Config / credential / quota / loopback routes smoke | ✅ |
+| Abort / timeout / auth / multi-key runtime invariants | ✅ |
 | Tavily Search + Quota | ✅ E2E |
-| Exa Search + 凭据池 | ✅ E2E |
+| Exa Search + 多 Key | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
-| Brave / You / Jina / SearXNG | Adapter ready，E2E 待补 |
+| Brave / You.com / Jina / SearXNG | Adapter ready，E2E 待补 |
 
-## 开发
+运行：
 
 ```bash
 npm install
-npx tsc -p tsconfig.json --noEmit           # Host
-npx tsc -p tsconfig.client.json --noEmit    # Client
-npx tsc -p tsconfig.build.json              # Build
-npm test                                    # Unit + route smoke + runtime invariants
+npm test
 ```
 
-本地开发需要能解析 DSH peer dependencies（可链接到 DSH profile 的 `node_modules`）。插件未出现在 `--dump-config` 时检查 bundle 加载；设置卡未出现时完整重启 `dsh web`。
+单独执行类型检查和构建：
+
+```bash
+npx tsc -p tsconfig.json --noEmit
+npx tsc -p tsconfig.client.json --noEmit
+npx tsc -p tsconfig.build.json
+```
 
 ## Provider 开发
 
-Provider Adapter 位于 `src/host/providers/`。新增 Provider 实现 `ProviderAdapter` 契约并在 registry 注册；支持 Fetch / Quota 的可分别提供实现。Agent 侧无需新工具。详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+Provider Adapter 位于：
+
+```text
+src/host/providers/
+```
+
+新增 Provider 实现 `ProviderAdapter` 并在 registry 注册。
+
+如果该 Provider 还支持正文读取或额度接口，可以同时实现 Fetch / Quota。
+
+具体约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## Roadmap
 
-* Serper、Parallel（OAuth）、Perplexity Provider
-* Provider 实际搜索对比、用量历史
-* 可选：`web_fetch` 回归 DSH 官方 HTTP Fetch 语义
+- Serper
+- Parallel
+- Perplexity
+- 更多 Provider E2E
+- Provider 搜索结果对比
+- 用量历史
+- 评估是否让 `web_fetch` 回归 DSH HTTP Fetch 语义
 
 ## 让编码 Agent 安装
 
 <details>
-<summary>展开安装提示词</summary>
+<summary>安装提示词</summary>
 
 ```text
-安装 dsh-web-tools，仓库：
+安装 dsh-web-tools：
+
 https://github.com/A3Boy/dsh-web-tools
 
 要求：
 - 使用当前 DSH profile 的标准 plugin 安装方式。
-- 不要读取、打印或要求粘贴 API Key。
+- 不要读取或打印 API Key。
 - 不要修改 DeepSeek Harness core。
-- 安装后用 `dsh --profile web --dump-config` 检查组合配置。
-- 未经询问不要终止或重启正在运行的 DSH 进程。
-- 报告插件是否成功进入 web profile。
+- 安装后执行 `dsh --profile web --dump-config` 检查配置。
+- 未经询问不要终止或重启现有 DSH 进程。
+- 最后告诉我插件是否已经进入 web profile。
 ```
 
 </details>
 
 ## Contributing
 
-Issue 和 PR 都欢迎。新增 Provider 前先看现有 Adapter 和 [CONTRIBUTING.md](CONTRIBUTING.md)，保持 Provider 层简单。
+Issue 和 PR 都欢迎。
+
+新增 Provider 前建议先看现有 Adapter 和 [CONTRIBUTING.md](CONTRIBUTING.md)，避免给 Agent 增加 Provider 专属 Tool。
 
 ## License
 
