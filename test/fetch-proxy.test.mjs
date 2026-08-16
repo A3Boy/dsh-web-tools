@@ -16,8 +16,10 @@ test("module loads and degrades to plain fetch when undici is unavailable", asyn
   // A profile linked before the dependency was declared has no undici. The
   // plugin must still LOAD (lazy import), not crash the whole plugin tree.
   const fs = await import("node:fs/promises");
+  const os = await import("node:os");
   const { execFileSync } = await import("node:child_process");
-  const tmp = await fs.mkdtemp(process.env.TEMP + "/wt-undici-");
+  // os.tmpdir() works on every platform (process.env.TEMP is Windows-only).
+  const tmp = await fs.mkdtemp(os.tmpdir() + "/wt-undici-");
   try {
     await fs.cp("lib", tmp + "/lib", { recursive: true });
     const url = new URL("file:///" + (tmp + "/lib/host/fetch-proxy.js").replace(/\\/g, "/")).href;
