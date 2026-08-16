@@ -188,6 +188,11 @@ export function apply(ctx: WebToolsContext) {
   let quotaCache: { fetchedAt: number; quotas: Record<string, QuotaSnapshot> } | null = null;
   const QUOTA_CACHE_MS = 5 * 60 * 1000; // 5 min — quota is display-only, no 30s polling
   const QUOTA_TIMEOUT_MS = 8000;
+  // Brave probe cooldown: Brave bills per search, so a failed probe must not
+  // retry on every 5-minute refresh. 30 minutes between failed probes; a
+  // successful capture persists and never probes again.
+  let lastBraveProbeAt = 0;
+  const BRAVE_PROBE_COOLDOWN_MS = 30 * 60 * 1000;
 
   async function describeQuotas(force = false): Promise<Record<string, QuotaSnapshot>> {
     if (!force && quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
@@ -234,6 +239,25 @@ export function apply(ctx: WebToolsContext) {
           throw Object.assign(new Error(`quota check failed: ${first?.reason instanceof Error ? first.reason.message : String(first?.reason)}`), {
             provider: meta.name,
           });
+        }
+        // Brave has no quota endpoint — its only quota signal is the
+        // X-RateLimit-* header captured during a real search. If the pool has
+        // NO captured snapshot (fresh boot / never searched), do ONE minimal
+        // probe search to populate it. A successful capture persists
+        // immediately, so later refreshes already have data and never probe
+        // again; a failed probe waits for the cooldown before retrying
+        // (Brave bills per search — never poll aggressively).
+        if (meta.name === "brave" && fulfilled.every((s) => !s.supported)) {
+          const key = keys[0];
+          const now = Date.now();
+          if (key && now - lastBraveProbeAt > BRAVE_PROBE_COOLDOWN_MS) {
+            lastBraveProbeAt = now;
+            try {
+              await getProvider("brave").search("quota probe", 1, key, undefined);
+            } catch {
+              // probe failed (network/auth) — a real search later captures it
+            }
+          }
         }
         return [meta.name, mergePoolQuota(fulfilled)];
       }),
@@ -285,19 +309,20 @@ export function apply(ctx: WebToolsContext) {
   // ---- Brave quota persistence --------------------------------------------
   // Brave has no quota endpoint; its only quota signal is the X-RateLimit-*
   // header captured during a real search. Persist those snapshots into the
-  // settings namespace so a restart does not forget the last known balance,
-  // and seed the in-memory cache on boot.
-  {
+  // settings namespace so a restart does not forget the last known balance.
+  // Seeding MUST wait for the settings namespace (ctx.inject is async) — in
+  // the synchronous apply() body readConfig() would only return defaults.
+  configHandle.onMounted(() => {
     const braveCache = readConfig().braveQuotaCache ?? {};
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
     }
-    setBraveQuotaPersist((apiKey, snapshot) => {
-      void configHandle
-        .write({ braveQuotaCache: { ...readConfig().braveQuotaCache, [apiKey]: snapshot } })
-        .catch(() => {});
-    });
-  }
+  });
+  setBraveQuotaPersist((apiKey, snapshot) => {
+    void configHandle
+      .write({ braveQuotaCache: { ...readConfig().braveQuotaCache, [apiKey]: snapshot } })
+      .catch(() => {});
+  });
 
   // ---- fenced HTTP routes for the card ------------------------------------
   ctx.effect(

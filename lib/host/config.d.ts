@@ -48,6 +48,13 @@ export interface ConfigHandle {
     read: () => WebToolsSettings;
     /** Write a partial patch into the namespace; resolves when persisted. */
     write: (patch: Partial<WebToolsSettings>) => Promise<void>;
+    /**
+     * Called once the settings namespace is registered (ctx.inject callback).
+     * Use it for anything that must read persisted settings at boot — the
+     * synchronous apply() body runs BEFORE the inject callback, so reading
+     * config there would only see the defaults.
+     */
+    onMounted: (cb: () => void) => void;
 }
 /**
  * Register the settings namespace; returns a handle for reads (live) and

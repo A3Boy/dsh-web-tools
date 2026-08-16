@@ -68,6 +68,13 @@ export interface ConfigHandle {
   read: () => WebToolsSettings;
   /** Write a partial patch into the namespace; resolves when persisted. */
   write: (patch: Partial<WebToolsSettings>) => Promise<void>;
+  /**
+   * Called once the settings namespace is registered (ctx.inject callback).
+   * Use it for anything that must read persisted settings at boot — the
+   * synchronous apply() body runs BEFORE the inject callback, so reading
+   * config there would only see the defaults.
+   */
+  onMounted: (cb: () => void) => void;
 }
 
 /**
@@ -79,6 +86,7 @@ export interface ConfigHandle {
 export function installConfig(ctx: WebToolsContext): ConfigHandle {
   let current = () => DEFAULT_SETTINGS;
   let scope: { update: (patch: object) => Promise<void> } | undefined;
+  const mountedCbs: Array<() => void> = [];
 
   ctx.inject(["settings"], (sctx) => {
     const registered = sctx.settings.register(SETTINGS_NS, Config, {
@@ -86,6 +94,8 @@ export function installConfig(ctx: WebToolsContext): ConfigHandle {
     });
     scope = registered;
     current = () => registered.get() as WebToolsSettings;
+    // Settings are readable only from here on; run deferred boot work now.
+    for (const cb of mountedCbs.splice(0)) cb();
   });
 
   return {
@@ -94,5 +104,6 @@ export function installConfig(ctx: WebToolsContext): ConfigHandle {
       if (!scope) throw new Error("dsh-web-tools settings namespace is not mounted");
       await scope.update(patch);
     },
+    onMounted: (cb) => mountedCbs.push(cb),
   };
 }
