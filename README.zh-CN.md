@@ -155,7 +155,7 @@ provider unavailable
 
 认证失败时会先尝试当前 Provider 的下一把健康 Key；该 Provider 已没有可用 Key 时再进入下一 Provider。
 
-`400 bad request` 和本地配置错误不会 fallback。
+`400 bad request` 和本地配置错误不会 fallback
 
 调用方主动取消请求时，整个链立即终止，也不会继续请求下一 Provider。
 
@@ -314,34 +314,34 @@ SearXNG 本身没有云端 API 额度，不过实际搜索是否稳定仍取决�
 
 ```mermaid
 flowchart TD
-    Agent[DSH Agent] -->|web_search / web_fetch| Tool[dsh-tool-web]
-    Tool --> Web[ctx.web]
-    Web --> Hub[dsh-web-tools]
+    Agent["DSH Agent"] -->|"web_search / web_fetch"| Tool["dsh-tool-web"]
+    Tool --> Web["ctx.web"]
+    Web --> Hub["dsh-web-tools"]
 
-    Hub --> Registry[Provider Registry]
-    Hub --> Fallback[Fallback]
-    Hub --> Pools[Credential Pools]
-    Hub --> Quota[Quota]
-    Hub --> Stats[Health / Stats]
+    Hub --> Registry["Provider Registry"]
+    Hub --> Fallback["Fallback"]
+    Hub --> Pools["Credential Pools"]
+    Hub --> Quota["Quota"]
+    Hub --> Stats["Health / Stats"]
 
-    Registry --> Tavily
-    Registry --> Exa
-    Registry --> Firecrawl
-    Registry --> Brave
-    Registry --> You[You.com]
-    Registry --> Jina
-    Registry --> SearXNG
+    Registry --> Tavily["Tavily"]
+    Registry --> Exa["Exa"]
+    Registry --> Firecrawl["Firecrawl"]
+    Registry --> Brave["Brave"]
+    Registry --> You["You.com"]
+    Registry --> Jina["Jina"]
+    Registry --> SearXNG["SearXNG"]
 ```
 
 Web 设置页通过本地 Host routes 读写插件配置：
 
 ```mermaid
 flowchart LR
-    Client[Web Client] --> Routes[/web-tools/api/*]
-    Routes --> Settings[ctx.settings]
-    Routes --> Credentials[ctx.credentials]
-    Routes --> Tests[Provider Test / Test Search]
-    Routes --> Quota
+    Client["Web Client"] --> Routes["Host routes<br/>/web-tools/api/*"]
+    Routes --> Settings["ctx.settings"]
+    Routes --> Credentials["ctx.credentials"]
+    Routes --> Tests["Provider Test / Test Search"]
+    Routes --> Quota["Quota"]
 ```
 
 Provider 选择和 fallback 在插件内部完成，不需要额外 LLM 请求，也不会为每个 Provider 注册一套模型工具。
