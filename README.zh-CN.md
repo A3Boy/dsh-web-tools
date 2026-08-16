@@ -425,7 +425,7 @@ src/host/providers/
 - 用量历史
 - 评估是否让 `web_fetch` 回归 DSH HTTP Fetch 语义
 
-## 让编码 Agent 安装
+## 让Code Agent 安装
 
 <details>
 <summary>安装提示词</summary>
