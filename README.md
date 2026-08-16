@@ -31,6 +31,8 @@ The agent still uses the built-in `web_search` and `web_fetch` tools provided by
 - Multiple API keys per provider
 - Provider and credential health tracking
 - Balance, quota, or rate-limit information where available
+- Quota refreshed **in the background** (every 5 minutes) — fresh on page open
+- System proxy support (env vars / Windows system proxy; loopback auto-bypass)
 - Native content fetching through Tavily, Exa, Firecrawl, and Jina
 - Self-hosted SearXNG support
 - Native DSH Web settings panel
@@ -67,6 +69,21 @@ dsh plugin --profile web remove dsh-web-tools
 ```
 
 The plugin is loaded through the DSH Profile Bundle mechanism and does not patch the Harness source code.
+
+> **Update not taking effect?** If a restart still shows old behavior (e.g.
+> You.com 404, missing quota), the profile is likely loading a **stale
+> snapshot** from install time rather than the latest code. In the profile
+> directory run:
+>
+> ```bash
+> cd ~/.dsh/profiles/web
+> pnpm install
+> ```
+>
+> If your profile links a local plugin directory with the `file:` protocol,
+> switch it to `link:` — under `nodeLinker: hoisted` (pnpm-workspace.yaml)
+> `file:` is a snapshot copy that never follows source changes, while `link:`
+> is a symlink that updates on restart.
 
 ## Network & proxy
 
@@ -389,7 +406,8 @@ Provider selection and fallback happen inside the plugin. No additional LLM call
 | Exa Search + multiple keys | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
 | You.com Search + Quota (`X-API-Key`) | ✅ E2E |
-| Brave / Jina / SearXNG | Adapter ready, E2E pending |
+| Brave Search + header quota | ✅ E2E |
+| Jina / SearXNG | Adapter ready, E2E pending |
 
 Run the test suite:
 

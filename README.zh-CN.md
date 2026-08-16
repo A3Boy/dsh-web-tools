@@ -50,6 +50,8 @@ Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型
 - 每个 Provider 支持多个 API Key
 - Provider / Credential 健康状态
 - 上游支持时显示余额、额度或 Rate Limit
+- 额度**后台静默刷新**（每 5 分钟），打开设置页即可看到最新数据
+- 系统代理支持（环境变量 / Windows 系统代理，本地回环地址自动绕过）
 - Tavily、Exa、Firecrawl、Jina 支持网页正文读取
 - SearXNG 自托管
 - Provider 连接测试
@@ -91,6 +93,18 @@ dsh plugin --profile web remove dsh-web-tools
 ```
 
 插件通过 DSH Profile Bundle 加载，不需要修改 Harness 源码。
+
+> **更新后不生效？** 如果重启后仍是旧行为（例如 You.com 报 404、额度不显示），
+> 通常是 profile 里加载的是安装时的**旧快照**而非最新代码。在 profile 目录执行：
+>
+> ```bash
+> cd ~/.dsh/profiles/web
+> pnpm install
+> ```
+>
+> 若你的 profile 用 `file:` 协议链接本地插件目录，建议改成 `link:` 协议
+> （`pnpm-workspace.yaml` 配置了 `nodeLinker: hoisted` 时 `file:` 是快照拷贝，
+> 不会跟随源码改动；`link:` 是符号链接，改代码后重启即生效）。
 
 ## 网络与代理
 
@@ -400,7 +414,8 @@ Provider 选择和 fallback 都在插件内部完成，不为每个 Provider 注
 | Exa Search + 多 Key | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
 | You.com Search + Quota（X-API-Key） | ✅ E2E |
-| Brave / Jina / SearXNG | Adapter ready，继续补 E2E |
+| Brave Search + 响应头额度 | ✅ E2E |
+| Jina / SearXNG | Adapter ready，继续补 E2E |
 
 运行测试：
 
