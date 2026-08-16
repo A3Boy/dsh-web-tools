@@ -1,8 +1,9 @@
 /**
- * fetch-proxy tests: env detection, loopback/NO_PROXY bypass, and real proxy
- * routing. undici's ProxyAgent tunnels EVERY target (http included) with a
- * CONNECT request, so the test proxy implements CONNECT and forwards the raw
- * stream — proving fetchWithProxy actually routes through the proxy.
+ * fetch-proxy tests: env detection, loopback/NO_PROXY bypass, lazy-undici
+ * degradation, and real proxy routing. undici's ProxyAgent tunnels EVERY
+ * target (http included) with a CONNECT request, so the test proxy implements
+ * CONNECT and forwards the raw stream — proving fetchWithProxy actually
+ * routes through the proxy.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,6 +11,36 @@ import { createServer } from "node:http";
 import { connect } from "node:net";
 import { once } from "node:events";
 import { proxyFromEnv, shouldBypassProxy, fetchWithProxy } from "../src/host/fetch-proxy.ts";
+
+test("module loads and degrades to plain fetch when undici is unavailable", async () => {
+  // A profile linked before the dependency was declared has no undici. The
+  // plugin must still LOAD (lazy import), not crash the whole plugin tree.
+  const fs = await import("node:fs/promises");
+  const { execFileSync } = await import("node:child_process");
+  const tmp = await fs.mkdtemp(process.env.TEMP + "/wt-undici-");
+  try {
+    await fs.cp("lib", tmp + "/lib", { recursive: true });
+    const url = new URL("file:///" + (tmp + "/lib/host/fetch-proxy.js").replace(/\\/g, "/")).href;
+    const script = `
+      (async () => {
+        const fp = await import(${JSON.stringify(url)});
+        process.env.HTTPS_PROXY = "http://127.0.0.1:9";
+        try {
+          await fp.fetchWithProxy("http://127.0.0.1:9/x", { signal: AbortSignal.timeout(2000) });
+          process.exit(2); // unexpected: connect to :9 should fail
+        } catch (e) {
+          // network-level failure, NOT ERR_MODULE_NOT_FOUND
+          if (e && e.code === "ERR_MODULE_NOT_FOUND") process.exit(3);
+          process.exit(0);
+        }
+      })();
+    `;
+    const out = execFileSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 15000 });
+    assert.equal(out.trim(), "", "expected graceful degradation");
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
 
 test("proxyFromEnv reads the standard proxy env vars", () => {
   const saved = process.env.HTTPS_PROXY;

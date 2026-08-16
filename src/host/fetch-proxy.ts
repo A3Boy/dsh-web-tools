@@ -14,14 +14,37 @@
  * `NO_PROXY` / `no_proxy` entries bypass the proxy for matching hosts
  * (e.g. `localhost`, internal instances).
  *
+ * `undici` is loaded LAZILY: it is a declared dependency, but a profile that
+ * was linked before the dependency was declared (or a broken install) may not
+ * provide it. A static top-level import would then crash the entire plugin
+ * tree at load time. Lazy loading + a plain-fetch fallback keeps the plugin
+ * usable (without proxy support) instead of failing to start.
+ *
  * The proxy agent is created lazily once per proxy URL and reused.
  * @module
  */
 import { execFileSync } from "node:child_process";
-import { ProxyAgent } from "undici";
+
+/** Structural ProxyAgent type (we never import undici statically). */
+type ProxyAgentLike = new (proxy: string) => unknown;
 
 /** Lazy per-proxy agents (a proxy URL change across calls re-creates). */
-const agentCache = new Map<string, ProxyAgent>();
+const agentCache = new Map<string, unknown>();
+
+/** Cached undici ProxyAgent ctor; null = unavailable, undefined = not tried. */
+let proxyAgentCtor: ProxyAgentLike | null | undefined;
+
+/** Lazily resolve undici's ProxyAgent. Never throws — null on failure. */
+async function getProxyAgentCtor(): Promise<ProxyAgentLike | null> {
+  if (proxyAgentCtor !== undefined) return proxyAgentCtor;
+  try {
+    const undici = (await import("undici")) as { ProxyAgent?: unknown };
+    proxyAgentCtor = typeof undici.ProxyAgent === "function" ? (undici.ProxyAgent as ProxyAgentLike) : null;
+  } catch {
+    proxyAgentCtor = null;
+  }
+  return proxyAgentCtor;
+}
 
 /** The first usable proxy from the standard env vars, or undefined. */
 export function proxyFromEnv(): string | undefined {
@@ -112,9 +135,11 @@ export async function fetchWithProxy(url: string | URL, init?: RequestInit): Pro
   if (shouldBypassProxy(url)) return fetch(url, init);
   const proxy = proxyFromEnv() ?? proxyFromSystem();
   if (proxy === undefined) return fetch(url, init);
+  const Ctor = await getProxyAgentCtor();
+  if (Ctor === null) return fetch(url, init); // undici missing → plain fetch
   let agent = agentCache.get(proxy);
   if (!agent) {
-    agent = new ProxyAgent(proxy);
+    agent = new Ctor(proxy);
     agentCache.set(proxy, agent);
   }
   const { dispatcher, ...rest } = (init ?? {}) as RequestInit & { dispatcher?: unknown };
