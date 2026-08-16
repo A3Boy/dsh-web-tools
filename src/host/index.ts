@@ -15,7 +15,7 @@ import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./
 import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
-import { buildPool, selectIndex, markUsed } from "./pool.ts";
+import { buildPool, selectIndex, markUsed, markUnhealthy } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -106,18 +106,35 @@ export function apply(ctx: WebToolsContext) {
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
     const adapter = getProvider(providerName);
-    const ref = credRefOf(providerName);
-    const cred = await readCredential(ctx, ref);
     const started = Date.now();
     try {
       // Keyless self-hosted providers (SearXNG) work without any key.
       let key = "";
       if (!isKeylessSelfHosted(adapter)) {
-        const entries = buildPool(cred.value ?? "");
+        // Use the SHARED pool store so a failed probe marks the tested key
+        // unhealthy — the card's per-key health must reflect reality, not a
+        // fresh pool where every key always looks healthy.
+        const entries = await poolStore.poolOf(providerName);
         if (entries.length === 0) throw Object.assign(new Error("no API key configured"), { code: "config" });
         const index = selectIndex(entries);
-        key = entries[index].key;
-        markUsed(entries, index);
+        const entry = entries[index];
+        key = entry?.key ?? "";
+        try {
+          const outcome = await adapter.search(query, 1, key, readConfig().providerBaseUrls[providerName]);
+          markUsed(entries, index);
+          const latencyMs = Date.now() - started;
+          return {
+            ok: true,
+            latencyMs,
+            resultCount: outcome.sources.length,
+            title: outcome.sources[0]?.title,
+          };
+        } catch (e) {
+          // Same policy as the executor: only an auth failure indicts the key.
+          const err = toProviderError(e);
+          if (err.code === "auth") markUnhealthy(entries, index);
+          throw err;
+        }
       }
       const outcome = await adapter.search(query, 1, key, readConfig().providerBaseUrls[providerName]);
       const latencyMs = Date.now() - started;

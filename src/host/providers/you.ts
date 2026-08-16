@@ -1,16 +1,23 @@
-﻿/**
+/**
  * dsh-web-tools — You.com provider adapter.
  *
- * API: POST https://api.you.com/llm/search (X-API-Key header).
- * Balance: GET https://api.you.com/v1/billing/account_balance returns
- *   `data.attributes.balance` in USD cents — an official authoritative value.
+ * API (2026-08, verified against the official You.com onboarding SKILL):
+ *   Search : POST https://api.you.com/v1/search
+ *            Authorization: Bearer <YDC_API_KEY>
+ *            body { query, num_web_results }
+ *            → results.web[] (url/title/description/snippets/page_age)
+ *   Balance: GET https://api.you.com/v1/billing/account_balance (Bearer)
+ *            → data.attributes.balance in USD cents
+ *
+ * The legacy POST /llm/search + x-api-key header endpoint returns 404 — do
+ * not reintroduce it. Authentication is Bearer only.
  * @module
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 
-const YOU_SEARCH_URL = "https://api.you.com/llm/search";
+const YOU_SEARCH_URL = "https://api.you.com/v1/search";
 const YOU_BALANCE_URL = "https://api.you.com/v1/billing/account_balance";
 
 export const YOU_META = {
@@ -22,6 +29,11 @@ export const YOU_META = {
   needsBaseUrl: false,
 } as const;
 
+/** Bearer auth header for the current You.com API (legacy x-api-key is gone). */
+function youAuthHeader(apiKey: string): Record<string, string> {
+  return { authorization: `Bearer ${apiKey}` };
+}
+
 export const YouProvider: ProviderAdapter = {
   ...YOU_META,
 
@@ -29,20 +41,29 @@ export const YouProvider: ProviderAdapter = {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
     const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
+      headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
       body: JSON.stringify({ query, num_web_results: maxResults }),
       signal,
     });
     throwIfHttp("You.com", res);
     const raw = await res.json();
-    const results = Array.isArray(raw?.hits) ? raw.hits : [];
+    // POST /v1/search → { results: { web: [...] } } (legacy shape was hits[]).
+    const results = Array.isArray(raw?.results?.web) ? raw.results.web : Array.isArray(raw?.hits) ? raw.hits : [];
     const sources = results
       .map((r: Record<string, unknown>) => {
         const u = typeof r?.url === "string" ? r.url : "";
         if (!u) return null;
-        const s: { url: string; title?: string; snippet?: string } = { url: u };
+        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url: u };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        if (typeof r.snippet === "string" && r.snippet) s.snippet = r.snippet;
+        // v1/search puts the description on the result and longer text in
+        // snippets[]; prefer snippets[0] when present, else description.
+        const snippet = Array.isArray(r.snippets) && typeof r.snippets[0] === "string"
+          ? r.snippets[0]
+          : typeof r.description === "string"
+            ? r.description
+            : undefined;
+        if (typeof snippet === "string" && snippet) s.snippet = snippet;
+        if (typeof r.page_age === "string" && r.page_age) s.publishedAt = r.page_age;
         return s;
       })
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
@@ -54,11 +75,11 @@ export const YouProvider: ProviderAdapter = {
   },
 };
 
-/** You.com official account balance (USD cents). */
+/** You.com official account balance (USD cents, Bearer auth). */
 export async function youQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
   if (!apiKey) throw providerError("config", "You.com API key is not configured");
   const res = await fetchWithProxy(YOU_BALANCE_URL, {
-    headers: { "x-api-key": apiKey },
+    headers: youAuthHeader(apiKey),
     signal,
   });
   if (!res.ok) {
@@ -77,4 +98,3 @@ export async function youQuota(apiKey: string, signal?: AbortSignal): Promise<Qu
     fetchedAt: Date.now(),
   };
 }
-

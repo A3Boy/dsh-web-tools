@@ -11,7 +11,7 @@ interface Props {
     onClose: () => void;
     onToggle: (enabled: boolean) => void;
     onBaseUrl: (url: string) => void;
-    onTest: () => void;
+    onTest: () => Promise<void>;
     onRefreshQuota: () => void;
     /** Reload config after credential edits (key list changes). */
     onConfigChanged: () => void;

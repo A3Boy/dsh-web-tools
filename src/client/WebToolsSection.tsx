@@ -107,10 +107,11 @@ function ProviderCard(props: {
 }) {
   const { t, p, quota, testResult, orderRank, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
   const inChain = orderRank !== undefined;
-  // A connection test can only override the static guess when the failure is
-  // classification-relevant (auth / rate-limit); a network "fetch failed" is
-  // shown as unreachable, NOT as an auth error.
-  const status = testOutcomeStatus(testResult) ?? providerStatusOf(p, quota, inChain);
+  // A connection test can only refine a "ready" guess — it must never flip
+  // "not configured" / "not in chain" to auth-error, and a stale failure
+  // (key since removed) must not keep a provider red forever.
+  const base = providerStatusOf(p, quota, inChain);
+  const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
     ready: t("ready"),
     "rate-limited": t("rateLimited"),
@@ -699,12 +700,17 @@ export function WebToolsSection(props: SectionProps) {
           busy={!!busyProviders[detailProvider.name]}
           isDefault={detailProvider.name === config.defaultProvider}
           inChain={orderedProviders.includes(detailProvider.name)}
-          onClose={() => setDetailFor(null)}
+          onClose={() => { setDetailFor(null); setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; }); }}
           onToggle={(enabled) => toggleProvider(detailProvider.name, enabled)}
           onBaseUrl={(url) => setBaseUrl(detailProvider.name, url)}
-          onTest={() => void testProvider(detailProvider.name)}
+          onTest={() => testProvider(detailProvider.name)}
           onRefreshQuota={() => void loadQuotas(true)}
-          onConfigChanged={() => void load()}
+          onConfigChanged={() => {
+            // Credentials changed (add/remove key): drop the stale probe so a
+            // previous "no key" / auth error does not linger after the edit.
+            setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; });
+            void load();
+          }}
         />
       )}
 

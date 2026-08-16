@@ -60,8 +60,8 @@
     "build": "node -e \"require('fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown",
     "prepare": "node -e \"require('fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown",
     "bundle": "tsdown",
-    "test": "node --experimental-strip-types --test src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
-    "smoke": "node --experimental-strip-types --test test/section-registration.test.ts test/status-logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
+    "test": "node --experimental-strip-types --test src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
+    "smoke": "node --experimental-strip-types --test test/section-registration.test.ts test/status-logic.test.ts test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "devDependencies": {

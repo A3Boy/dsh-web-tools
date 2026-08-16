@@ -27,7 +27,7 @@ interface Props {
   onClose: () => void;
   onToggle: (enabled: boolean) => void;
   onBaseUrl: (url: string) => void;
-  onTest: () => void;
+  onTest: () => Promise<void>;
   onRefreshQuota: () => void;
   /** Reload config after credential edits (key list changes). */
   onConfigChanged: () => void;
@@ -129,7 +129,9 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
       onChanged();
       // Real connection test with the freshly added key — "configured" is not
       // "connected", so the card must verify before showing a green state.
-      onAfterChange();
+      // Reload AFTER the test so the tested key's health lands in the list.
+      await onAfterChange();
+      onChanged();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -141,8 +143,10 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
     setBusy(keyId);
     try {
       await api.credentialsRemoveKey(p.name, keyId);
+      // No auto test after removal: with the last key gone the probe would
+      // only produce a misleading "no API key configured" error. The card
+      // reload reflects the smaller pool; the operator can test again.
       onChanged();
-      onAfterChange();
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -210,11 +214,11 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
 export function ProviderModal(props: Props) {
   const { t, p, quota, testResult, busy, isDefault, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
-  // A failed connection test can only override the static guess when the
-  // failure is classification-relevant (auth / rate-limit); a network
-  // "fetch failed" is shown as unreachable, NOT as an auth error.
-  const testFailed = testResult !== undefined && !testResult.ok;
-  const status = (testFailed ? testOutcomeStatus(testResult) : undefined) ?? providerStatusOf(p, quota, inChain);
+  // A connection test can only refine a "ready" guess — it must never flip
+  // "not configured" / "not in chain" to auth-error, and a stale failure
+  // (key since removed) must not keep a provider red forever.
+  const base = providerStatusOf(p, quota, inChain);
+  const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
     ready: t("ready"),
     "rate-limited": t("rateLimited"),
@@ -237,18 +241,18 @@ export function ProviderModal(props: Props) {
       description={p.description}
       footer={
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button variant="primary" onClick={onTest} disabled={busy}>
+          <Button variant="primary" onClick={onTest} disabled={busy} style={{ flex: "none" }}>
             {busy ? t("testingConnection") : t("testConnection")}
           </Button>
           {testResult && (
-            <span style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               <StateDot state={testResult.ok ? "done" : "error"} size={8} />
               {testResult.ok
                 ? `${t("testOk")} · ${testResult.latencyMs}ms · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
                 : `${t("testFail")}: ${testResult.error?.message ?? ""}`}
             </span>
           )}
-          <span style={{ marginLeft: "auto" }}>
+          <span style={{ marginLeft: "auto", flex: "none" }}>
             <Button variant="ghost" onClick={onClose}>{t("close")}</Button>
           </span>
         </div>
