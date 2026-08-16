@@ -37,6 +37,7 @@ The agent still uses the built-in `web_search` and `web_fetch` tools provided by
 - Self-hosted SearXNG support
 - Native DSH Web settings panel
 - Provider connection tests and Test Search
+- Page **UI language** switchable independently (Follow system / 中文 / English) without touching the DSH-wide language
 - API keys stored through DSH Credentials
 
 The plugin does not provide a proxy service or shared API keys. Requests are sent directly from the local DSH Host to the configured provider.
@@ -323,6 +324,14 @@ Test Search performs a real search and shows the provider used, request latency,
 The result count is still controlled by the DSH `web_search` tool layer.
 
 DSH also owns the overall timeout for a complete `web_search` call. The timeout configured here only limits one provider attempt before fallback proceeds.
+
+## UI language
+
+The top-right corner of the page has a **UI language** selector: **Follow system / 中文 / English**.
+
+- Default **Follow system**: tracks the DSH-wide language (Settings → General → Language); the page follows automatically when DSH switches
+- Choosing **中文** or **English**: forces only this page to that language — it does **not** change the DSH-wide language or affect other plugins
+- The choice persists in the plugin's own config and survives restarts
 
 ## SearXNG
 

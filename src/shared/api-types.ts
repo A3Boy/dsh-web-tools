@@ -44,6 +44,11 @@ export interface ConfigView {
     /** Proxy desired but undici unavailable → degraded to direct fetch. */
     degraded: boolean;
   };
+  /**
+   * Page UI language: "auto" follows the DSH UI language, "zh"/"en" force the
+   * page to that language regardless of the DSH-wide preference.
+   */
+  uiLanguage?: "auto" | "zh" | "en";
 }
 
 /** One quota snapshot for the card (display only). */

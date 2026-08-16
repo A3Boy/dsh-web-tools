@@ -37,6 +37,9 @@ export const DEFAULT_SETTINGS = {
   // response header captured during a real search. Persisted here so a
   // restart does not forget the last known balance (keyed by API key).
   braveQuotaCache: {} as Record<string, QuotaSnapshot>,
+  // Page UI language: "auto" follows the DSH UI language; "zh"/"en" force the
+  // page to that language regardless of the DSH-wide preference.
+  uiLanguage: "auto" as "auto" | "zh" | "en",
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -49,6 +52,8 @@ export interface WebToolsSettings {
   providerEnabled: Record<string, boolean>;
   /** Brave per-key quota snapshots captured from search response headers. */
   braveQuotaCache: Record<string, QuotaSnapshot>;
+  /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
+  uiLanguage: "auto" | "zh" | "en";
 }
 
 /** The schema object for settings registration (official z<T> annotation). */
@@ -60,6 +65,7 @@ export const Config: z<WebToolsSettings> = z.object({
   providerBaseUrls: z.dict(z.string()),
   providerEnabled: z.dict(z.boolean()),
   braveQuotaCache: z.dict(z.any()),
+  uiLanguage: z.union([z.const("auto"), z.const("zh"), z.const("en")]),
 });
 
 /** A settings-scope handle: current value + write path. */

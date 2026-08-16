@@ -175,6 +175,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     providerAttemptTimeoutMs: (cfg.providerAttemptTimeoutMs as number) ?? 10000,
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
+    uiLanguage: (cfg.uiLanguage as "auto" | "zh" | "en") ?? "auto",
     providers,
   };
 }
@@ -188,6 +189,7 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
+  if (p.uiLanguage === "auto" || p.uiLanguage === "zh" || p.uiLanguage === "en") patch.uiLanguage = p.uiLanguage;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
 }

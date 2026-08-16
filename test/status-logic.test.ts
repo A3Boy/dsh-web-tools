@@ -7,7 +7,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { providerStatusOf, testOutcomeStatus, quotaSummary, outcomeLabel, quotaFraction, quotaTier, quotaDisplayKind } from "../src/client/logic.ts";
+import {
+  providerStatusOf,
+  testOutcomeStatus,
+  quotaSummary,
+  outcomeLabel,
+  quotaFraction,
+  quotaTier,
+  quotaDisplayKind,
+  resolveUiLanguage,
+  translateDict,
+} from "../src/client/logic.ts";
 
 function provider(overrides: Partial<Parameters<typeof providerStatusOf>[0]> = {}) {
   return {
@@ -219,4 +229,31 @@ test("testOutcomeStatus: auth and rate-limit classifications still override", ()
   assert.equal(testOutcomeStatus({ ok: false, error: { code: "401" } }), "auth-error");
   assert.equal(testOutcomeStatus({ ok: false, error: { code: "rate-limit" } }), "rate-limited");
   assert.equal(testOutcomeStatus({ ok: false, error: { code: "quota" } }), "rate-limited");
+});
+
+// ---- page UI language (independent of the DSH-wide locale) ----
+
+test("resolveUiLanguage: forced zh/en win; auto follows the DSH locale", () => {
+  assert.equal(resolveUiLanguage("zh", "en"), "zh", "forced zh beats DSH en");
+  assert.equal(resolveUiLanguage("en", "zh"), "en", "forced en beats DSH zh");
+  assert.equal(resolveUiLanguage("auto", "en"), "en");
+  assert.equal(resolveUiLanguage("auto", "zh"), "zh");
+  assert.equal(resolveUiLanguage(undefined, "en"), "en", "absent pref = auto");
+  assert.equal(resolveUiLanguage(undefined, "zh"), "zh");
+  assert.equal(resolveUiLanguage(undefined, "fr"), "zh", "unknown DSH locale falls back to zh");
+  assert.equal(resolveUiLanguage("auto", "fr"), "zh");
+});
+
+test("translateDict: picks the active dict, falls back cross-locale, substitutes params", () => {
+  const zh = { greeting: "你好，{name}！", onlyZh: "仅中文" };
+  const en = { greeting: "Hello, {name}!", onlyEn: "English only" };
+  assert.equal(translateDict(en, zh, "greeting", { name: "Tom" }), "Hello, Tom!");
+  assert.equal(translateDict(zh, en, "greeting", { name: "小明" }), "你好，小明！");
+  // cross-locale fallback for keys missing in the active dict
+  assert.equal(translateDict(en, zh, "onlyZh"), "仅中文");
+  assert.equal(translateDict(zh, en, "onlyEn"), "English only");
+  // no params → raw template; missing key → undefined
+  assert.equal(translateDict(en, zh, "greeting"), "Hello, {name}!");
+  assert.equal(translateDict(en, zh, "missing"), undefined);
+  assert.equal(translateDict(zh, en, "missing", { name: "x" }), undefined);
 });

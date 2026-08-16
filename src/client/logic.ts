@@ -10,6 +10,39 @@ import type { ProviderView, QuotaView } from "../shared/api-types.ts";
 /** t() bound to the dsh-web-tools namespace (injected into the section). */
 export type TFunc = (key: string, ...args: unknown[]) => string;
 
+// ---------------------------------------------------------------------------
+// page UI language (independent of the DSH-wide locale)
+// ---------------------------------------------------------------------------
+
+/** Page language preference: follow the DSH UI language, or force one. */
+export type UiLangPref = "auto" | "zh" | "en";
+
+/**
+ * Resolve the effective page language. "auto" (or an unknown value) follows
+ * the DSH UI language; anything other than "en" falls back to zh.
+ */
+export function resolveUiLanguage(pref: UiLangPref | undefined, dshActive: string): "zh" | "en" {
+  if (pref === "zh" || pref === "en") return pref;
+  return dshActive === "en" ? "en" : "zh";
+}
+
+/**
+ * Translate one key from a locale dictionary with cross-locale fallback
+ * ({name} placeholder substitution). Returns undefined when neither dict has
+ * the key — the caller falls back to the DSH-bound translator.
+ */
+export function translateDict(
+  dict: Record<string, string>,
+  fallback: Record<string, string>,
+  key: string,
+  params?: Record<string, unknown>,
+): string | undefined {
+  const raw = dict[key] ?? fallback[key];
+  if (raw === undefined) return undefined;
+  if (!params) return raw;
+  return raw.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+}
+
 /** Provider page status model (drives the row dot + detail Status block). */
 export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
 

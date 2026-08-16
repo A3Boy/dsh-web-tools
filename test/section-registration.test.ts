@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registerSettingsSection, SECTION_ID, SECTION_ORDER } from "../src/client/registration.ts";
+import { registerSettingsSection, SECTION_ID, SECTION_ORDER, type UiFace } from "../src/client/registration.ts";
 
 /** Capture every slots.inject/register call in a minimal fake ctx. */
 function fakeCtx() {
@@ -91,4 +91,28 @@ test("registration is idempotent per apply() call (one entry, no duplicates)", (
   assert.equal(registered.length, 2);
   assert.equal(registered[0].entry.id, "web-tools");
   assert.equal(registered[1].entry.id, "web-tools");
+});
+
+test("page-language ui face is optional and forwarded to the component", () => {
+  const { ctx, registered } = fakeCtx();
+  const t = (key: string) => `t:${key}`;
+  const ui: UiFace = {
+    getActiveLocale: () => "zh",
+    subscribeLocale: () => () => {},
+    zhDict: { a: "甲" },
+    enDict: { a: "A" },
+  };
+
+  // Without ui: inject still hands t, ui is undefined.
+  registerSettingsSection(ctx, t, "NoUi");
+  const injectedNoUi = (registered[0].entry.inject as () => { t: (k: string) => string; ui?: UiFace })();
+  assert.equal(injectedNoUi.t("nav"), "t:nav");
+  assert.equal(injectedNoUi.ui, undefined);
+
+  // With ui: the face rides inject() so the section can render independently.
+  registerSettingsSection(ctx, t, "WithUi", ui);
+  const injectedUi = (registered[1].entry.inject as () => { t: (k: string) => string; ui: UiFace })();
+  assert.equal(injectedUi.ui, ui);
+  assert.equal(injectedUi.ui.getActiveLocale(), "zh");
+  assert.equal(injectedUi.ui.enDict.a, "A");
 });

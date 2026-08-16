@@ -56,6 +56,7 @@ Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型
 - SearXNG 自托管
 - Provider 连接测试
 - Test Search：真实执行搜索并展示命中 Provider、耗时、fallback 过程和搜索结果
+- 页面**界面语言**可独立切换（跟随系统 / 中文 / English），不影响 DSH 全局语言
 - API Key 使用 DSH Credentials 保存
 
 插件不提供代理服务器或共享 Key。请求由本地 DSH Host 直接发送给对应 Provider。
@@ -300,6 +301,14 @@ Quota 主要用于设置页展示。实际 fallback 仍以真实 Search 请求�
 搜索结果数量仍由 DSH `web_search` 工具层控制。
 
 DSH 负责一次完整 `web_search` 的总超时；插件设置的 timeout 只限制单个 Provider attempt。
+
+## 界面语言
+
+页面右上角提供**界面语言**选择：**跟随系统 / 中文 / English**。
+
+- 默认「跟随系统」：跟随 DSH 全局语言（设置 → General → Language），DSH 切换语言时页面自动跟随
+- 选择「中文」或「English」：仅本页面强制使用该语言，**不会**改变 DSH 全局语言，也不会影响其他插件
+- 选择会持久化到插件自己的配置，重启后保持
 
 ## 网页读取
 

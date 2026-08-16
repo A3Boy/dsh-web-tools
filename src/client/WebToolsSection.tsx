@@ -13,7 +13,7 @@
  * keeps its existing comma-joined credential string contract.
  * @module
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   IconChevronRightOutline14,
@@ -26,6 +26,7 @@ import { api, type ConfigView, type QuotaView, type TestProviderView, type TestS
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { RoutingModal } from "./RoutingModal.tsx";
+import type { UiFace } from "./registration.ts";
 import {
   providerStatusOf,
   testOutcomeStatus,
@@ -36,6 +37,9 @@ import {
   quotaRemainingLabel,
   quotaMetaLine,
   outcomeLabel,
+  resolveUiLanguage,
+  translateDict,
+  type UiLangPref,
   type TFunc,
   type ProviderStatus,
 } from "./logic.ts";
@@ -84,6 +88,8 @@ export function Switch(props: { checked: boolean; onChange: (next: boolean) => v
 
 interface SectionProps {
   t: TFunc;
+  /** Page-language face for the independent language switch (see registration). */
+  ui?: UiFace;
 }
 
 /** One provider card in the providers list (click → ProviderModal).
@@ -365,8 +371,33 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 
 /** The page. */
 export function WebToolsSection(props: SectionProps) {
-  const { t } = props;
+  const { t: baseT, ui } = props;
   const [config, setConfig] = useState<ConfigView | null>(null);
+  // Independent page language: "auto" follows the DSH UI language, "zh"/"en"
+  // force the page — persisted in the plugin's own config, never the DSH-wide
+  // preference. The local `t` shadows props.t so every child translation
+  // (ProviderModal/RoutingModal included) rides the effective language.
+  const [uiPref, setUiPref] = useState<UiLangPref>("auto");
+  const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
+  // Follow DSH-wide locale switches while the preference is "auto".
+  useEffect(() => {
+    if (!ui) return;
+    return ui.subscribeLocale(() => setDshActive(ui.getActiveLocale()));
+  }, [ui]);
+  // Adopt the persisted preference once the config loads (and after saves).
+  useEffect(() => {
+    if (config) setUiPref(config.uiLanguage ?? "auto");
+  }, [config]);
+  const effectiveLang = resolveUiLanguage(uiPref, dshActive);
+  const t: TFunc = useMemo(() => {
+    if (!ui) return baseT;
+    const dict = effectiveLang === "en" ? ui.enDict : ui.zhDict;
+    const fallback = effectiveLang === "en" ? ui.zhDict : ui.enDict;
+    return (key: string, ...args: unknown[]) => {
+      const params = args[0] as Record<string, unknown> | undefined;
+      return translateDict(dict, fallback, key, params) ?? baseT(key, ...args);
+    };
+  }, [ui, effectiveLang, baseT]);
   const [quotas, setQuotas] = useState<Record<string, QuotaView> | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -525,7 +556,34 @@ export function WebToolsSection(props: SectionProps) {
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px", color: text.primary }}>{t("title")}</h2>
           <p style={{ margin: "4px 0 0", fontSize: 14, lineHeight: "22px", color: text.secondary }}>{t("tagline")}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {/* Page language: independent of the DSH-wide locale (persisted in
+              the plugin config; "auto" follows the DSH UI language). */}
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: text.secondary, whiteSpace: "nowrap" }}>
+            <span>{t("uiLanguage")}</span>
+            <select
+              value={uiPref}
+              onChange={(e) => {
+                const v = e.target.value as UiLangPref;
+                setUiPref(v);
+                void save({ uiLanguage: v });
+              }}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 8,
+                border: `1px solid ${surface.border}`,
+                background: surface.layer2,
+                color: text.primary,
+                fontFamily: "inherit",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              <option value="auto">{t("uiLangAuto")}</option>
+              <option value="zh">中文</option>
+              <option value="en">English</option>
+            </select>
+          </label>
           <Switch checked={config.enabled} onChange={setEnabled} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
           {saving && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
           {saved && !saving && <span style={{ color: stateColor.success, fontSize: 12 }}>{t("saved")}</span>}
