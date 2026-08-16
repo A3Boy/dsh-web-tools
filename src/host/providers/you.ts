@@ -1,16 +1,16 @@
 /**
  * dsh-web-tools — You.com provider adapter.
  *
- * API (2026-08, verified against the official You.com onboarding SKILL):
+ * API (2026-08, verified against the official You.com docs / SKILL):
  *   Search : POST https://api.you.com/v1/search
- *            Authorization: Bearer <YDC_API_KEY>
+ *            X-API-Key: <apiKey>            (official header, see docs)
  *            body { query, num_web_results }
  *            → results.web[] (url/title/description/snippets/page_age)
- *   Balance: GET https://api.you.com/v1/billing/account_balance (Bearer)
- *            → data.attributes.balance in USD cents
+ *   Balance: GET https://api.you.com/v1/billing/account_balance
+ *            X-API-Key: <apiKey>
+ *            → data.attributes.balance in USD cents (authoritative)
  *
- * The legacy POST /llm/search + x-api-key header endpoint returns 404 — do
- * not reintroduce it. Authentication is Bearer only.
+ * The legacy POST /llm/search endpoint returns 404 — do not reintroduce it.
  * @module
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
@@ -29,9 +29,9 @@ export const YOU_META = {
   needsBaseUrl: false,
 } as const;
 
-/** Bearer auth header for the current You.com API (legacy x-api-key is gone). */
+/** Official You.com auth header (X-API-Key, per the API reference). */
 function youAuthHeader(apiKey: string): Record<string, string> {
-  return { authorization: `Bearer ${apiKey}` };
+  return { "x-api-key": apiKey };
 }
 
 export const YouProvider: ProviderAdapter = {
