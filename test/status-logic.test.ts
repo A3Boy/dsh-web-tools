@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { providerStatusOf, quotaSummary, outcomeLabel, quotaFraction, quotaTier, quotaDisplayKind } from "../src/client/logic.ts";
+import { providerStatusOf, testOutcomeStatus, quotaSummary, outcomeLabel, quotaFraction, quotaTier, quotaDisplayKind } from "../src/client/logic.ts";
 
 function provider(overrides: Partial<Parameters<typeof providerStatusOf>[0]> = {}) {
   return {
@@ -193,4 +193,22 @@ test("quotaTier thresholds: ok ≥30%, warn 10–30%, danger <10%", () => {
   assert.equal(quotaTier(0.09), "danger");
   assert.equal(quotaTier(0), "danger");
   assert.equal(quotaTier(undefined), "ok");
+});
+
+test("testOutcomeStatus: no result or ok result does not override status", () => {
+  assert.equal(testOutcomeStatus(undefined), undefined);
+  assert.equal(testOutcomeStatus({ ok: true }), undefined);
+});
+
+test("testOutcomeStatus: network fetch failed is unreachable, NOT auth-error", () => {
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "network", message: "fetch failed" } }), "unreachable");
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "timeout" } }), "unreachable");
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "server" } }), "unreachable");
+});
+
+test("testOutcomeStatus: auth and rate-limit classifications still override", () => {
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "auth" } }), "auth-error");
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "401" } }), "auth-error");
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "rate-limit" } }), "rate-limited");
+  assert.equal(testOutcomeStatus({ ok: false, error: { code: "quota" } }), "rate-limited");
 });

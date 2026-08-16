@@ -11,7 +11,7 @@
  * @module
  */
 import type { WebToolsContext, WebToolsHttpRequest, WebToolsHttpResponse } from "./context-types.ts";
-import { poolSummary } from "./pool.ts";
+import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
@@ -35,6 +35,11 @@ export interface RouteDeps {
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
   testFullSearch: (query: string) => Promise<Record<string, unknown>>;
   describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
+  /**
+   * Live pool entries for one provider (real key health from the executor),
+   * so the card's per-key state matches what search actually uses.
+   */
+  poolEntries?: (provider: string) => Promise<PoolEntry[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,9 +147,10 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   for (const meta of PROVIDER_LIST) {
     const ref = credRefOf(meta.name);
     const cred = await deps.readCredential(ref);
-    // Rebuild the pool from the authoritative credential value (never from
-    // registry internals): the card shows real configured keys and sizes.
-    const pool = buildPool(cred.value ?? "");
+    // Prefer the executor's live pool (real key health); fall back to a fresh
+    // build when the routes run without one (tests). Never from registry
+    // internals: the card shows real configured keys and their current health.
+    const pool = deps.poolEntries ? await deps.poolEntries(meta.name) : buildPool(cred.value ?? "");
     providers.push({
       name: meta.name,
       label: meta.label,

@@ -14,7 +14,7 @@ import { Button, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Mo
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor, accent } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, quotaSummary, quotaFraction, quotaTier, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaTier, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
 
 interface Props {
   t: TFunc;
@@ -210,20 +210,22 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
 export function ProviderModal(props: Props) {
   const { t, p, quota, testResult, busy, isDefault, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
-  // A failed connection test overrides the static "configured → ready" guess:
-  // configured keys that fail the probe must NOT stay green.
+  // A failed connection test can only override the static guess when the
+  // failure is classification-relevant (auth / rate-limit); a network
+  // "fetch failed" is shown as unreachable, NOT as an auth error.
   const testFailed = testResult !== undefined && !testResult.ok;
-  const status = testFailed ? "auth-error" : providerStatusOf(p, quota, inChain);
+  const status = (testFailed ? testOutcomeStatus(testResult) : undefined) ?? providerStatusOf(p, quota, inChain);
   const statusText = {
     ready: t("ready"),
     "rate-limited": t("rateLimited"),
     "auth-error": t("authError"),
+    "unreachable": t("unreachable"),
     "not-configured": t("notConfigured"),
     "not-in-chain": t("notInChain"),
   }[status];
   // Gray hollow dot for unconfigured / not-in-chain; colored only for real states.
-  const statusState = status === "ready" ? "done" : status === "rate-limited" ? "warning" : status === "auth-error" ? "error" : "hollow" as const;
-  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" ? stateColor.warning : text.tertiary;
+  const statusState = status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow" as const;
+  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
   const selfHosted = p.name === "searxng";
 
   return (

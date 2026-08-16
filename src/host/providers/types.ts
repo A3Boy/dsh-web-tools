@@ -90,6 +90,15 @@ export interface ProviderAdapter extends ProviderMeta {
   fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ text: string }>;
 }
 
+/**
+ * Self-hosted provider that needs a base URL and has no Fetch API — and
+ * therefore works WITHOUT an API key (currently only SearXNG). Keyed-hosted
+ * providers always require a key.
+ */
+export function isKeylessSelfHosted(meta: Pick<ProviderMeta, "needsBaseUrl" | "fetchCapable">): boolean {
+  return meta.needsBaseUrl && !meta.fetchCapable;
+}
+
 /** Build a ProviderError with a classification code. */
 export function providerError(code: ProviderErrorCode, message: string, status?: number): ProviderError {
   const err = new Error(message) as ProviderError;

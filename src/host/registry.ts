@@ -12,6 +12,7 @@ import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { buildPool, markUnhealthy, markUsed, selectIndex, type PoolEntry } from "./pool.ts";
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
+import { isKeylessSelfHosted } from "./providers/types.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export const PROVIDER_ID = "dsh-web-tools";
@@ -164,8 +165,10 @@ export function createSearchProvider(
           continue;
         }
         const entries = await pools.poolOf(providerName);
-        if (entries.length === 0 && adapter.needsBaseUrl && !adapter.fetchCapable) {
-          // keyless self-hosted (SearXNG) still usable without keys
+        // Keyless self-hosted (SearXNG) stays usable without keys; every other
+        // provider needs at least one configured key to attempt a search.
+        if (entries.length === 0 && isKeylessSelfHosted(adapter)) {
+          // fine — no keys required
         } else if (entries.length === 0) {
           attempts.push({ provider: providerName, outcome: "skipped-no-keys" });
           continue;

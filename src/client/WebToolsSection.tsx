@@ -28,6 +28,7 @@ import { ProviderModal } from "./ProviderModal.tsx";
 import { RoutingModal } from "./RoutingModal.tsx";
 import {
   providerStatusOf,
+  testOutcomeStatus,
   quotaSummary,
   quotaFraction,
   quotaTier,
@@ -92,8 +93,8 @@ function ProviderCard(props: {
   t: TFunc;
   p: ProviderView;
   quota?: QuotaView;
-  /** True when the last connection test for this provider failed. */
-  testFailed?: boolean;
+  /** Last connection-test result (drives the row status when it overrides). */
+  testResult?: TestProviderView;
   orderRank?: number;
   isDefault: boolean;
   draggable: boolean;
@@ -104,23 +105,26 @@ function ProviderCard(props: {
   onDrop: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
-  const { t, p, quota, testFailed, orderRank, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
+  const { t, p, quota, testResult, orderRank, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
   const inChain = orderRank !== undefined;
-  // A failed connection test overrides the static "configured → ready" guess.
-  const status = testFailed ? "auth-error" : providerStatusOf(p, quota, inChain);
+  // A connection test can only override the static guess when the failure is
+  // classification-relevant (auth / rate-limit); a network "fetch failed" is
+  // shown as unreachable, NOT as an auth error.
+  const status = testOutcomeStatus(testResult) ?? providerStatusOf(p, quota, inChain);
   const statusText = {
     ready: t("ready"),
     "rate-limited": t("rateLimited"),
     "auth-error": t("authError"),
+    "unreachable": t("unreachable"),
     "not-configured": t("notConfigured"),
     "not-in-chain": t("notInChain"),
   }[status];
   const selfHosted = p.name === "searxng";
   // Gray hollow dot for "not configured" / "not in chain"; colored dots only
-  // for real states (green ready / amber rate-limited / red auth error).
+  // for real states (green ready / amber rate-limited & unreachable / red auth error).
   const dotState: "done" | "warning" | "error" | "ongoing" | "hollow" =
-    status === "ready" ? "done" : status === "rate-limited" ? "warning" : status === "auth-error" ? "error" : "hollow";
-  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" ? stateColor.warning : text.tertiary;
+    status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
+  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
 
   return (
     <div
@@ -614,7 +618,7 @@ export function WebToolsSection(props: SectionProps) {
                 t={t}
                 p={p}
                 quota={quotas?.[p.name]}
-                testFailed={testResult !== undefined && !testResult.ok}
+                testResult={testResult}
                 orderRank={inChain ? orderedProviders.indexOf(p.name) + 1 : undefined}
                 isDefault={p.name === config.defaultProvider}
                 draggable={inChain}

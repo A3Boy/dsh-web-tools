@@ -11,7 +11,23 @@ import type { ProviderView, QuotaView } from "../shared/api-types.ts";
 export type TFunc = (key: string, ...args: unknown[]) => string;
 
 /** Provider page status model (drives the row dot + detail Status block). */
-export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain";
+export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
+
+/**
+ * Status override from a connection-test result. A test that failed is NOT
+ * automatically an auth error — `fetch failed` is usually a network problem.
+ * Only an explicit auth/rate-limit classification overrides the static guess.
+ * @returns the override status, or undefined when the test does not change it.
+ */
+export function testOutcomeStatus(testResult?: { ok: boolean; error?: { code?: string } }): ProviderStatus | undefined {
+  if (!testResult || testResult.ok) return undefined;
+  const code = testResult.error?.code ?? "";
+  if (code === "auth" || code === "401" || code === "403") return "auth-error";
+  if (code === "rate-limit" || code === "quota" || code === "429") return "rate-limited";
+  // network / timeout / server / config / bad-request → the provider itself
+  // may be fine; the failure is about reachability, not credentials.
+  return "unreachable";
+}
 
 export function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain = true): ProviderStatus {
   if (!inChain) return "not-in-chain";

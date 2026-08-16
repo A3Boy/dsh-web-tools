@@ -309,6 +309,8 @@ Tavily → Exa → Brave → SearXNG
 
 也可以只配置 SearXNG。
 
+SearXNG **不需要 API Key**：在 Provider 弹窗里填写实例 Base URL 即可使用。
+
 SearXNG 本身没有云端 API 额度，不过实际搜索是否稳定仍取决于自己的实例、网络和启用的上游搜索引擎。
 
 ## 安全
@@ -392,7 +394,12 @@ npm test
 npx tsc -p tsconfig.json --noEmit
 npx tsc -p tsconfig.client.json --noEmit
 npx tsc -p tsconfig.build.json
+npm run build
 ```
+
+> `lib/` 编译产物是**有意提交进仓库**的：DSH 通过 pnpm 从 git 安装插件，pnpm
+> 默认会拦截依赖的构建脚本，直到用户显式允许；因此全新 clone 必须自带编译
+> 产物。改完源码后用 `npm run build` 重建并随改动一起提交 `lib/`。
 
 ## Provider 开发
 

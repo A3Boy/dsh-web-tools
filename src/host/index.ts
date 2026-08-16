@@ -18,6 +18,7 @@ import { Stats } from "./stats.ts";
 import { buildPool, selectIndex, markUsed } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import type { ProviderError } from "./providers/types.ts";
+import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
 
@@ -111,7 +112,7 @@ export function apply(ctx: WebToolsContext) {
     try {
       // Keyless self-hosted providers (SearXNG) work without any key.
       let key = "";
-      if (!(adapter.needsBaseUrl && !adapter.fetchCapable)) {
+      if (!isKeylessSelfHosted(adapter)) {
         const entries = buildPool(cred.value ?? "");
         if (entries.length === 0) throw Object.assign(new Error("no API key configured"), { code: "config" });
         const index = selectIndex(entries);
@@ -243,6 +244,7 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
+        poolEntries: (providerName) => poolStore.poolOf(providerName),
       }),
     "dsh-web-tools: /web-tools/api routes",
   );
@@ -252,10 +254,36 @@ function toProviderError(error: unknown): ProviderError {
   if (typeof error === "object" && error !== null && "code" in error && typeof (error as ProviderError).code === "string") {
     return error as ProviderError;
   }
-  const message = error instanceof Error ? error.message : String(error);
+  const message = describeFetchError(error);
   const err = new Error(message) as ProviderError;
   err.code = "network";
   return err;
+}
+
+/**
+ * Human-readable network failure. undici's global fetch throws a generic
+ * `TypeError: fetch failed` whose real cause (ECONNREFUSED, DNS, TLS,
+ * timeout, proxy refusal) sits in `error.cause` — surface it so the settings
+ * card shows why a provider is unreachable instead of the bare wrapper.
+ */
+function describeFetchError(error: unknown): string {
+  const top = error instanceof Error ? error.message : String(error);
+  let cause: unknown = (error as { cause?: unknown })?.cause;
+  const seen = new Set<unknown>([error]);
+  while (cause !== undefined && cause !== null && !seen.has(cause)) {
+    seen.add(cause);
+    if (cause instanceof AggregateError) {
+      const first = cause.errors?.[0];
+      if (first instanceof Error && first.message && !seen.has(first)) {
+        cause = first;
+        continue;
+      }
+    }
+    const msg = cause instanceof Error ? cause.message : String(cause);
+    if (msg && msg !== top) return `${top}: ${msg}`;
+    cause = (cause as { cause?: unknown })?.cause;
+  }
+  return top;
 }
 
 /** Simple timeout wrapper for side-channel quota lookups (no abort needed). */

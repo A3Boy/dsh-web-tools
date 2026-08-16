@@ -309,6 +309,9 @@ Tavily → Exa → Brave → SearXNG
 
 It can also be used as the only configured provider.
 
+SearXNG is **keyless**: instead of an API key, set the instance Base URL in the
+provider dialog. No key is needed for it to work.
+
 SearXNG itself has no cloud API quota, but reliability and result quality still depend on your instance, network connection, and enabled upstream engines.
 
 ## Security
@@ -392,7 +395,13 @@ Run type checking and build separately:
 npx tsc -p tsconfig.json --noEmit
 npx tsc -p tsconfig.client.json --noEmit
 npx tsc -p tsconfig.build.json
+npm run build
 ```
+
+> The compiled `lib/` is committed to the repository on purpose: DSH installs
+> plugins from git through pnpm, which blocks dependency build scripts until
+> approved, so a fresh checkout must already contain the bundle. Rebuild with
+> `npm run build` and commit `lib/` alongside source changes.
 
 ## Provider development
 
