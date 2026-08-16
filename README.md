@@ -68,6 +68,19 @@ dsh plugin --profile web remove dsh-web-tools
 
 The plugin is loaded through the DSH Profile Bundle mechanism and does not patch the Harness source code.
 
+## Network & proxy
+
+Node's global `fetch` does NOT read the OS proxy by default. The plugin uses a proxy in this order:
+
+1. `HTTPS_PROXY` / `HTTP_PROXY` environment variables
+2. the Windows system proxy (registry) — so a GUI-launched DSH process with no env vars still works behind a proxy
+
+Rules:
+
+- `localhost` / `127.0.0.1` / `::1` / `*.local` (e.g. a local SearXNG instance) NEVER go through the proxy
+- `NO_PROXY` entries — exact hosts, `.suffix` domains, `<local>` — bypass the proxy
+- If a proxy is configured but `undici` (the proxy dependency) is missing — typical for a profile linked before the dependency was declared — requests **degrade to direct fetch** and the Settings page shows a "Proxy unavailable" banner; proxy-dependent providers may time out. Run `pnpm install` in the profile directory and restart to fix.
+
 ## Providers
 
 | Provider | Search | Fetch | Best for |
@@ -208,8 +221,8 @@ The plugin keeps the upstream unit instead of converting everything into a perce
 | --- | --- | --- |
 | Tavily | Official `/usage` endpoint | ✅ |
 | Firecrawl | Official `/v2/team/credit-usage` endpoint | ✅ |
-| You.com | Official Account Balance API | ✅ |
-| Brave | `X-RateLimit-*` response headers | ✅ |
+| You.com | Official Account Balance API (`X-API-Key`) | ✅ |
+| Brave | `X-RateLimit-*` response headers (persisted) | ✅ |
 | Exa | No public balance endpoint for a normal Search key | Local estimate |
 | Jina | Balance information returned by Reader | Best-effort |
 | SearXNG | No platform quota | Self-hosted |
@@ -220,7 +233,9 @@ Search fallback is driven by real request failures such as `402`, `429`, and pro
 
 For providers using multiple keys, the quota panel queries every key and merges the results into a single pool total (remaining / limit summed).
 
-Quota results are cached for five minutes and are not polled continuously.
+Quota is refreshed **in the background**: the plugin re-pulls snapshots every 5 minutes without needing the Settings page open (and shortly after startup), so a freshly booted profile already shows fresh balances.
+
+Brave has no quota endpoint — its only quota signal is the `X-RateLimit-*` header captured during a real search. Those snapshots are **persisted to settings**, so a restart keeps showing the last known remaining requests (with the update time) until the next search refreshes them.
 
 Quota snapshots as shown in the Settings panel:
 
@@ -371,7 +386,8 @@ Provider selection and fallback happen inside the plugin. No additional LLM call
 | Tavily Search + Quota | ✅ E2E |
 | Exa Search + multiple keys | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
-| Brave / You.com / Jina / SearXNG | Adapter ready, E2E pending |
+| You.com Search + Quota (`X-API-Key`) | ✅ E2E |
+| Brave / Jina / SearXNG | Adapter ready, E2E pending |
 
 Run the test suite:
 

@@ -33,6 +33,17 @@ export interface ConfigView {
   providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
   providers: ProviderView[];
+  /**
+   * Proxy support state: whether a proxy is configured (env var or Windows
+   * system proxy) and whether undici (the proxy engine) is loadable. When a
+   * proxy is needed but undici is missing, outbound calls degrade to direct
+   * fetch — the card should warn the operator.
+   */
+  proxy?: {
+    configured: boolean;
+    /** Proxy desired but undici unavailable → degraded to direct fetch. */
+    degraded: boolean;
+  };
 }
 
 /** One quota snapshot for the card (display only). */

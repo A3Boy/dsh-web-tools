@@ -9,6 +9,7 @@
  */
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
+import type { QuotaSnapshot } from "./quota.ts";
 /** Settings namespace for this plugin. */
 export declare const SETTINGS_NS = "dsh-web-tools";
 /** Default provider when nothing is configured. */
@@ -26,6 +27,7 @@ export declare const DEFAULT_SETTINGS: {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    braveQuotaCache: Record<string, QuotaSnapshot>;
 };
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
@@ -35,6 +37,8 @@ export interface WebToolsSettings {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    /** Brave per-key quota snapshots captured from search response headers. */
+    braveQuotaCache: Record<string, QuotaSnapshot>;
 }
 /** The schema object for settings registration (official z<T> annotation). */
 export declare const Config: z<WebToolsSettings>;

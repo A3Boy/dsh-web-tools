@@ -36,6 +36,11 @@ export interface RouteDeps {
      * so the card's per-key state matches what search actually uses.
      */
     poolEntries?: (provider: string) => Promise<PoolEntry[]>;
+    /** Proxy support status (configured + whether undici is loadable). */
+    proxyStatus?: () => Promise<{
+        configured: boolean;
+        degraded: boolean;
+    }>;
 }
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */
 export declare function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => void;

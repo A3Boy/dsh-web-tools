@@ -1,3 +1,14 @@
+/**
+ * Proxy support status for the settings card:
+ *  - configured: a proxy is present (env var or Windows system proxy)
+ *  - degraded:   a proxy is configured but undici cannot be loaded, so calls
+ *                fall back to direct fetch (no tunneling)
+ * Never throws (undici absence is a reportable state, not a crash).
+ */
+export declare function proxyStatus(): Promise<{
+    configured: boolean;
+    degraded: boolean;
+}>;
 /** The first usable proxy from the standard env vars, or undefined. */
 export declare function proxyFromEnv(): string | undefined;
 /**

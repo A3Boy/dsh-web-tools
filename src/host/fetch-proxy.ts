@@ -46,6 +46,20 @@ async function getProxyAgentCtor(): Promise<ProxyAgentLike | null> {
   return proxyAgentCtor;
 }
 
+/**
+ * Proxy support status for the settings card:
+ *  - configured: a proxy is present (env var or Windows system proxy)
+ *  - degraded:   a proxy is configured but undici cannot be loaded, so calls
+ *                fall back to direct fetch (no tunneling)
+ * Never throws (undici absence is a reportable state, not a crash).
+ */
+export async function proxyStatus(): Promise<{ configured: boolean; degraded: boolean }> {
+  const configured = proxyFromEnv() !== undefined || proxyFromSystem() !== undefined;
+  if (!configured) return { configured: false, degraded: false };
+  const ctor = await getProxyAgentCtor();
+  return { configured: true, degraded: ctor === null };
+}
+
 /** The first usable proxy from the standard env vars, or undefined. */
 export function proxyFromEnv(): string | undefined {
   for (const name of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) {

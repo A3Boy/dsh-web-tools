@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — Brave Search provider adapter.
  *
  * API: POST https://api.search.brave.com/res/v1/web/search
@@ -38,7 +38,11 @@ export const BraveProvider: ProviderAdapter = {
     throwIfHttp("Brave", res);
     // Capture the rate-limit headers per KEY on every successful search — no
     // extra request; quota/describe reads the snapshot for the current key.
-    lastKnownQuotaByKey.set(apiKey, braveQuotaFromHeaders(res.headers));
+    // Persist it too: the header is the only Brave quota source and must
+    // survive restarts (no quota endpoint exists).
+    const snapshot = braveQuotaFromHeaders(res.headers);
+    lastKnownQuotaByKey.set(apiKey, snapshot);
+    persistHook?.(apiKey, snapshot);
     const raw = await res.json();
     const results = Array.isArray(raw?.web?.results) ? raw.web.results : [];
     const sources = results
@@ -62,6 +66,24 @@ export const BraveProvider: ProviderAdapter = {
 
 /** Last-known Brave quota snapshots, keyed by API key. */
 const lastKnownQuotaByKey = new Map<string, QuotaSnapshot>();
+
+/**
+ * Optional persistence hook: when a search captures Brave's rate-limit
+ * headers, the snapshot is handed here so the host can persist it (Brave has
+ * no quota endpoint — the header is the ONLY quota signal, and it must
+ * survive restarts). Pure module: hook stays unset unless the host wires it.
+ */
+let persistHook: ((apiKey: string, snapshot: QuotaSnapshot) => void) | undefined;
+
+/** Set the persistence callback (host wires this to its settings store). */
+export function setBraveQuotaPersist(hook: (apiKey: string, snapshot: QuotaSnapshot) => void): void {
+  persistHook = hook;
+}
+
+/** Seed the in-memory cache from persisted state (host calls on startup). */
+export function seedBraveQuota(apiKey: string, snapshot: QuotaSnapshot): void {
+  lastKnownQuotaByKey.set(apiKey, snapshot);
+}
 
 /** Quota for the settings card: last-known snapshot for the given key. */
 export async function braveQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {

@@ -9,6 +9,7 @@
  */
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
+import type { QuotaSnapshot } from "./quota.ts";
 
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
@@ -32,6 +33,10 @@ export const DEFAULT_SETTINGS = {
   fallbackOrder: [] as string[],
   providerBaseUrls: {} as Record<string, string>,
   providerEnabled: {} as Record<string, boolean>,
+  // Brave has NO quota endpoint — its only quota signal is the X-RateLimit-*
+  // response header captured during a real search. Persisted here so a
+  // restart does not forget the last known balance (keyed by API key).
+  braveQuotaCache: {} as Record<string, QuotaSnapshot>,
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -42,6 +47,8 @@ export interface WebToolsSettings {
   fallbackOrder: string[];
   providerBaseUrls: Record<string, string>;
   providerEnabled: Record<string, boolean>;
+  /** Brave per-key quota snapshots captured from search response headers. */
+  braveQuotaCache: Record<string, QuotaSnapshot>;
 }
 
 /** The schema object for settings registration (official z<T> annotation). */
@@ -52,6 +59,7 @@ export const Config: z<WebToolsSettings> = z.object({
   fallbackOrder: z.array(z.string()),
   providerBaseUrls: z.dict(z.string()),
   providerEnabled: z.dict(z.boolean()),
+  braveQuotaCache: z.dict(z.any()),
 });
 
 /** A settings-scope handle: current value + write path. */

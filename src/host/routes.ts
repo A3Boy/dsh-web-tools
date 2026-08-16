@@ -40,6 +40,8 @@ export interface RouteDeps {
    * so the card's per-key state matches what search actually uses.
    */
   poolEntries?: (provider: string) => Promise<PoolEntry[]>;
+  /** Proxy support status (configured + whether undici is loadable). */
+  proxyStatus?: () => Promise<{ configured: boolean; degraded: boolean }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +174,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     defaultProvider,
     providerAttemptTimeoutMs: (cfg.providerAttemptTimeoutMs as number) ?? 10000,
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
+    proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     providers,
   };
 }

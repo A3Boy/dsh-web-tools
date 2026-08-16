@@ -531,6 +531,27 @@ export function WebToolsSection(props: SectionProps) {
 
       {error && <div style={{ color: stateColor.danger, fontSize: 13 }}>{error}</div>}
 
+      {/* Proxy degraded warning: a proxy is configured but undici is missing,
+          so provider calls fall back to direct fetch and may time out. */}
+      {config.proxy?.configured === true && config.proxy?.degraded === true && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            padding: "10px 14px",
+            borderRadius: 12,
+            border: `1px solid ${stateColor.warning}`,
+            background: surface.layer1,
+            fontSize: 13,
+            color: text.secondary,
+          }}
+        >
+          <strong style={{ color: stateColor.warning, fontSize: 13 }}>{t("proxyDegradedTitle")}</strong>
+          <span>{t("proxyDegradedBody")}</span>
+        </div>
+      )}
+
       {/* Summary strip */}
       <div
         style={{

@@ -17,10 +17,12 @@ import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { buildPool, selectIndex, markUsed, markUnhealthy } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
+import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
+import { proxyStatus } from "./fetch-proxy.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -191,12 +193,21 @@ export function apply(ctx: WebToolsContext) {
     if (!force && quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
 
     const cfg = readConfig();
-    const enabledNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
+    const chainNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
     const summary = stats.summary();
 
-    // Parallel, timeout-bounded, only providers actually in the search chain.
+    // Query every provider that is EITHER in the search chain OR has
+    // credentials configured — a provider like You.com that is configured
+    // but not yet in the chain should still show its balance in the card.
+    const wanted = new Set<string>(chainNames);
+    for (const meta of PROVIDER_LIST) {
+      const cred = await readCredential(ctx, credRefOf(meta.name));
+      if ((cred.value ?? "").trim().length > 0) wanted.add(meta.name);
+    }
+
+    // Parallel, timeout-bounded, only providers that can report quota.
     const results = await Promise.allSettled(
-      PROVIDER_LIST.filter((meta) => enabledNames.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
+      PROVIDER_LIST.filter((meta) => wanted.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
         const ref = credRefOf(meta.name);
         const cred = await readCredential(ctx, ref);
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
@@ -250,6 +261,44 @@ export function apply(ctx: WebToolsContext) {
     return quotas;
   }
 
+  // ---- background quota refresh -------------------------------------------
+  // Quota should stay fresh even when the settings page is not open: refresh
+  // the cache every few minutes in the background (silent — display data
+  // only, failures never surface). The card's quota/describe then reads the
+  // warm cache instead of querying on open.
+  const QUOTA_REFRESH_MS = 5 * 60 * 1000; // same cadence as the cache TTL
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      void describeQuotas(true).catch(() => {});
+    }, QUOTA_REFRESH_MS);
+    // Refresh once shortly after startup too, so a freshly booted profile
+    // shows quota without waiting for the page to open.
+    const boot = setTimeout(() => {
+      void describeQuotas(true).catch(() => {});
+    }, 3_000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(boot);
+    };
+  }, "dsh-web-tools: background quota refresh");
+
+  // ---- Brave quota persistence --------------------------------------------
+  // Brave has no quota endpoint; its only quota signal is the X-RateLimit-*
+  // header captured during a real search. Persist those snapshots into the
+  // settings namespace so a restart does not forget the last known balance,
+  // and seed the in-memory cache on boot.
+  {
+    const braveCache = readConfig().braveQuotaCache ?? {};
+    for (const [key, snap] of Object.entries(braveCache)) {
+      if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
+    }
+    setBraveQuotaPersist((apiKey, snapshot) => {
+      void configHandle
+        .write({ braveQuotaCache: { ...readConfig().braveQuotaCache, [apiKey]: snapshot } })
+        .catch(() => {});
+    });
+  }
+
   // ---- fenced HTTP routes for the card ------------------------------------
   ctx.effect(
     () =>
@@ -262,6 +311,7 @@ export function apply(ctx: WebToolsContext) {
         testFullSearch,
         describeQuotas,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
+        proxyStatus,
       }),
     "dsh-web-tools: /web-tools/api routes",
   );

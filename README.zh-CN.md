@@ -92,6 +92,19 @@ dsh plugin --profile web remove dsh-web-tools
 
 插件通过 DSH Profile Bundle 加载，不需要修改 Harness 源码。
 
+## 网络与代理
+
+Node 的全局 `fetch` 默认**不读取系统代理**。插件会按以下顺序使用代理：
+
+1. `HTTPS_PROXY` / `HTTP_PROXY` 环境变量
+2. Windows 系统代理（注册表）——DSH 从 GUI 启动、没有环境变量时也能用上代理
+
+规则：
+
+- `localhost` / `127.0.0.1` / `::1` / `*.local`（如本机 SearXNG）**永不**走代理
+- `NO_PROXY` 中的精确主机、`.后缀` 域名、`<local>` 会绕过代理
+- 如果配置了代理但未安装 `undici`（依赖缺失，通常出现在插件链接早于依赖声明的 profile），请求会**降级为直连**，设置页顶部会显示"代理不可用"提示，此时依赖代理的 Provider 可能超时——在 profile 目录运行 `pnpm install` 后重启即可
+
 ## Providers
 
 | Provider | Search | Fetch | 说明 |
@@ -221,8 +234,8 @@ SearXNG     self-hosted
 | --- | --- | --- |
 | Tavily | 官方 `/usage` | ✅ |
 | Firecrawl | 官方 `/v2/team/credit-usage` | ✅ |
-| You.com | 官方 Account Balance API | ✅ |
-| Brave | `X-RateLimit-*` Search 响应头 | ✅ |
+| You.com | 官方 Account Balance API（`X-API-Key`） | ✅ |
+| Brave | `X-RateLimit-*` Search 响应头（持久化） | ✅ |
 | Exa | 普通 Search Key 无公开余额接口 | Dashboard / unavailable |
 | Jina | Reader 可获得的信息 | Best-effort |
 | SearXNG | 自托管 | 无平台额度 |
@@ -248,7 +261,9 @@ Key B: 982 / 1000
 Pool: 1932 / 2000 credits
 ```
 
-Quota 结果缓存 5 分钟，不做后台轮询。
+额度会在后台静默刷新：插件每隔 5 分钟自动更新一次额度缓存，不需要打开设置页，重启后也会在启动后很快拉取到最新数据。
+
+Brave 比较特殊：它没有独立的额度查询接口，额度只出现在真实 Search 请求的响应头（`X-RateLimit-*`）。插件在每次搜索时捕获这些响应头，并**持久化到设置**，因此重启后仍能显示上次的剩余额度（显示"剩余 requests + 更新时间"），直到下一次搜索更新。
 
 Quota 主要用于设置页展示。实际 fallback 仍以真实 Search 请求返回的错误为准。
 
@@ -382,7 +397,8 @@ Provider 选择和 fallback 都在插件内部完成，不为每个 Provider 注
 | Tavily Search + Quota | ✅ E2E |
 | Exa Search + 多 Key | ✅ E2E |
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
-| Brave / You.com / Jina / SearXNG | Adapter ready，继续补 E2E |
+| You.com Search + Quota（X-API-Key） | ✅ E2E |
+| Brave / Jina / SearXNG | Adapter ready，继续补 E2E |
 
 运行测试：
 
