@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — structural service faces for the Host plugin.
  *
  * A third-party plugin resolves outside the DSH monorepo's single cordis
@@ -68,6 +68,8 @@ export interface WebToolsSettingsService {
 export interface WebToolsCredentialsService {
   resolve(ref: string): Promise<{ value?: string; source?: string } | undefined>;
   set(ref: string, value: string): Promise<void>;
+  /** Remove a credential entirely (the provider refuses to store empty values). */
+  unset(ref: string): Promise<void>;
   describe(refs: string[]): Promise<Record<string, { configured: boolean; source?: string; writable: boolean }>>;
 }
 

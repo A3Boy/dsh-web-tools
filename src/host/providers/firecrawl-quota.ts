@@ -5,12 +5,13 @@
  */
 import type { QuotaSnapshot } from "../quota.ts";
 import { providerError } from "./types.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const FIRECRAWL_CREDIT_USAGE_URL = "https://api.firecrawl.dev/v2/team/credit-usage";
 
 export async function firecrawlQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
   if (!apiKey) throw providerError("config", "Firecrawl API key is not configured");
-  const res = await fetch(FIRECRAWL_CREDIT_USAGE_URL, {
+  const res = await fetchWithProxy(FIRECRAWL_CREDIT_USAGE_URL, {
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
   });

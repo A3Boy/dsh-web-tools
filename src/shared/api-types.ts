@@ -12,13 +12,18 @@ export interface ProviderView {
   label: string;
   description: string;
   enabled: boolean;
+  /** Resolved base URL (explicit setting or adapter default). */
   baseUrl?: string;
+  /** True only when the operator explicitly configured a base URL (adapter defaults don't count). */
+  baseUrlConfigured?: boolean;
   credRef: string;
   keyConfigured: boolean;
   keyWritable: boolean;
   keyHint?: string;
   /** Number of keys in the credential pool (no per-key health — runtime state). */
   poolSize: number;
+  /** Per-key masked hints + live health (no secrets; display only). */
+  keys?: Array<{ id: string; hint: string; healthy: boolean }>;
 }
 
 /** Full config snapshot for the card. */

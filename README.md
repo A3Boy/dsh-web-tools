@@ -25,8 +25,9 @@ provider — no intermediary server.
 
 </div>
 
-<!-- Main settings screenshot (Settings → Plugins → Plugin configuration → dsh-web-tools) -->
-<!-- ![dsh-web-tools Settings](assets/settings.png) -->
+<p align="center">
+  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools settings overview" />
+</p>
 
 > 7 Providers · Native DSH tools · Fallback · BYOK · SearXNG
 
@@ -73,7 +74,7 @@ dsh plugin --profile web remove dsh-web-tools
 
 ### Configure providers
 
-1. `Settings → Plugins → Plugin configuration → dsh-web-tools`
+1. `Settings → Web Search` (top-level page)
 2. Fill in API keys per provider (comma-separated keys → credential pool)
 3. Pick the default provider and adjust the fallback order
 4. Use **Test Search** to run a real query and verify
@@ -132,6 +133,13 @@ On a **recoverable** failure of the default provider, the next one is tried:
 
 A credential that fails auth is marked unhealthy while the search continues.
 
+For example, when the current provider fails, the search continues with the
+next one:
+
+<p align="center">
+  <img src="assets/fallback-demo.png" width="850" alt="Provider fallback in Test Search" />
+</p>
+
 These errors do **not** switch providers: `400 bad request`, local
 configuration errors.
 
@@ -143,7 +151,7 @@ it never falls back.
 Configuration entry:
 
 ```text
-Settings → Plugins → Plugin configuration → dsh-web-tools
+Settings → Web Search (top-level page)
 ```
 
 Manages: enable toggle, default provider, fallback order, per-attempt timeout,
@@ -155,9 +163,12 @@ tests, quota state, test search.
 > per-attempt timeout is how long a single provider may run before the plugin
 > aborts it and tries the next one.
 
-<!-- Screenshots: provider config / test search -->
-<!-- ![Provider Settings](assets/settings-providers.png) -->
-<!-- ![Test Search](assets/test-search.png) -->
+Test Search runs a real search and shows the provider that responded, the
+latency, and the returned results:
+
+<p align="center">
+  <img src="assets/test-search.png" width="850" alt="Test Search results" />
+</p>
 
 ## Credentials & Quota
 
@@ -198,11 +209,24 @@ by real request failures (402 / 429, etc.).
 | Jina | Reader balance info | best-effort |
 | SearXNG | no platform quota | self-hosted |
 
-For multi-key pools, quota queries the FIRST key in the pool; the settings
-page marks it as such. Quota failures only affect display; results are cached
-5 minutes (no polling).
+For multi-key pools, quota is queried per key and merged into a total pool
+balance (remaining / limit summed). Quota failures only affect display; results
+are cached 5 minutes (no polling).
 
 A quota lookup failure only affects display — never search.
+
+<table>
+  <tr>
+    <td width="33%"><img src="assets/quota-tavily.png" alt="Tavily quota"></td>
+    <td width="33%"><img src="assets/quota-firecrawl.png" alt="Firecrawl quota"></td>
+    <td width="33%"><img src="assets/usage-exa.png" alt="Exa usage"></td>
+  </tr>
+  <tr>
+    <td align="center">Tavily</td>
+    <td align="center">Firecrawl</td>
+    <td align="center">Exa</td>
+  </tr>
+</table>
 
 ## Search & Fetch
 

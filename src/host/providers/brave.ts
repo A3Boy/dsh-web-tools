@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — Brave Search provider adapter.
  *
  * API: POST https://api.search.brave.com/res/v1/web/search
@@ -10,6 +10,7 @@
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 
@@ -30,7 +31,7 @@ export const BraveProvider: ProviderAdapter = {
     const url = new URL(BRAVE_SEARCH_URL);
     url.searchParams.set("q", query);
     url.searchParams.set("count", String(maxResults));
-    const res = await fetch(url, {
+    const res = await fetchWithProxy(url, {
       headers: { "x-subscription-token": apiKey, accept: "application/json" },
       signal,
     });

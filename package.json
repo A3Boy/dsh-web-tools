@@ -13,7 +13,7 @@
     },
     "./client": {
       "types": "./lib/client/index.d.ts",
-      "default": "./lib/client/index.js"
+      "default": "./lib/client.js"
     },
     "./package.json": "./package.json"
   },
@@ -37,7 +37,6 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-settings-plugins",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-api-remotes"
       ]
@@ -45,25 +44,27 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/schemastery": "^3.18.1",
-    "@deepseek-ai/dsh-web": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-web": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
     "react": "^18.2.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json",
-    "test": "node --experimental-strip-types --test src/host/logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
-    "smoke": "node --experimental-strip-types --test test/routes.smoke.mjs test/runtime.test.mjs",
+    "build": "tsc -p tsconfig.build.json && tsdown",
+    "prepare": "tsc -p tsconfig.build.json && tsdown",
+    "bundle": "tsdown",
+    "test": "node --experimental-strip-types --test src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
+    "smoke": "node --experimental-strip-types --test test/section-registration.test.ts test/status-logic.test.ts test/routes.smoke.mjs test/runtime.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "@types/react": "~18.3.31",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3"
   }
 }

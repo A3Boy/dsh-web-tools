@@ -11,6 +11,7 @@
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const JINA_SEARCH_URL = "https://s.jina.ai/";
 const JINA_READER_URL = "https://r.jina.ai/";
@@ -29,7 +30,7 @@ export const JinaProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Jina API key is not configured");
-    const res = await fetch(JINA_SEARCH_URL, {
+    const res = await fetchWithProxy(JINA_SEARCH_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({ q: query, count: maxResults }),
@@ -43,7 +44,7 @@ export const JinaProvider: ProviderAdapter = {
 
   async fetch(url, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Jina API key is not configured");
-    const res = await fetch(`${JINA_READER_URL}${encodeURIComponent(url)}`, {
+    const res = await fetchWithProxy(`${JINA_READER_URL}${encodeURIComponent(url)}`, {
       headers: { authorization: `Bearer ${apiKey}` },
       signal,
     });
@@ -106,7 +107,7 @@ export function parseJinaBalance(text: string): number | undefined {
 /** Best-effort Jina quota (never authoritative). */
 export async function jinaQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
   if (!apiKey) throw providerError("config", "Jina API key is not configured");
-  const res = await fetch(JINA_READER_URL, {
+  const res = await fetchWithProxy(JINA_READER_URL, {
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
   });

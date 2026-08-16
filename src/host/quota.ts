@@ -109,3 +109,43 @@ export function isLow(snapshot: QuotaSnapshot | undefined, fraction = 0.1): bool
   if (snapshot.limit <= 0) return false;
   return snapshot.remaining / snapshot.limit <= fraction;
 }
+
+/**
+ * Merge per-key quota snapshots of one provider pool into a single
+ * "total pool" snapshot: remaining/used/limit are summed across keys, the
+ * unit and reset window come from the first authoritative snapshot, and the
+ * note records the multi-key aggregation.
+ * @param snapshots - one snapshot per key (never empty).
+ * @returns the combined snapshot (same shape as a single-key one).
+ */
+export function mergePoolQuota(snapshots: QuotaSnapshot[]): QuotaSnapshot {
+  const first = snapshots[0];
+  let remaining: number | undefined;
+  let used: number | undefined;
+  let limit: number | undefined;
+  let resetAt = first.resetAt;
+  const breakdown: Record<string, number> = {};
+
+  for (const s of snapshots) {
+    if (s.remaining !== undefined) remaining = (remaining ?? 0) + s.remaining;
+    if (s.used !== undefined) used = (used ?? 0) + s.used;
+    if (s.limit !== undefined) limit = (limit ?? 0) + s.limit;
+    if (s.resetAt && !resetAt) resetAt = s.resetAt;
+    for (const [k, v] of Object.entries(s.breakdown ?? {})) breakdown[k] = (breakdown[k] ?? 0) + v;
+  }
+
+  const note = snapshots.length > 1 ? `聚合 ${snapshots.length} 把 Key 的总额度` : first.note;
+  return {
+    supported: first.supported,
+    authoritative: first.authoritative,
+    unit: first.unit,
+    ...(remaining !== undefined ? { remaining } : {}),
+    ...(used !== undefined ? { used } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+    ...(resetAt !== undefined ? { resetAt } : {}),
+    ...(Object.keys(breakdown).length > 0 ? { breakdown } : {}),
+    source: first.source,
+    fetchedAt: Date.now(),
+    ...(note ? { note } : {}),
+  };
+}

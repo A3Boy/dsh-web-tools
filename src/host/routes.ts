@@ -12,10 +12,16 @@
  */
 import type { WebToolsContext, WebToolsHttpRequest, WebToolsHttpResponse } from "./context-types.ts";
 import { poolSummary } from "./pool.ts";
-import { buildPool } from "./pool.ts";
+import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { ConfigView, ProviderView } from "../shared/api-types.ts";
+import { createHash } from "node:crypto";
+
+/** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
+export function keyIdOf(key: string): string {
+  return createHash("sha1").update(key).digest("hex").slice(0, 8);
+}
 
 /** Route prefix (client fetches `/web-tools/api/<method>`). */
 export const API_PREFIX = "/web-tools/api";
@@ -145,11 +151,13 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
       description: meta.description,
       enabled: enabledMap[meta.name] !== false,
       baseUrl: baseUrls[meta.name] ?? meta.defaultBaseUrl,
+      baseUrlConfigured: typeof baseUrls[meta.name] === "string" && baseUrls[meta.name].trim().length > 0,
       credRef: ref,
       keyConfigured: cred.configured,
       keyWritable: cred.writable,
       keyHint: pool.length > 0 ? poolSummary(pool)[0].hint : undefined,
       poolSize: pool.length,
+      keys: pool.map((e) => ({ id: keyIdOf(e.key), hint: hintOf(e.key), healthy: e.healthy })),
     });
   }
 
@@ -183,6 +191,40 @@ async function handleCredentialSet(deps: RouteDeps, payload: unknown) {
   await deps.writeCredential(ref, p.value ?? "");
   const entries = buildPool(p.value ?? "");
   return { configured: entries.length > 0, poolSize: entries.length };
+}
+
+/** Append ONE key to a provider's pool (storage stays a comma-joined string). */
+async function handleCredentialAddKey(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: string; value?: string };
+  if (!p.provider) throw new Error("missing provider");
+  getProvider(p.provider); // validate
+  const value = typeof p.value === "string" ? p.value.trim() : "";
+  if (value.length === 0) throw new Error("missing key value");
+  const ref = credRefOf(p.provider);
+  const cred = await deps.readCredential(ref);
+  const entries = buildPool(cred.value ?? "");
+  if (entries.some((e) => e.key === value)) throw new Error("key already configured");
+  const next = [...entries.map((e) => e.key), value].join(",");
+  await deps.writeCredential(ref, next);
+  const pool = buildPool(next);
+  return { configured: pool.length > 0, poolSize: pool.length };
+}
+
+/** Remove ONE key from a provider's pool by its opaque key id. */
+async function handleCredentialRemoveKey(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: string; keyId?: string };
+  if (!p.provider) throw new Error("missing provider");
+  getProvider(p.provider); // validate
+  if (typeof p.keyId !== "string" || p.keyId.length === 0) throw new Error("missing key id");
+  const ref = credRefOf(p.provider);
+  const cred = await deps.readCredential(ref);
+  const entries = buildPool(cred.value ?? "");
+  const match = entries.find((e) => keyIdOf(e.key) === p.keyId);
+  if (match === undefined) throw new Error("key not found");
+  const next = entries.filter((e) => e !== match).map((e) => e.key).join(",");
+  await deps.writeCredential(ref, next);
+  const pool = buildPool(next);
+  return { configured: pool.length > 0, poolSize: pool.length };
 }
 
 async function handleCredentialDescribe(deps: RouteDeps) {
@@ -220,6 +262,8 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "config/get": (deps) => handleConfigGet(deps),
   "config/save": (deps, payload) => handleConfigSave(deps, payload),
   "credentials/set": (deps, payload) => handleCredentialSet(deps, payload),
+  "credentials/add-key": (deps, payload) => handleCredentialAddKey(deps, payload),
+  "credentials/remove-key": (deps, payload) => handleCredentialRemoveKey(deps, payload),
   "credentials/describe": (deps) => handleCredentialDescribe(deps),
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
   "test/search": (deps, payload) => handleTestSearch(deps, payload),

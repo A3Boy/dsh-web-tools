@@ -11,7 +11,7 @@
  * @module
  */
 import type { WebToolsContext } from "./context-types.ts";
-import { installConfig, type WebToolsSettings } from "./config.ts";
+import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
 import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
@@ -19,6 +19,7 @@ import { buildPool, selectIndex, markUsed } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import type { ProviderError } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import { mergePoolQuota } from "./quota.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -26,8 +27,12 @@ export const name = "dsh-web-tools";
 /** Services required by this plugin. */
 export const inject = ["webServer", "webRuntime", "settings", "credentials", "web"];
 
-/** Plugin-level config (all knobs live in the settings namespace). */
-export const Config = {};
+/**
+ * Plugin-level config: the same schemastery schema as the settings namespace.
+ * Cordis requires `Config` to be a schema instance (it calls `.validate` when
+ * resolving plugin config); an empty object would crash at load.
+ */
+export const Config = PluginConfig;
 
 /** Resolve one credential ref's state + optional value (Host side only). */
 async function readCredential(ctx: WebToolsContext, ref: string): Promise<{ configured: boolean; source?: string; writable: boolean; value?: string }> {
@@ -47,9 +52,18 @@ async function readCredential(ctx: WebToolsContext, ref: string): Promise<{ conf
   }
 }
 
+/**
+ * Write a credential value. An empty string UNSETS the credential — the
+ * credentials-local provider refuses to store empty values ("use unset"),
+ * so removing the last key must unset rather than set("").
+ */
 async function writeCredential(ctx: WebToolsContext, ref: string, value: string) {
   const credentials = ctx.credentials;
-  if (!credentials?.set) throw new Error("credentials service unavailable");
+  if (!credentials?.set || !credentials?.unset) throw new Error("credentials service unavailable");
+  if (typeof value === "string" && value.length === 0) {
+    await credentials.unset(ref);
+    return;
+  }
   await credentials.set(ref, value);
 }
 
@@ -167,16 +181,32 @@ export function apply(ctx: WebToolsContext) {
       PROVIDER_LIST.filter((meta) => enabledNames.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
         const ref = credRefOf(meta.name);
         const cred = await readCredential(ctx, ref);
-        // Multi-key pools: query quota with the FIRST key only; the card marks
-        // it as such. Passing the whole "k1,k2" string would corrupt auth.
-        const firstKey = buildPool(cred.value ?? "")[0]?.key ?? "";
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
         const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * 700) / 1000)) : undefined;
-        const snapshot = await withTimeoutMs(
-          quotaOf(meta.name, firstKey, cfg.providerBaseUrls[meta.name], localUsdCents),
-          QUOTA_TIMEOUT_MS,
+        // Multi-key pool: query EVERY key and merge — the card shows the
+        // TOTAL pool balance, not one key's. Each key is authenticated
+        // separately (never join the raw string).
+        const keys = buildPool(cred.value ?? "").map((e) => e.key);
+        if (keys.length === 0) {
+          const snapshot = await withTimeoutMs(
+            quotaOf(meta.name, "", cfg.providerBaseUrls[meta.name], localUsdCents),
+            QUOTA_TIMEOUT_MS,
+          );
+          return [meta.name, snapshot];
+        }
+        const perKey = await Promise.allSettled(
+          keys.map((k) =>
+            withTimeoutMs(quotaOf(meta.name, k, cfg.providerBaseUrls[meta.name], localUsdCents), QUOTA_TIMEOUT_MS),
+          ),
         );
-        return [meta.name, snapshot];
+        const fulfilled = perKey.filter((p): p is PromiseFulfilledResult<QuotaSnapshot> => p.status === "fulfilled").map((p) => p.value);
+        if (fulfilled.length === 0) {
+          const first = perKey.find((p): p is PromiseRejectedResult => p.status === "rejected");
+          throw Object.assign(new Error(`quota check failed: ${first?.reason instanceof Error ? first.reason.message : String(first?.reason)}`), {
+            provider: meta.name,
+          });
+        }
+        return [meta.name, mergePoolQuota(fulfilled)];
       }),
     );
 
@@ -184,11 +214,6 @@ export function apply(ctx: WebToolsContext) {
     for (const r of results) {
       if (r.status === "fulfilled") {
         const [name, snap] = r.value;
-        // mark multi-key pools so the card can annotate "shows Key 1"
-        const cred = await readCredential(ctx, credRefOf(name));
-        if (buildPool(cred.value ?? "").length > 1) {
-          snap.note = [snap.note, "显示池中第 1 把 Key 的额度"].filter(Boolean).join(" · ");
-        }
         quotas[name] = snap;
       } else {
         const name = (r.reason as { provider?: string })?.provider ?? "unknown";

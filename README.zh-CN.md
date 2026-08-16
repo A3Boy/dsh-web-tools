@@ -20,8 +20,9 @@
 
 </div>
 
-<!-- 设置页主截图（Settings → Plugins → Plugin configuration → dsh-web-tools） -->
-<!-- ![dsh-web-tools Settings](assets/settings.png) -->
+<p align="center">
+  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools 设置页" />
+</p>
 
 > 7 Providers · Native DSH tools · Fallback · BYOK · SearXNG
 
@@ -63,7 +64,7 @@ dsh plugin --profile web remove dsh-web-tools
 
 ### 配置 Provider
 
-1. `Settings → Plugins → Plugin configuration → dsh-web-tools`
+1. `Settings → 网页搜索`（Web Search 一级页面）
 2. 填入各 Provider 的 API Key（多个 Key 用逗号分隔 → 凭据池）
 3. 选择默认 Provider，调整 fallback 顺序
 4. 用 **Test Search** 直接跑一次真实搜索验证
@@ -121,6 +122,12 @@ Tavily → Exa → Brave → SearXNG
 
 认证失败的凭据会被标记 unhealthy，同时继续尝试下一家。
 
+例如当前 Provider 失败后，可以继续尝试后面的 Provider：
+
+<p align="center">
+  <img src="assets/fallback-demo.png" width="850" alt="Provider fallback（Test Search 中的尝试链）" />
+</p>
+
 以下错误**不**切换 Provider：`400 bad request`、本地配置错误。
 
 调用方主动取消（abort）会**立即终止整个搜索链**，不会切换到下一家。
@@ -130,16 +137,18 @@ Tavily → Exa → Brave → SearXNG
 配置入口：
 
 ```text
-Settings → Plugins → Plugin configuration → dsh-web-tools
+Settings → 网页搜索（Web Search 一级页面）
 ```
 
 管理：启用开关、默认 Provider、fallback 顺序、单 Provider 超时、Provider 启用/禁用、API Key / 凭据池、Base URL、连接测试、Quota 状态、Test Search。
 
 > 搜索结果数量由 DSH 工具层（`web_search`）控制，插件不覆盖。整体搜索超时也由 DSH 工具层控制；设置页的"单 Provider 超时"指单个搜索源最多等待多久，超时后切换下一家。
 
-<!-- 截图：Provider 配置 / Test Search -->
-<!-- ![Provider Settings](assets/settings-providers.png) -->
-<!-- ![Test Search](assets/test-search.png) -->
+Test Search 会实际发出一次搜索，并显示命中的 Provider、延迟和返回结果：
+
+<p align="center">
+  <img src="assets/test-search.png" width="850" alt="Test Search 结果" />
+</p>
 
 ## Credentials & Quota
 
@@ -174,7 +183,20 @@ Quota 分为 **authoritative** 和 **best-effort** 两类，用于设置页展�
 | Jina | Reader 余额信息 | Best-effort |
 | SearXNG | 无平台额度 | Self-hosted |
 
-多 Key 池的 Provider（如 Tavily）只查询池中第一把 Key 的额度，设置页会标注"显示第 1 把 Key 的额度"。额度查询失败只影响展示，不影响搜索；结果缓存 5 分钟，不轮询。
+多 Key 池的 Provider 会逐把 Key 查询额度并合并为**池总额度**（remaining/limit 求和）。额度查询失败只影响展示，不影响搜索；结果缓存 5 分钟，不轮询。
+
+<table>
+  <tr>
+    <td width="33%"><img src="assets/quota-tavily.png" alt="Tavily 额度"></td>
+    <td width="33%"><img src="assets/quota-firecrawl.png" alt="Firecrawl 额度"></td>
+    <td width="33%"><img src="assets/usage-exa.png" alt="Exa 用量"></td>
+  </tr>
+  <tr>
+    <td align="center">Tavily</td>
+    <td align="center">Firecrawl</td>
+    <td align="center">Exa</td>
+  </tr>
+</table>
 
 ## Search & Fetch
 

@@ -4,6 +4,7 @@
  * @module
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -22,7 +23,7 @@ export const TavilyProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Tavily API key is not configured");
-    const res = await fetch(TAVILY_SEARCH_URL, {
+    const res = await fetchWithProxy(TAVILY_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ api_key: apiKey, query, max_results: maxResults }),
@@ -49,7 +50,7 @@ export const TavilyProvider: ProviderAdapter = {
 
   async fetch(url, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Tavily API key is not configured");
-    const res = await fetch(TAVILY_EXTRACT_URL, {
+    const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ urls: [url] }),

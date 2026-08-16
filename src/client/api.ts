@@ -58,6 +58,8 @@ export const api = {
   configSave: (payload: Record<string, unknown>) => call<{ saved: true }>("config/save", payload),
   credentialsDescribe: () => call<CredentialsView>("credentials/describe"),
   credentialsSet: (provider: string, value: string) => call<{ configured: boolean; poolSize: number }>("credentials/set", { provider, value }),
+  credentialsAddKey: (provider: string, value: string) => call<{ configured: boolean; poolSize: number }>("credentials/add-key", { provider, value }),
+  credentialsRemoveKey: (provider: string, keyId: string) => call<{ configured: boolean; poolSize: number }>("credentials/remove-key", { provider, keyId }),
   testProvider: (provider: string, query?: string) => call<TestProviderView>("test/provider", { provider, query }),
   testSearch: (query: string) => call<TestSearchView>("test/search", { query }),
   quotaDescribe: (force = false) => call<QuotaDescribeView>("quota/describe", { force }),

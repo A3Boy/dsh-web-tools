@@ -1,62 +1,237 @@
 /**
  * dsh-web-tools — browser client plugin entry.
  *
- * Registers a card into the `settings.plugin.item` slot (Settings → Plugins →
- * Plugin configuration). The card talks to the Host exclusively through the
- * plugin's fenced `/web-tools/api` HTTP routes (see ../host/routes.ts) —
- * credentials never reach the browser.
+ * Registers a top-level Settings page (`settings.section`, id `web-tools`)
+ * — the same slot contract the official Models / Plugins pages use — so the
+ * plugin appears in the Settings nav as "Web Search / 网页搜索", not buried
+ * under Plugins → Plugin configuration.
  *
- * Registration shape mirrors the official `dsh-client-ui-settings-plugins`
- * cards (BashCard/WebSearchCard) so the slot contract is satisfied exactly.
+ * The page talks to the Host exclusively through the plugin's fenced
+ * `/web-tools/api` HTTP routes (see ../host/routes.ts) — credentials never
+ * reach the browser.
+ *
+ * Copy is registered through the DSH locale service (zh/en dictionaries
+ * below); the page follows the DSH UI language and offers no language switch
+ * of its own.
  * @module
  */
-import { WebToolsCard } from "./WebToolsCard.tsx";
+import { WebToolsSection } from "./WebToolsSection.tsx";
+import { registerSettingsSection } from "./registration.ts";
 
-/** Locale namespace for this card's copy. */
+/** Locale namespace for this page's copy. */
 export const NS = "dsh-web-tools";
 
 /** Services required by this client plugin. */
 export const inject = ["slots", "locale"];
 
-/** Plugin config (none needed at the client layer). */
-export const Config = {};
-
-/** Register the settings card. */
+/** Register the Settings page. */
 export function apply(ctx: any) {
-  const t = (key: string, fallback: string) => {
-    try {
-      const bound = ctx.locale.bind(NS);
-      const v = bound(key);
-      return typeof v === "string" && v.length > 0 ? v : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
   ctx.effect(() =>
     ctx.locale.register(NS, {
-      en: {
-        cardTitle: "dsh-web-tools",
-        cardDescription: "Multi-provider web search & fetch (Tavily / Exa / Firecrawl / Brave / You.com / Jina / SearXNG) with per-provider account pools, quota, and deterministic fallback.",
-      },
       zh: {
-        cardTitle: "dsh-web-tools",
-        cardDescription: "多搜索引擎 Web 搜索与抓取（Tavily / Exa / Firecrawl / Brave / You.com / Jina / SearXNG），支持每引擎账号池、额度查询与自动回退。",
+        nav: "网页搜索",
+        title: "网页搜索",
+        tagline: "配置多个搜索服务，并在 Provider 不可用时按设定顺序继续搜索。",
+        enabledLabel: "已启用",
+        disabledLabel: "已禁用",
+        readySummary: "{total} 个 Provider 中 {n} 个可用",
+        defaultProviderLabel: "默认",
+        orderLabel: "搜索顺序",
+        orderHint: "从上到下依次尝试；第一项为默认 Provider",
+        editOrder: "编辑顺序",
+        providersLabel: "Providers",
+        notInChain: "未加入搜索顺序",
+        notConfigured: "未配置",
+        selfHosted: "自建部署",
+        ready: "正常",
+        rateLimited: "触发限流",
+        authError: "鉴权失败",
+        quotaCredits: "{r} / {l} credits",
+        quotaRequests: "{r} 次请求{l}",
+        quotaUsd: "已用 ${amount}",
+        quotaUsdRemaining: "剩余 ${amount}",
+        quotaTokens: "{n} tokens",
+        updatedJustNow: "刚刚更新",
+        updatedAgo: "{mins} 分钟前更新",
+        refreshQuota: "刷新额度",
+        quotaTitle: "额度",
+        resetOn: "重置于 {d}",
+        usage: "消耗",
+        testSearchTitle: "测试搜索",
+        searchPlaceholder: "输入查询…",
+        search: "搜索",
+        searching: "搜索中…",
+        clearResult: "清空",
+        resultCount: "{n} 个结果",
+        attempt: "尝试",
+        successOutcome: "成功",
+        rateLimitedOutcome: "限流",
+        authOutcome: "鉴权失败",
+        timeoutOutcome: "超时",
+        networkOutcome: "网络错误",
+        serverOutcome: "服务端错误",
+        abortedOutcome: "已取消",
+        configOutcome: "配置错误",
+        badRequestOutcome: "请求错误",
+        invalidResponseOutcome: "响应异常",
+        unknownOutcome: "未知",
+        providerStatus: "状态",
+        connected: "已连接",
+        credentials: "Credentials",
+        keysConfigured: "{n} 把 API Key 已配置",
+        addKey: "+ 添加 API Key",
+        addKeyPlaceholder: "输入 API Key…",
+        cancel: "取消",
+        add: "添加",
+        removeKey: "移除",
+        keyReady: "正常",
+        keyAuthError: "鉴权失败",
+        keyNotConfigured: "未配置",
+        keyWritableHint: "可写",
+        baseUrlLabel: "Base URL",
+        baseUrlDefault: "默认",
+        baseUrlPlaceholder: "自定义端点（留空使用默认）",
+        testConnection: "测试连接",
+        testingConnection: "测试中…",
+        testOk: "连接成功",
+        testFail: "连接失败",
+        advanced: "高级设置",
+        attemptTimeoutLabel: "单 Provider 超时",
+        attemptTimeoutHint: "单个搜索源最多等待多久，超时后切换下一家",
+        seconds: "{n} 秒",
+        save: "保存",
+        saved: "已保存",
+        saving: "保存中…",
+        close: "关闭",
+        loading: "正在加载配置…",
+        webToolsError: "网页搜索",
+        moveUp: "上移",
+        moveDown: "下移",
+        makeDefault: "设为默认",
+        removeFromChain: "移出搜索顺序",
+        addToChain: "加入搜索顺序",
+        availableProviders: "可添加",
+        noAvailableProviders: "没有可添加的 Provider",
+        defaultFirstHint: "第一项为默认 Provider",
+        back: "返回",
+        quotaUnavailable: "不支持额度查询",
+        quotaSelfHostedShort: "自建部署 · 无平台额度",
+        quotaSource: "数据源: {s}",
+        quotaSourceApi: "官方",
+        quotaSourceResponseHeader: "响应头",
+        quotaSourceBestEffortApi: "尽力查询",
+        quotaSourceLocalEstimate: "本地估算",
+        quotaSourceDashboard: "控制台",
+        quotaSourceSelfHosted: "自建部署",
+        quotaOverPlan: "剩余 {r} · 计划 {l}",
+        quotaSince: "本地已记录 ${amount}",
+        searchAuto: "自动",
+        autoChain: "自动 · {s}",
+      },
+      en: {
+        nav: "Web Search",
+        title: "Web Search",
+        tagline: "Use multiple search providers with automatic fallback in a fixed order.",
+        enabledLabel: "Enabled",
+        disabledLabel: "Disabled",
+        readySummary: "{n} of {total} providers ready",
+        defaultProviderLabel: "Default",
+        orderLabel: "Search order",
+        orderHint: "Providers are tried from top to bottom; the first is the default",
+        editOrder: "Edit order",
+        providersLabel: "Providers",
+        notInChain: "Not in search chain",
+        notConfigured: "Not configured",
+        selfHosted: "Self-hosted",
+        ready: "Ready",
+        rateLimited: "Rate limited",
+        authError: "Auth error",
+        quotaCredits: "{r} / {l} credits",
+        quotaRequests: "{r} requests{l}",
+        quotaUsd: "${amount} used",
+        quotaUsdRemaining: "${amount} remaining",
+        quotaTokens: "{n} tokens",
+        updatedJustNow: "Updated just now",
+        updatedAgo: "Updated {mins} min ago",
+        refreshQuota: "Refresh quota",
+        quotaTitle: "Quota",
+        resetOn: "Resets on {d}",
+        usage: "Usage",
+        testSearchTitle: "Test Search",
+        searchPlaceholder: "Enter a query…",
+        search: "Search",
+        searching: "Searching…",
+        clearResult: "Clear",
+        resultCount: "{n} result(s)",
+        attempt: "Attempt",
+        successOutcome: "Success",
+        rateLimitedOutcome: "Rate limited",
+        authOutcome: "Auth error",
+        timeoutOutcome: "Timed out",
+        networkOutcome: "Network error",
+        serverOutcome: "Server error",
+        abortedOutcome: "Cancelled",
+        configOutcome: "Config error",
+        badRequestOutcome: "Bad request",
+        invalidResponseOutcome: "Bad response",
+        unknownOutcome: "Unknown",
+        providerStatus: "Status",
+        connected: "Connected",
+        credentials: "Credentials",
+        keysConfigured: "{n} API key(s) configured",
+        addKey: "+ Add API key",
+        addKeyPlaceholder: "Paste an API key…",
+        cancel: "Cancel",
+        add: "Add",
+        removeKey: "Remove",
+        keyReady: "Ready",
+        keyAuthError: "Auth error",
+        keyNotConfigured: "Not configured",
+        keyWritableHint: "writable",
+        baseUrlLabel: "Base URL",
+        baseUrlDefault: "Default",
+        baseUrlPlaceholder: "Custom endpoint (leave empty for default)",
+        testConnection: "Test connection",
+        testingConnection: "Testing…",
+        testOk: "Connected",
+        testFail: "Connection failed",
+        advanced: "Advanced",
+        attemptTimeoutLabel: "Per-provider timeout",
+        attemptTimeoutHint: "How long one provider may run before switching to the next",
+        seconds: "{n} seconds",
+        save: "Save",
+        saved: "Saved",
+        saving: "Saving…",
+        close: "Close",
+        loading: "Loading Web Search configuration…",
+        webToolsError: "Web Search",
+        moveUp: "Move up",
+        moveDown: "Move down",
+        makeDefault: "Make default",
+        removeFromChain: "Remove from chain",
+        addToChain: "Add to chain",
+        availableProviders: "Available",
+        noAvailableProviders: "No providers to add",
+        defaultFirstHint: "First entry is the default provider",
+        back: "Back",
+        quotaUnavailable: "Quota not supported",
+        quotaSelfHostedShort: "Self-hosted · no platform quota",
+        quotaSource: "Source: {s}",
+        quotaSourceApi: "Official",
+        quotaSourceResponseHeader: "Response header",
+        quotaSourceBestEffortApi: "Best-effort",
+        quotaSourceLocalEstimate: "Local estimate",
+        quotaSourceDashboard: "Dashboard",
+        quotaSourceSelfHosted: "Self-hosted",
+        quotaOverPlan: "{r} remaining · plan {l}",
+        quotaSince: "${amount} recorded locally",
+        searchAuto: "Auto",
+        autoChain: "Auto · {s}",
       },
     }),
   );
 
-  ctx.slots.inject("settings.plugin.item", function* () {
-    yield ctx.slots.register(
-      {
-        name: "settings.plugin.item",
-        id: "dsh-web-tools",
-        order: 60,
-        locale: NS,
-        label: () => t("cardTitle", "dsh-web-tools"),
-        inject: () => ({}),
-      },
-      WebToolsCard,
-    );
-  });
+  const t = ctx.locale.bind(NS);
+
+  registerSettingsSection(ctx, t, WebToolsSection);
 }

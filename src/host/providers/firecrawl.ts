@@ -10,6 +10,7 @@
  * @module
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 const FIRECRAWL_SEARCH_URL = `${FIRECRAWL_BASE}/search`;
@@ -29,7 +30,7 @@ export const FirecrawlProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Firecrawl API key is not configured");
-    const res = await fetch(FIRECRAWL_SEARCH_URL, {
+    const res = await fetchWithProxy(FIRECRAWL_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ query, limit: maxResults }),
@@ -54,7 +55,7 @@ export const FirecrawlProvider: ProviderAdapter = {
 
   async fetch(url, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Firecrawl API key is not configured");
-    const res = await fetch(FIRECRAWL_SCRAPE_URL, {
+    const res = await fetchWithProxy(FIRECRAWL_SCRAPE_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({ url, formats: ["markdown"] }),

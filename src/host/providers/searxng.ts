@@ -8,6 +8,7 @@
  * @module
  */
 import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 export const SEARXNG_META = {
   name: "searxng",
@@ -32,7 +33,7 @@ export const SearxngProvider: ProviderAdapter = {
     if (apiKey) url.searchParams.set("api_key", apiKey);
     let res: Response;
     try {
-      res = await fetch(url, { signal });
+      res = await fetchWithProxy(url, { signal });
     } catch (e) {
       throw providerError("network", `SearXNG unreachable at ${instance}: ${String(e)}`);
     }

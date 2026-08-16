@@ -8,6 +8,7 @@
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const YOU_SEARCH_URL = "https://api.you.com/llm/search";
 const YOU_BALANCE_URL = "https://api.you.com/v1/billing/account_balance";
@@ -26,7 +27,7 @@ export const YouProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
-    const res = await fetch(YOU_SEARCH_URL, {
+    const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify({ query, num_web_results: maxResults }),
@@ -56,7 +57,7 @@ export const YouProvider: ProviderAdapter = {
 /** You.com official account balance (USD cents). */
 export async function youQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
   if (!apiKey) throw providerError("config", "You.com API key is not configured");
-  const res = await fetch(YOU_BALANCE_URL, {
+  const res = await fetchWithProxy(YOU_BALANCE_URL, {
     headers: { "x-api-key": apiKey },
     signal,
   });

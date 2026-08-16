@@ -8,6 +8,7 @@ import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } 
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance } from "./providers/jina.ts";
 import { braveQuotaFromHeaders } from "./providers/brave.ts";
+import { mergePoolQuota } from "./quota.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -116,4 +117,26 @@ test("braveQuotaFromHeaders: missing headers → undefined fields, still usable"
   const q = braveQuotaFromHeaders(new Headers(), 0);
   assert.equal(q.remaining, undefined);
   assert.equal(q.limit, undefined);
+});
+
+test("mergePoolQuota sums remaining/limit across keys and keeps unit/source", () => {
+  const snap = mergePoolQuota([
+    { supported: true, authoritative: true, unit: "credits", remaining: 932, limit: 1000, source: "api", fetchedAt: 1, breakdown: { search: 68 } },
+    { supported: true, authoritative: true, unit: "credits", remaining: 1000, limit: 1000, source: "api", fetchedAt: 2, breakdown: { search: 0 } },
+  ]);
+  assert.equal(snap.remaining, 1932);
+  assert.equal(snap.limit, 2000);
+  assert.equal(snap.unit, "credits");
+  assert.equal(snap.source, "api");
+  assert.equal(snap.breakdown?.search, 68);
+  assert.match(snap.note ?? "", /聚合 2 把 Key/);
+});
+
+test("mergePoolQuota single key keeps the original note (no aggregation label)", () => {
+  const snap = mergePoolQuota([
+    { supported: true, authoritative: true, unit: "credits", remaining: 932, limit: 1000, source: "api", fetchedAt: 1, note: "plan: Researcher" },
+  ]);
+  assert.equal(snap.remaining, 932);
+  assert.equal(snap.limit, 1000);
+  assert.equal(snap.note, "plan: Researcher");
 });

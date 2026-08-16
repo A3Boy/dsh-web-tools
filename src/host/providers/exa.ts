@@ -11,6 +11,7 @@
  * @module
  */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
@@ -29,7 +30,7 @@ export const ExaProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Exa API key is not configured");
-    const res = await fetch(EXA_SEARCH_URL, {
+    const res = await fetchWithProxy(EXA_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify({
@@ -62,7 +63,7 @@ export const ExaProvider: ProviderAdapter = {
 
   async fetch(url, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Exa API key is not configured");
-    const res = await fetch(EXA_CONTENTS_URL, {
+    const res = await fetchWithProxy(EXA_CONTENTS_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": apiKey },
       body: JSON.stringify({ urls: [url], highlights: true }),
