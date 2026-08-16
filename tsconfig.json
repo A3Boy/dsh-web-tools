@@ -12,6 +12,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/host/**/*.ts"],
+  "include": ["src/host/**/*.ts", "src/shared/**/*.ts"],
   "exclude": ["src/client", "node_modules"]
 }

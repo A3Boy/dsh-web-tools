@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx"]
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/shared/**/*.ts"]
 }

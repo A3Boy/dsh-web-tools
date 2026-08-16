@@ -28,7 +28,7 @@ export interface RouteDeps {
   writeCredential: (ref: string, value: string) => Promise<void>;
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
   testFullSearch: (query: string) => Promise<Record<string, unknown>>;
-  describeQuotas: () => Promise<Record<string, QuotaSnapshot>>;
+  describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -207,8 +207,9 @@ async function handleTestSearch(deps: RouteDeps, payload: unknown) {
   return deps.testFullSearch(p.query);
 }
 
-async function handleQuotaDescribe(deps: RouteDeps) {
-  return { quotas: await deps.describeQuotas() };
+async function handleQuotaDescribe(deps: RouteDeps, payload: unknown) {
+  const force = (payload as { force?: boolean } | undefined)?.force === true;
+  return { quotas: await deps.describeQuotas(force) };
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +223,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "credentials/describe": (deps) => handleCredentialDescribe(deps),
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
   "test/search": (deps, payload) => handleTestSearch(deps, payload),
-  "quota/describe": (deps) => handleQuotaDescribe(deps),
+  "quota/describe": (deps, payload) => handleQuotaDescribe(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

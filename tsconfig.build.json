@@ -17,6 +17,6 @@
     "sourceMap": false,
     "types": ["node"]
   },
-  "include": ["src/host/**/*.ts", "src/client/**/*.ts", "src/client/**/*.tsx"],
+  "include": ["src/host/**/*.ts", "src/client/**/*.ts", "src/client/**/*.tsx", "src/shared/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "routes.smoke.mjs"]
 }

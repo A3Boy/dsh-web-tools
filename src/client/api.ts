@@ -60,5 +60,5 @@ export const api = {
   credentialsSet: (provider: string, value: string) => call<{ configured: boolean; poolSize: number }>("credentials/set", { provider, value }),
   testProvider: (provider: string, query?: string) => call<TestProviderView>("test/provider", { provider, query }),
   testSearch: (query: string) => call<TestSearchView>("test/search", { query }),
-  quotaDescribe: () => call<QuotaDescribeView>("quota/describe"),
+  quotaDescribe: (force = false) => call<QuotaDescribeView>("quota/describe", { force }),
 };

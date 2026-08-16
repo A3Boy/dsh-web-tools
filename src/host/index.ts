@@ -155,8 +155,8 @@ export function apply(ctx: WebToolsContext) {
   const QUOTA_CACHE_MS = 5 * 60 * 1000; // 5 min — quota is display-only, no 30s polling
   const QUOTA_TIMEOUT_MS = 8000;
 
-  async function describeQuotas(): Promise<Record<string, QuotaSnapshot>> {
-    if (quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
+  async function describeQuotas(force = false): Promise<Record<string, QuotaSnapshot>> {
+    if (!force && quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
 
     const cfg = readConfig();
     const enabledNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
