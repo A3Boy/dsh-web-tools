@@ -221,17 +221,6 @@ Tavily
 
 插件会自动选择可用 Key。
 
-支持使用：
-
-```text
-换行
-逗号
-空格
-分号
-```
-
-分隔多个 Key。
-
 完整 API Key 不会返回给浏览器端，设置页只显示掩码信息。
 
 ## Quota
@@ -244,9 +233,9 @@ Tavily
 | Firecrawl | ✅ |
 | Brave | ✅ |
 | You.com | ✅ |
-| Jina | Best effort |
+| Jina | ✅ |
 | Exa | — |
-| Parallel | Dashboard |
+| Parallel | 制作中 |
 | SearXNG | Self-hosted |
 
 支持多 Key 的 Provider 会合并显示总额度。
