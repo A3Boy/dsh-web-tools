@@ -10,8 +10,6 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
 
 支持 Tavily、Exa、Firecrawl、Parallel、Brave、You.com、Jina 和 SearXNG，可配置搜索顺序、自动切换搜索源、多 API Key 和额度查看。
 
-继续使用 DSH 原生的 `web_search` / `web_fetch`。
-
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
     <img src="https://img.shields.io/github/stars/A3Boy/dsh-web-tools?style=flat-square&label=Stars" alt="GitHub Stars" />
