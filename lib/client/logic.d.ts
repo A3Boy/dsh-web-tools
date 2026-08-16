@@ -32,7 +32,7 @@ export declare function providerStatusOf(p: ProviderView, quota?: QuotaView, inC
  *  - rate_limit         : rate-limit headers (Brave/Jina) → number only
  *  - unavailable/self_hosted : nothing to show
  */
-export type QuotaDisplayKind = "remaining_of_limit" | "balance" | "observed_usage" | "rate_limit" | "unavailable" | "self_hosted";
+export type QuotaDisplayKind = "remaining_of_limit" | "balance" | "observed_usage" | "rate_limit" | "unlimited" | "unavailable" | "self_hosted";
 export declare function quotaDisplayKind(q: QuotaView | undefined): QuotaDisplayKind;
 /** Quota one-line summary, provider-aware (no colors, no layout). */
 export declare function quotaSummary(t: TFunc, quota?: QuotaView): string;

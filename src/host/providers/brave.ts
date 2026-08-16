@@ -101,25 +101,45 @@ export async function braveQuota(apiKey: string, _baseUrl?: string, _signal?: Ab
 export function braveQuotaFromHeaders(headers: Headers, fetchedAt = Date.now()): QuotaSnapshot {
   const limitRaw = headers.get("x-ratelimit-limit");
   const remainingRaw = headers.get("x-ratelimit-remaining");
-  // Brave sends comma-separated "per-second, per-month" values.
+  // Brave sends comma-separated "per-second, per-month" values. The monthly
+  // value is the SECOND one; a single value is the per-second burst window
+  // only and carries no monthly quota info (parseBravePair ignores it).
   const monthlyLimit = parseBravePair(limitRaw);
   const monthlyRemaining = parseBravePair(remainingRaw);
-  return {
+  const snapshot: QuotaSnapshot = {
     supported: true,
     authoritative: true,
     unit: "requests",
-    ...(monthlyRemaining !== undefined ? { remaining: monthlyRemaining } : {}),
-    ...(monthlyLimit !== undefined ? { limit: monthlyLimit } : {}),
     source: "response_header",
     fetchedAt,
-    note: "From Brave rate-limit response headers",
   };
+  if (monthlyLimit !== undefined) {
+    snapshot.limit = monthlyLimit;
+    // Per the Brave docs, a monthly limit of 0 means UNLIMITED — there is no
+    // meaningful "remaining" count, so do not report remaining=0 as "0 left".
+    if (monthlyLimit > 0) {
+      snapshot.remaining = monthlyRemaining ?? 0;
+      snapshot.note = "From Brave rate-limit response headers";
+    } else {
+      snapshot.note = "Unlimited monthly quota (0 = unlimited per Brave docs)";
+    }
+  } else {
+    // No monthly window in the headers — nothing honest to display.
+    snapshot.supported = false;
+    snapshot.note = "Monthly quota window not reported in headers";
+  }
+  return snapshot;
 }
 
-/** Take the second (monthly) value of a "sec, month" header pair. */
+/**
+ * Take the SECOND (monthly) value of a "sec, month" header pair. A single
+ * value is the per-second burst window only — returning undefined there
+ * prevents mistaking "0 requests this second" for a zero monthly quota.
+ */
 function parseBravePair(value: string | null): number | undefined {
   if (!value) return undefined;
   const parts = value.split(",").map((s) => Number(s.trim()));
-  const monthly = parts[1] ?? parts[0];
+  if (parts.length < 2) return undefined; // per-second burst only, no monthly info
+  const monthly = parts[1];
   return Number.isFinite(monthly) ? monthly : undefined;
 }

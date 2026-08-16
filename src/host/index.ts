@@ -254,8 +254,14 @@ export function apply(ctx: WebToolsContext) {
             lastBraveProbeAt = now;
             try {
               await getProvider("brave").search("quota probe", 1, key, undefined);
+              // The probe search captured fresh X-RateLimit-* headers — read
+              // them back so THIS call returns the real snapshot, not the
+              // pre-probe "unsupported" placeholder.
+              const fresh = await withTimeoutMs(quotaOf(meta.name, key, cfg.providerBaseUrls[meta.name], localUsdCents), QUOTA_TIMEOUT_MS);
+              return [meta.name, fresh];
             } catch {
-              // probe failed (network/auth) — a real search later captures it
+              // probe failed (network/auth) — keep the unsupported snapshot;
+              // a real search later captures it
             }
           }
         }

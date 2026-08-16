@@ -219,12 +219,15 @@ function ProviderQuotaInline(props: { t: TFunc; quota: QuotaView }) {
   const kind = quotaDisplayKind(quota);
   const fraction = quotaFraction(quota);
 
-  // Unsupported / self-hosted: one quiet line, nothing else.
+  // Unsupported / self-hosted / unlimited: one quiet line, nothing else.
   if (kind === "unavailable") {
     return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnavailable")}</span>;
   }
   if (kind === "self_hosted") {
     return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaSelfHostedShort")}</span>;
+  }
+  if (kind === "unlimited") {
+    return <span style={{ color: text.secondary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnlimited")}</span>;
   }
 
   const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || t("quotaUnavailable");

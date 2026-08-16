@@ -64,6 +64,7 @@ export type QuotaDisplayKind =
   | "balance"
   | "observed_usage"
   | "rate_limit"
+  | "unlimited"
   | "unavailable"
   | "self_hosted";
 
@@ -71,6 +72,8 @@ export function quotaDisplayKind(q: QuotaView | undefined): QuotaDisplayKind {
   if (!q) return "unavailable";
   if (q.source === "self_hosted") return "self_hosted";
   if (!q.supported) return "unavailable";
+  // Brave monthly limit 0 = UNLIMITED (per Brave docs): nothing to measure.
+  if (q.limit !== undefined && q.limit === 0 && q.remaining === undefined) return "unlimited";
   if (q.source === "local_estimate") return "observed_usage";
   if (q.source === "response_header") return "rate_limit";
   if (q.unit === "usd_cents") return "balance";
@@ -87,6 +90,9 @@ export function quotaDisplayKind(q: QuotaView | undefined): QuotaDisplayKind {
 export function quotaSummary(t: TFunc, quota?: QuotaView): string {
   if (!quota?.supported) return "";
   const q = quota;
+  // Brave reports monthly limit 0 as UNLIMITED (per its docs). A snapshot
+  // with limit 0 and no remaining must read "Unlimited", never "0 left".
+  if (q.limit !== undefined && q.limit === 0 && q.remaining === undefined) return t("quotaUnlimited");
   if (q.unit === "credits" && q.remaining !== undefined) return t("quotaCredits", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? q.limit : "?" });
   if (q.unit === "requests" && q.remaining !== undefined) return t("quotaRequests", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? ` / ${q.limit}` : "" });
   if (q.unit === "usd_cents" && q.used !== undefined) return t("quotaUsd", { amount: (q.used / 100).toFixed(2) });

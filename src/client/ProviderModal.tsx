@@ -38,12 +38,15 @@ function QuotaBar(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) 
   const [refreshing, setRefreshing] = useState(false);
   const kind = quotaDisplayKind(quota);
 
-  // Unsupported / self-hosted: one quiet line, no buttons, no meta stacking.
+  // Unsupported / self-hosted / unlimited: one quiet line, no buttons.
   if (kind === "unavailable") {
     return <span style={{ color: text.tertiary, fontSize: 12 }}>{t("quotaUnavailable")}</span>;
   }
   if (kind === "self_hosted") {
     return <span style={{ color: text.tertiary, fontSize: 12 }}>{t("quotaSelfHostedShort")}</span>;
+  }
+  if (kind === "unlimited") {
+    return <span style={{ color: text.secondary, fontSize: 12 }}>{t("quotaUnlimited")}</span>;
   }
 
   // Conditional progress: a bar is drawn ONLY when remaining ≤ limit in a

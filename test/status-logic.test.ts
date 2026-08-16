@@ -122,6 +122,12 @@ test("quotaSummary formats credits / usd / tokens via the t() template", () => {
     "8,200,000 tokens",
   );
   assert.equal(quotaSummary(t as never, { supported: false, authoritative: false, unit: "unknown", source: "dashboard" }), "");
+  // Brave monthly limit 0 = unlimited → "Unlimited", never "0 left"
+  const tUnlimited = (key: string) => ({ quotaUnlimited: "Unlimited" }[key] ?? key);
+  assert.equal(
+    quotaSummary(tUnlimited as never, { supported: true, authoritative: true, unit: "requests", remaining: undefined, limit: 0, source: "response_header" }),
+    "Unlimited",
+  );
 });
 
 test("outcomeLabel maps raw Host outcomes to human copy keys", () => {
@@ -165,7 +171,7 @@ test("quotaFraction draws a bar ONLY for countable remaining/limit units", () =>
   assert.equal(quotaFraction(q({ remaining: 1166, limit: 1000 })), undefined, "over-plan must not draw a >100% bar");
 });
 
-test("quotaDisplayKind classifies the five honest display kinds", () => {
+test("quotaDisplayKind classifies the honest display kinds", () => {
   const q = (over: Record<string, unknown> = {}) => ({
     supported: true,
     authoritative: true,
@@ -182,6 +188,8 @@ test("quotaDisplayKind classifies the five honest display kinds", () => {
   assert.equal(quotaDisplayKind(q({ unit: "usd_cents", remaining: 38, source: "local_estimate" })), "observed_usage");
   assert.equal(quotaDisplayKind(q({ supported: false, source: "dashboard", unit: "unknown" })), "unavailable");
   assert.equal(quotaDisplayKind(q({ source: "self_hosted", unit: "unknown" })), "self_hosted");
+  // Brave monthly limit 0 = UNLIMITED per its docs → distinct kind, never "0 left"
+  assert.equal(quotaDisplayKind(q({ unit: "requests", remaining: undefined, limit: 0, source: "response_header" })), "unlimited");
   assert.equal(quotaDisplayKind(undefined), "unavailable");
 });
 

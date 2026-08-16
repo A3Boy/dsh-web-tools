@@ -9,6 +9,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSearchProvider, createFetchProvider } from "../src/host/registry.ts";
+import { braveQuotaFromHeaders } from "../src/host/providers/brave.ts";
+
+test("Brave header parsing: dual window → monthly remaining/limit", () => {
+  const s = braveQuotaFromHeaders(new Headers({ "x-ratelimit-limit": "1, 15000", "x-ratelimit-remaining": "1, 14523" }));
+  assert.equal(s.supported, true);
+  assert.equal(s.remaining, 14523);
+  assert.equal(s.limit, 15000);
+});
+
+test("Brave header parsing: monthly limit 0 = unlimited (no remaining)", () => {
+  const s = braveQuotaFromHeaders(new Headers({ "x-ratelimit-limit": "1, 0", "x-ratelimit-remaining": "1, 0" }));
+  assert.equal(s.limit, 0);
+  assert.equal(s.remaining, undefined, "unlimited must not report remaining=0 as '0 left'");
+});
+
+test("Brave header parsing: single value is per-second burst only, no monthly info", () => {
+  const s = braveQuotaFromHeaders(new Headers({ "x-ratelimit-remaining": "0" }));
+  assert.equal(s.supported, false, "no monthly window → honest unsupported, never '0 left'");
+  assert.equal(s.remaining, undefined);
+  assert.equal(s.limit, undefined);
+});
 
 function cfg(overrides = {}) {
   return {
