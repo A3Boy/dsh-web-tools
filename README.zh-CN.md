@@ -8,7 +8,7 @@
 
 DeepSeek Harness 的多搜索源 Web Search / Fetch Provider 插件。
 
-同时配置 Tavily、Exa、Firecrawl、Brave、You.com、Jina 和 SearXNG，并维护一条搜索顺序。某个 Provider 限流、超时、认证失败或不可用时，插件可以继续尝试下一家。
+同时配置 Tavily、Exa、Firecrawl、Parallel、Brave、You.com、Jina 和 SearXNG，并维护一条搜索顺序。某个 Provider 限流、超时、认证失败或不可用时，插件可以继续尝试下一家。
 
 Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型工具。
 
@@ -26,7 +26,7 @@ Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Providers-7-111111?style=flat-square" alt="7 Providers" />
+  <img src="https://img.shields.io/badge/Providers-8-111111?style=flat-square" alt="8 Providers" />
   <img src="https://img.shields.io/badge/Native%20Tools-web__search%20%2F%20web__fetch-111111?style=flat-square" alt="Native web_search web_fetch" />
   <img src="https://img.shields.io/badge/Fallback-supported-2ea44f?style=flat-square" alt="Fallback" />
   <img src="https://img.shields.io/badge/Multi--Key-supported-2ea44f?style=flat-square" alt="Multi-Key" />
@@ -44,7 +44,7 @@ Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型
 
 ## 功能
 
-- Tavily、Exa、Firecrawl、Brave、You.com、Jina、SearXNG
+- Tavily、Exa、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG
 - 自定义搜索顺序和 fallback
 - Provider 独立启用 / 禁用
 - 每个 Provider 支持多个 API Key
@@ -52,11 +52,11 @@ Agent 侧仍然使用 DSH 原生的 `web_search` / `web_fetch`，不新增模型
 - 上游支持时显示余额、额度或 Rate Limit
 - 额度**后台静默刷新**（每 5 分钟），打开设置页即可看到最新数据
 - 系统代理支持（环境变量 / Windows 系统代理，本地回环地址自动绕过）
-- Tavily、Exa、Firecrawl、Jina 支持网页正文读取
+- Tavily、Exa、Firecrawl、Jina、Parallel 支持网页正文读取
 - SearXNG 自托管
 - Provider 连接测试
 - Test Search：真实执行搜索并展示命中 Provider、耗时、fallback 过程和搜索结果
-- 页面**界面语言**可独立切换（跟随系统 / 中文 / English），不影响 DSH 全局语言
+- 页面**语言**可独立切换（跟随系统 / 中文 / English），不影响 DSH 全局语言
 - API Key 使用 DSH Credentials 保存
 
 插件不提供代理服务器或共享 Key。请求由本地 DSH Host 直接发送给对应 Provider。
@@ -127,6 +127,7 @@ Node 的全局 `fetch` 默认**不读取系统代理**。插件会按以下顺�
 | [Tavily](https://tavily.com) | ✅ | ✅ | Agent / RAG 搜索与正文提取 |
 | [Exa](https://exa.ai) | ✅ | ✅ | Semantic / neural search、highlights |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | Search + Scrape |
+| [Parallel](https://parallel.ai) | ✅ | ✅ | Agent-native Search + Extract（LLM 排序的压缩摘要） |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | 独立 Web 搜索索引 |
 | [You.com](https://you.com) | ✅ | — | Web / News Search |
 | [Jina](https://jina.ai) | ✅ | ✅ | Search + Reader |
@@ -142,7 +143,7 @@ Node 的全局 `fetch` 默认**不读取系统代理**。插件会按以下顺�
 | --- | --- |
 | 普通 Agent 搜索 | Tavily |
 | 语义检索、技术研究 | Exa |
-| 搜索后继续抓正文 | Firecrawl / Jina |
+| 搜索后继续抓正文 | Firecrawl / Jina / Parallel |
 | 常规 Web 搜索 | Brave |
 | Web / News | You.com |
 | 自托管 | SearXNG |
@@ -160,6 +161,7 @@ Node 的全局 `fetch` 默认**不读取系统代理**。插件会按以下顺�
 | Brave | 每月包含免费 credits | 需要 Search subscription 和 payment method |
 | You.com | 新账号 API credits | 具体额度以上游 Dashboard 为准 |
 | Jina | 新 API Key 10M 免费 tokens | `s.jina.ai` 按 token 计费；无 Key 已 blocked，免费 Key 100 RPM |
+| Parallel | 按量付费（无免费额度入口） | Search $5 / 1k requests（默认 10 条结果，额外结果另计）；Extract $1 / 1k URLs；用量见 Parallel Platform |
 | SearXNG | 无平台额度 | 取决于自己的实例和上游 |
 
 Brave 的 `Search`、`Answers`、`Autosuggest`、`Spellcheck` 是不同 API 产品。
@@ -237,6 +239,7 @@ Key 池使用 least-used-first：
 ```text
 Tavily      credits
 Firecrawl   credits
+Parallel    pay-as-you-go
 Brave       requests
 You.com     USD
 Jina        tokens
@@ -253,6 +256,7 @@ SearXNG     self-hosted
 | Brave | `X-RateLimit-*` Search 响应头（持久化） | ✅ |
 | Exa | 普通 Search Key 无公开余额接口 | Dashboard / unavailable |
 | Jina | Reader 可获得的信息 | Best-effort |
+| Parallel | 用量与消费只在 Parallel Platform dashboard | Dashboard only |
 | SearXNG | 自托管 | 无平台额度 |
 
 设置页只有在真实存在 `remaining + limit` 时才显示进度条。
@@ -302,9 +306,9 @@ Quota 主要用于设置页展示。实际 fallback 仍以真实 Search 请求�
 
 DSH 负责一次完整 `web_search` 的总超时；插件设置的 timeout 只限制单个 Provider attempt。
 
-## 界面语言
+## 语言
 
-页面右上角提供**界面语言**选择：**跟随系统 / 中文 / English**。
+页面右上角提供**语言**选择：**跟随系统 / 中文 / English**。
 
 - 默认「跟随系统」：跟随 DSH 全局语言（设置 → General → Language），DSH 切换语言时页面自动跟随
 - 选择「中文」或「English」：仅本页面强制使用该语言，**不会**改变 DSH 全局语言，也不会影响其他插件
@@ -324,7 +328,7 @@ web_fetch
 正文
 ```
 
-Tavily、Exa、Firecrawl 和 Jina 使用各自的正文提取接口。
+Tavily、Exa、Firecrawl、Jina 和 Parallel 使用各自的正文提取接口。
 
 `web_fetch` 会沿着同一 Provider 顺序寻找支持 Fetch 的下一家，但不会绑定到上一次 `web_search` 实际命中的 Provider。
 
@@ -335,7 +339,7 @@ Brave Search
     ↓
 URL
     ↓
-Tavily / Exa / Firecrawl / Jina Fetch
+Tavily / Exa / Firecrawl / Jina / Parallel Fetch
 ```
 
 这些 Provider 的 Extract / Reader API 主要返回正文，因此插件不能保证提供目标 URL 的真实 HTTP status、最终重定向 URL 等严格 HTTP Fetch 元数据。
@@ -372,6 +376,7 @@ SearXNG 本身没有平台额度；实际搜索质量、稳定性和限流取决
 - DSH 仍处于 developer preview，未来版本可能需要适配
 - Provider 原生 Extract / Reader 不等价于严格 HTTP Fetch
 - Exa 普通个人 Search Key 没有公开余额 API
+- Parallel 的用量和消费只能在 Parallel Platform dashboard 查看，无余额 API
 - Brave Search 需要 Search subscription 对应的 API Key
 - SearXNG 的结果质量和稳定性取决于实例与上游搜索引擎
 - Provider 免费额度和价格由上游控制，可能调整
@@ -392,6 +397,7 @@ flowchart TD
     Registry --> Tavily["Tavily"]
     Registry --> Exa["Exa"]
     Registry --> Firecrawl["Firecrawl"]
+    Registry --> Parallel["Parallel"]
     Registry --> Brave["Brave"]
     Registry --> You["You.com"]
     Registry --> Jina["Jina"]
@@ -424,6 +430,7 @@ Provider 选择和 fallback 都在插件内部完成，不为每个 Provider 注
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
 | You.com Search + Quota（X-API-Key） | ✅ E2E |
 | Brave Search + 响应头额度 | ✅ E2E |
+| Parallel Search + Extract | Adapter ready，单元测试 ✅，E2E 待 API Key |
 | Jina / SearXNG | Adapter ready，继续补 E2E |
 
 运行测试：

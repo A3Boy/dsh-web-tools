@@ -130,7 +130,7 @@ export const zhDict: Record<string, string> = {
   quotaSince: "本地已记录 ${amount}",
   searchAuto: "自动",
   autoChain: "自动 · {s}",
-  uiLanguage: "界面语言",
+  uiLanguage: "语言",
   uiLangAuto: "跟随系统",
 };
 

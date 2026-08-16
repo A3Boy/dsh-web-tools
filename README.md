@@ -8,7 +8,7 @@
 
 A multi-provider Web Search / Fetch plugin for DeepSeek Harness.
 
-Configure Tavily, Exa, Firecrawl, Brave, You.com, Jina, and SearXNG in one place and define the order in which they are used. When a provider is rate-limited, unavailable, times out, or has invalid credentials, the plugin can continue with the next provider in the chain.
+Configure Tavily, Exa, Firecrawl, Parallel, Brave, You.com, Jina, and SearXNG in one place and define the order in which they are used. When a provider is rate-limited, unavailable, times out, or has invalid credentials, the plugin can continue with the next provider in the chain.
 
 The agent still uses the built-in `web_search` and `web_fetch` tools provided by DSH.
 
@@ -26,14 +26,14 @@ The agent still uses the built-in `web_search` and `web_fetch` tools provided by
 
 ## Features
 
-- Tavily, Exa, Firecrawl, Brave, You.com, Jina, and SearXNG
+- Tavily, Exa, Firecrawl, Parallel, Brave, You.com, Jina, and SearXNG
 - Configurable provider priority and fallback order
 - Multiple API keys per provider
 - Provider and credential health tracking
 - Balance, quota, or rate-limit information where available
 - Quota refreshed **in the background** (every 5 minutes) — fresh on page open
 - System proxy support (env vars / Windows system proxy; loopback auto-bypass)
-- Native content fetching through Tavily, Exa, Firecrawl, and Jina
+- Native content fetching through Tavily, Exa, Firecrawl, Jina, and Parallel
 - Self-hosted SearXNG support
 - Native DSH Web settings panel
 - Provider connection tests and Test Search
@@ -106,6 +106,7 @@ Rules:
 | [Tavily](https://tavily.com) | ✅ | ✅ | General agent search and content extraction |
 | [Exa](https://exa.ai) | ✅ | ✅ | Semantic search, research, and highlights |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | Search followed by scraping or page extraction |
+| [Parallel](https://parallel.ai) | ✅ | ✅ | Agent-native search + extract (LLM-ranked compressed excerpts) |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | General-purpose Web search |
 | [You.com](https://you.com) | ✅ | — | Web and News search |
 | [Jina](https://jina.ai) | ✅ | ✅ | Search plus LLM-friendly page reading |
@@ -117,7 +118,7 @@ A rough starting point:
 | --- | --- |
 | General agent search | Tavily |
 | Semantic search / technical research | Exa |
-| Search followed by page extraction | Firecrawl / Jina |
+| Search followed by page extraction | Firecrawl / Jina / Parallel |
 | Traditional Web search | Brave |
 | Web / News search | You.com |
 | Self-hosted search | SearXNG |
@@ -135,6 +136,7 @@ This table is provided for comparison only. Pricing and free tiers are controlle
 | Brave | $5 credits / month | Search currently $5 / 1k requests |
 | You.com | $100 signup credits | Current site also lists 100 Search calls/day free |
 | Jina | 10M tokens for a new API key | `s.jina.ai` is token-based; no-key is blocked, free key = 100 RPM |
+| Parallel | Pay-as-you-go (no free tier entry) | Search $5 / 1k requests (default 10 results, extra billed separately); Extract $1 / 1k URLs; usage in the Parallel Platform |
 | SearXNG | No platform quota | Cost depends on your instance and upstream engines |
 
 </details>
@@ -227,6 +229,7 @@ Providers expose usage in different units:
 ```text
 Tavily      credits
 Firecrawl   credits
+Parallel    pay-as-you-go
 Brave       requests
 You.com     USD
 Jina        tokens
@@ -243,6 +246,7 @@ The plugin keeps the upstream unit instead of converting everything into a perce
 | Brave | `X-RateLimit-*` response headers (persisted) | ✅ |
 | Exa | No public balance endpoint for a normal Search key | Local estimate |
 | Jina | Balance information returned by Reader | Best-effort |
+| Parallel | Usage and spend live in the Parallel Platform dashboard | Dashboard only |
 | SearXNG | No platform quota | Self-hosted |
 
 Quota snapshots are classified as authoritative or best-effort and are currently used for display in the Settings panel.
@@ -277,7 +281,7 @@ web_fetch
 page content
 ```
 
-Tavily, Exa, Firecrawl, and Jina use their native content extraction APIs.
+Tavily, Exa, Firecrawl, Jina, and Parallel use their native content extraction APIs.
 
 `web_fetch` follows the same provider priority list and looks for the next provider that supports Fetch. It does not stay bound to the provider that handled the previous `web_search`.
 
@@ -288,7 +292,7 @@ Brave Search
     ↓
 URL
     ↓
-Tavily / Exa / Firecrawl / Jina Fetch
+Tavily / Exa / Firecrawl / Jina / Parallel Fetch
 ```
 
 There is an important semantic difference here: provider-native Extract / Reader APIs mainly return page content. The plugin therefore cannot always provide the real upstream HTTP status code, final redirect URL, or other strict HTTP fetch metadata.
@@ -365,6 +369,7 @@ SearXNG itself has no cloud API quota, but reliability and result quality still 
 - Provider-native Extract / Reader APIs are not equivalent to strict HTTP Fetch.
 - SearXNG result quality and reliability depend on the instance and enabled upstream engines.
 - Provider pricing and free tiers are controlled by upstream services and may change.
+- Parallel usage and spend are only viewable in the Parallel Platform dashboard; there is no balance API.
 - For multi-key providers the quota panel merges every key into a pool total; per-key detail is not shown individually.
 
 ## Architecture
@@ -384,6 +389,7 @@ flowchart TD
     Registry --> Tavily
     Registry --> Exa
     Registry --> Firecrawl
+    Registry --> Parallel
     Registry --> Brave
     Registry --> You[You.com]
     Registry --> Jina
@@ -416,6 +422,7 @@ Provider selection and fallback happen inside the plugin. No additional LLM call
 | Firecrawl Search + Fetch + Quota | ✅ E2E |
 | You.com Search + Quota (`X-API-Key`) | ✅ E2E |
 | Brave Search + header quota | ✅ E2E |
+| Parallel Search + Extract | Adapter ready, unit tests ✅, E2E pending API key |
 | Jina / SearXNG | Adapter ready, E2E pending |
 
 Run the test suite:

@@ -7,7 +7,15 @@ import assert from "node:assert/strict";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance, parseJinaSearchJson } from "./providers/jina.ts";
+import {
+  buildParallelSearchBody,
+  clampParallelCount,
+  normalizeParallelQuery,
+  parseParallelExtractText,
+  parseParallelSearchResults,
+} from "./providers/parallel.ts";
 import { braveQuotaFromHeaders } from "./providers/brave.ts";
+import { classifyHttpStatus } from "./providers/types.ts";
 import { mergePoolQuota } from "./quota.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
@@ -198,4 +206,110 @@ test("mergePoolQuota single key keeps the original note (no aggregation label)",
   assert.equal(snap.remaining, 932);
   assert.equal(snap.limit, 1000);
   assert.equal(snap.note, "plan: Researcher");
+});
+
+// ---- Parallel adapter (search body / result normalization / extract) ----
+
+test("clampParallelCount: undefined→5, floor 1, cap 20", () => {
+  assert.equal(clampParallelCount(undefined), 5);
+  assert.equal(clampParallelCount(0), 1);
+  assert.equal(clampParallelCount(-3), 1);
+  assert.equal(clampParallelCount(99), 20);
+  assert.equal(clampParallelCount(8), 8);
+});
+
+test("normalizeParallelQuery: collapses whitespace and caps at 200 chars", () => {
+  assert.equal(normalizeParallelQuery("  what   is\ndsh\n  "), "what is dsh");
+  const long = "x".repeat(500);
+  assert.equal(normalizeParallelQuery(long).length, 200);
+});
+
+test("buildParallelSearchBody: objective + one query + mode basic + clamped max_results", () => {
+  const body = buildParallelSearchBody("  DeepSeek   Harness \n release ", 10);
+  assert.deepEqual(body, {
+    objective: "  DeepSeek   Harness \n release ",
+    search_queries: ["DeepSeek Harness release"],
+    mode: "basic",
+    advanced_settings: { max_results: 10 },
+  });
+  // objective keeps the raw query verbatim — only search_queries is normalized
+  assert.equal((body as { objective: string }).objective.includes("  "), true);
+});
+
+test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {
+  const body = {
+    results: [
+      {
+        url: "https://example.com/a",
+        title: "Result A",
+        publish_date: "2026-01-15",
+        excerpts: ["First passage.", "Second passage."],
+      },
+      { url: "https://example.com/b" },
+    ],
+  };
+  assert.deepEqual(parseParallelSearchResults(body, 5), [
+    {
+      url: "https://example.com/a",
+      title: "Result A",
+      snippet: "First passage.\n\nSecond passage.",
+      publishedAt: "2026-01-15",
+    },
+    { url: "https://example.com/b" },
+  ]);
+});
+
+test("parseParallelSearchResults: skips url-less items, respects the cap, caps the snippet", () => {
+  const body = {
+    results: [
+      { title: "no url" },
+      { url: "https://a.example/" },
+      { url: "https://b.example/", excerpts: ["x".repeat(600)] },
+      { url: "https://c.example/" },
+      null,
+      { url: "" },
+    ],
+  };
+  const sources = parseParallelSearchResults(body, 2);
+  assert.equal(sources.length, 2, "cap applies after skipping invalid items");
+  assert.equal(sources[0].url, "https://a.example/");
+  assert.equal(sources[1].snippet?.length, 500, "joined excerpts capped at 500 chars");
+});
+
+test("parseParallelSearchResults: malformed envelopes yield no sources", () => {
+  assert.deepEqual(parseParallelSearchResults(null, 5), []);
+  assert.deepEqual(parseParallelSearchResults({}, 5), []);
+  assert.deepEqual(parseParallelSearchResults({ results: "nope" }, 5), []);
+});
+
+test("parseParallelExtractText: full_content wins, excerpts are the fallback", () => {
+  assert.equal(
+    parseParallelExtractText({ results: [{ full_content: "# Page body", excerpts: ["e"] }] }),
+    "# Page body",
+  );
+  assert.equal(
+    parseParallelExtractText({ results: [{ excerpts: ["part one", "part two"] }] }),
+    "part one\n\npart two",
+  );
+  // whitespace-only full_content falls through to excerpts
+  assert.equal(parseParallelExtractText({ results: [{ full_content: "   ", excerpts: ["real"] }] }), "real");
+});
+
+test("parseParallelExtractText: undefined when nothing usable (caller raises server error)", () => {
+  assert.equal(parseParallelExtractText(null), undefined);
+  assert.equal(parseParallelExtractText({ results: [] }), undefined);
+  assert.equal(parseParallelExtractText({ results: [{}] }), undefined);
+  assert.equal(parseParallelExtractText({ results: [{ full_content: "", excerpts: [] }] }), undefined);
+});
+
+test("classifyHttpStatus: Parallel's documented codes map onto the closed union", () => {
+  assert.equal(classifyHttpStatus(401), "auth");
+  assert.equal(classifyHttpStatus(402), "quota"); // insufficient credits
+  assert.equal(classifyHttpStatus(403), "auth");
+  assert.equal(classifyHttpStatus(408), "timeout");
+  assert.equal(classifyHttpStatus(422), "bad-request"); // validation error
+  assert.equal(classifyHttpStatus(429), "rate-limit");
+  assert.equal(classifyHttpStatus(500), "server");
+  assert.equal(classifyHttpStatus(502), "server");
+  assert.equal(classifyHttpStatus(503), "server");
 });
