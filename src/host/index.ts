@@ -262,7 +262,11 @@ function toProviderError(error: unknown): ProviderError {
 function withTimeoutMs<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)),
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+      // Never keep the process alive just for an expired quota timer.
+      timer.unref?.();
+    }),
   ]);
 }
 

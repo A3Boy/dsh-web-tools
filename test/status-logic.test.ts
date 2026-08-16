@@ -79,6 +79,24 @@ test("Brave-style header (remaining 0 / limit 0) is NOT rate-limited — no quot
   assert.equal(quotaDisplayKind(quota), "rate_limit", "limit-0 window is a window, not remaining_of_limit");
 });
 
+test("healthy Brave with captured headers (note mentions rate-limit source) stays ready", () => {
+  const p = provider({ keyConfigured: true });
+  const quota = {
+    supported: true, authoritative: true, unit: "requests",
+    remaining: 900, limit: 1000, source: "response_header",
+    note: "From Brave rate-limit response headers",
+  };
+  assert.equal(providerStatusOf(p, quota, true), "ready", "source-describing note must not flip to rate-limited");
+});
+
+test("note stating exhaustion (429 / rate limit exceeded) flips to rate-limited", () => {
+  const p = provider({ keyConfigured: true });
+  assert.equal(
+    providerStatusOf(p, { supported: true, authoritative: true, unit: "credits", remaining: 0, limit: 1000, source: "api", note: "Tavily rate limit exceeded (HTTP 429)" }, true),
+    "rate-limited",
+  );
+});
+
 test("quotaSummary formats credits / usd / tokens via the t() template", () => {
   const t = (key: string, params?: unknown) => {
     const map: Record<string, string> = {

@@ -27,7 +27,10 @@ export function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain = t
   // to remaining 0 / limit 0 — that is a window with no quota info, not
   // exhaustion, so it must NOT flip the provider to rate-limited.
   if (quota?.remaining === 0 && quota?.limit !== undefined && quota?.limit > 0) return "rate-limited";
-  if (note.includes("rate") || note.includes("429")) return "rate-limited";
+  // A note is rate-limit evidence ONLY when it states exhaustion ("429",
+  // "rate limit exceeded"); "From Brave rate-limit response headers" merely
+  // describes the quota source and must not flip a healthy provider.
+  if (note.includes("429") || note.includes("rate limit exceeded") || note.includes("quota exceeded")) return "rate-limited";
   return "ready";
 }
 
