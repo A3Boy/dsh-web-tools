@@ -134,7 +134,7 @@ This table is provided for comparison only. Pricing and free tiers are controlle
 | Firecrawl | 1,000 credits / month | Search = 2 credits / 10 results |
 | Brave | $5 credits / month | Search currently $5 / 1k requests |
 | You.com | $100 signup credits | Current site also lists 100 Search calls/day free |
-| Jina | 10M tokens for a new API key | `s.jina.ai` usage is token-based |
+| Jina | 10M tokens for a new API key | `s.jina.ai` is token-based; no-key is blocked, free key = 100 RPM |
 | SearXNG | No platform quota | Cost depends on your instance and upstream engines |
 
 </details>

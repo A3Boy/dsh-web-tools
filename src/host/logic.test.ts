@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
-import { parseJinaBalance } from "./providers/jina.ts";
+import { parseJinaBalance, parseJinaSearchJson } from "./providers/jina.ts";
 import { braveQuotaFromHeaders } from "./providers/brave.ts";
 import { mergePoolQuota } from "./quota.ts";
 
@@ -95,6 +95,65 @@ test("parseJinaBalance: undefined on format change (never breaks search)", () =>
   assert.equal(parseJinaBalance("no balance info here"), undefined);
   assert.equal(parseJinaBalance("Balance: 100"), undefined); // no "left" keyword
   assert.equal(parseJinaBalance(""), undefined);
+});
+
+test("parseJinaSearchJson: normalizes the official { data: [...] } envelope", () => {
+  const body = {
+    code: 200,
+    status: 20000,
+    data: [
+      {
+        title: "Example Domain",
+        description: "This domain is for use in illustrative examples.",
+        url: "https://example.com/",
+        content: "full page text…",
+        publishedTime: "2026-01-01T00:00:00Z",
+      },
+      {
+        title: "Second Result",
+        description: "Another snippet",
+        url: "https://example.org/",
+      },
+    ],
+  };
+  assert.deepEqual(parseJinaSearchJson(body, 5), [
+    {
+      url: "https://example.com/",
+      title: "Example Domain",
+      snippet: "This domain is for use in illustrative examples.",
+      publishedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      url: "https://example.org/",
+      title: "Second Result",
+      snippet: "Another snippet",
+    },
+  ]);
+});
+
+test("parseJinaSearchJson: skips items without a usable url and respects the cap", () => {
+  const body = {
+    data: [
+      { title: "no url here" },
+      { url: "https://a.example/" },
+      { url: "https://b.example/" },
+      { url: "https://c.example/" },
+      null,
+      { url: "" },
+    ],
+  };
+  // cap 2 → only the first two valid urls; null and empty-url skipped.
+  assert.deepEqual(parseJinaSearchJson(body, 2), [
+    { url: "https://a.example/" },
+    { url: "https://b.example/" },
+  ]);
+});
+
+test("parseJinaSearchJson: empty/malformed envelopes yield no sources (never throws)", () => {
+  assert.deepEqual(parseJinaSearchJson(null, 5), []);
+  assert.deepEqual(parseJinaSearchJson({}, 5), []);
+  assert.deepEqual(parseJinaSearchJson({ data: "not-an-array" }, 5), []);
+  assert.deepEqual(parseJinaSearchJson({ data: [{ title: "no url" }] }, 5), []);
 });
 
 test("braveQuotaFromHeaders: reads the monthly window from rate-limit headers", () => {

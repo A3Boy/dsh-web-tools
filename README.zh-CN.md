@@ -159,7 +159,7 @@ Node 的全局 `fetch` 默认**不读取系统代理**。插件会按以下顺�
 | Firecrawl | 1,000 credits / 月 | 免费计划可直接使用 |
 | Brave | 每月包含免费 credits | 需要 Search subscription 和 payment method |
 | You.com | 新账号 API credits | 具体额度以上游 Dashboard 为准 |
-| Jina | 新 API Key 提供免费 tokens | 按 token 消耗 |
+| Jina | 新 API Key 10M 免费 tokens | `s.jina.ai` 按 token 计费；无 Key 已 blocked，免费 Key 100 RPM |
 | SearXNG | 无平台额度 | 取决于自己的实例和上游 |
 
 Brave 的 `Search`、`Answers`、`Autosuggest`、`Spellcheck` 是不同 API 产品。
