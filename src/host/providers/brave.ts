@@ -121,7 +121,8 @@ export function braveQuotaFromHeaders(headers: Headers, fetchedAt = Date.now()):
       snapshot.remaining = monthlyRemaining ?? 0;
       snapshot.note = "From Brave rate-limit response headers";
     } else {
-      snapshot.note = "Unlimited monthly quota (0 = unlimited per Brave docs)";
+      // 0 monthly limit = pay-as-you-go with no fixed monthly quota window.
+      snapshot.note = "Pay-as-you-go — no monthly quota cap (0 = unlimited per Brave docs)";
     }
   } else {
     // No monthly window in the headers — nothing honest to display.

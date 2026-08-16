@@ -235,7 +235,9 @@ For providers using multiple keys, the quota panel queries every key and merges 
 
 Quota is refreshed **in the background**: the plugin re-pulls snapshots every 5 minutes without needing the Settings page open (and shortly after startup), so a freshly booted profile already shows fresh balances.
 
-Brave has no quota endpoint — its only quota signal is the `X-RateLimit-*` header captured during a real search. Those snapshots are **persisted to settings**, so a restart keeps showing the last known remaining requests (with the update time) until the next search refreshes them.
+Brave has no quota endpoint — its only quota signal is the `X-RateLimit-*` header captured during a real search. Those snapshots are **persisted to settings**, so a restart keeps showing the last known remaining requests until the next search refreshes them.
+
+On pay-as-you-go plans (e.g. $5/1k) the header reads `X-RateLimit-Limit: 1, 0` — a monthly window of 0 means **no fixed monthly quota** (pay per use), shown as "Pay-as-you-go · no monthly cap".
 
 Quota snapshots as shown in the Settings panel:
 
