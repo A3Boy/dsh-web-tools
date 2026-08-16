@@ -21,7 +21,7 @@ Agent 侧仍然使用 DSH 原有的 `web_search` 和 `web_fetch`。
 </div>
 
 <p align="center">
-  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools 设置页总览" />
+  <img src="assets/overview.png" width="900" alt="dsh-web-tools 设置页总览" />
 </p>
 
 ## 功能
@@ -145,7 +145,7 @@ success
 Test Search 中的真实 fallback 示例：
 
 <p align="center">
-  <img src="assets/fallback-demo.png" width="850" alt="Test Search 中的 Provider fallback" />
+  <img src="assets/searchfallback.png" width="850" alt="Test Search 中的 Provider fallback" />
 </p>
 
 当前会继续尝试下一 Provider 的错误包括：
@@ -224,18 +224,9 @@ Quota 结果缓存 5 分钟，不做后台轮询。
 
 设置页中的额度展示示例：
 
-<table>
-  <tr>
-    <td width="33%"><img src="assets/quota-tavily.png" alt="Tavily 额度"></td>
-    <td width="33%"><img src="assets/quota-firecrawl.png" alt="Firecrawl 额度"></td>
-    <td width="33%"><img src="assets/usage-exa.png" alt="Exa 用量"></td>
-  </tr>
-  <tr>
-    <td align="center">Tavily</td>
-    <td align="center">Firecrawl</td>
-    <td align="center">Exa</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="assets/providerDetail.png" width="850" alt="Provider 详情中的额度展示" />
+</p>
 
 ## 网页读取
 
@@ -292,7 +283,7 @@ Settings → Web Search（一级页面）
 Test Search 会实际发出一次搜索，并显示命中的 Provider、延迟和返回结果：
 
 <p align="center">
-  <img src="assets/test-search.png" width="850" alt="Test Search 结果" />
+  <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search 结果" />
 </p>
 
 搜索结果数量仍由 DSH `web_search` 工具层控制。

@@ -21,7 +21,7 @@ The agent still uses the built-in `web_search` and `web_fetch` tools provided by
 </div>
 
 <p align="center">
-  <img src="assets/settings-overview.png" width="900" alt="dsh-web-tools settings overview" />
+  <img src="assets/overview.png" width="900" alt="dsh-web-tools settings overview" />
 </p>
 
 ## Features
@@ -145,7 +145,7 @@ success
 Real fallback in Test Search:
 
 <p align="center">
-  <img src="assets/fallback-demo.png" width="850" alt="Provider fallback in Test Search" />
+  <img src="assets/searchfallback.png" width="850" alt="Provider fallback in Test Search" />
 </p>
 
 The following failures currently allow the search to continue with another provider:
@@ -224,18 +224,9 @@ Quota results are cached for five minutes and are not polled continuously.
 
 Quota snapshots as shown in the Settings panel:
 
-<table>
-  <tr>
-    <td width="33%"><img src="assets/quota-tavily.png" alt="Tavily quota"></td>
-    <td width="33%"><img src="assets/quota-firecrawl.png" alt="Firecrawl quota"></td>
-    <td width="33%"><img src="assets/usage-exa.png" alt="Exa usage"></td>
-  </tr>
-  <tr>
-    <td align="center">Tavily</td>
-    <td align="center">Firecrawl</td>
-    <td align="center">Exa</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="assets/providerDetail.png" width="850" alt="Provider detail with quota display" />
+</p>
 
 ## Web fetching
 
@@ -292,7 +283,7 @@ The panel currently manages:
 Test Search performs a real search and shows the provider used, request latency, and returned results:
 
 <p align="center">
-  <img src="assets/test-search.png" width="850" alt="Test Search results" />
+  <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search results" />
 </p>
 
 The result count is still controlled by the DSH `web_search` tool layer.
