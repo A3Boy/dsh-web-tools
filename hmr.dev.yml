@@ -1,0 +1,35 @@
+# dsh-web-tools: HMR (Hot Module Replacement) dev patch
+#
+# Usage:
+#   dsh web --patch hmr.dev.yml
+#
+# This patch inserts the cordis-plugin-hmr service configured to watch the
+# plugin's compiled lib/ directory. When paired with tsc --watch + tsdown --watch
+# (see: npm run dev:watch), host-side code changes are hot-reloaded without
+# restarting the DSH process.
+#
+# Prerequisites:
+#   1. Run `npm run setup:hmr` once to install the HMR plugin into the profile
+#   2. Run `npm run dev:watch` in a separate terminal for auto-rebuild
+#   3. Run `dsh web --patch hmr.dev.yml` in another terminal to start DSH with HMR
+#
+
+# The timer service is required by cordis-plugin-hmr's inject: ["loader", "timer"]
+insert:
+  - id: timer
+    name: '@deepseek-ai/cordis-plugin-timer'
+
+  - id: hmr
+    name: '@deepseek-ai/cordis-plugin-hmr'
+    config:
+      # Watch the compiled lib/ directory for changes
+      root:
+        - D:\web\MyClaude\Claudio\dsh-plugins\dsh-web-tools\lib
+      # Ignore node_modules, .dotfiles, cache, data
+      ignored:
+        - "**/node_modules"
+        - "**/.*"
+        - "cache"
+        - "data"
+      # Debounce file-change bursts (ms)
+      debounce: 100
