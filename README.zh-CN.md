@@ -56,6 +56,7 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
 - 系统代理 / Windows 系统代理
 - SearXNG 自托管
 - 中文 / English 界面
+- 会话级「联网搜索」开关（每轮强制先搜索，再回答）
 - API Key 保存到 DSH Credentials
 
 插件不提供共享 Key 或中转服务，请求由本地 DSH 直接访问对应 Provider。
@@ -366,6 +367,23 @@ English
 ```
 
 只修改这个插件页面，不影响 DSH 其他页面。
+
+## 会话「联网搜索」
+
+输入框左侧有一个「联网搜索」开关（会话级，保持开启直到再点一次）。
+
+```text
+关闭： ◎ 联网搜索
+开启： 🌐 联网搜索   (高亮)
+```
+
+- **关闭（auto）**：Agent 自行判断是否需要 `web_search`
+- **开启（required）**：每一轮都必须先完成至少一次 `web_search`，再回答问题；如果搜索全部失败，Agent 如实说明搜索未完成，而不是拿记忆冒充最新结果
+- 状态保存在 **DSH Host**（唯一真相），浏览器刷新 / 切换会话 / 多标签页都不会丢
+- 没有可用搜索源（插件禁用或一个 Provider 都没配置）时按钮变灰
+- 等价快捷命令：`/search` 或 `/网页搜索`（来回切换同一个开关）
+
+实现是极薄的一层 turn policy：`agent/pre-step` 注入一段 “本轮必须先搜索” 的上下文，`tools/result` 统计 `web_search` 是否真实执行（成功或失败都算“尝试过”），`agent/turn-stopping` 在模型无视要求时通过 `agent.steer()` 纠正一次，第二次才 `cancel()`（避免死循环）。**8 个 Provider 的搜索执行层完全不动。**
 
 ## 安全
 

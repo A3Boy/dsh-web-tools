@@ -13,6 +13,7 @@
 import type { WebToolsContext } from "./context-types.ts";
 import { type PoolEntry } from "./pool.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { SearchMode, SearchModeView } from "../shared/api-types.ts";
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export declare function keyIdOf(key: string): string;
 /** Route prefix (client fetches `/web-tools/api/<method>`). */
@@ -41,6 +42,11 @@ export interface RouteDeps {
         configured: boolean;
         degraded: boolean;
     }>;
+    /** Search-Mode runtime access (see search-mode-runtime.ts). */
+    searchMode?: {
+        view(sessionId: string): SearchModeView;
+        set(sessionId: string, mode: SearchMode): SearchModeView;
+    };
 }
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */
 export declare function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => void;

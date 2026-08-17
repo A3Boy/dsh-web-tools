@@ -117,5 +117,55 @@ export interface WebToolsContext {
   effect(fn: () => void | (() => void), label?: string): void;
   /** Cordis dependency injection (callback gets the scoped context). */
   inject(services: string[], callback: (ctx: WebToolsContext) => void): unknown;
+  /** Subscribe to a DSH event; returns a disposer. */
+  on(event: string, listener: (...args: any[]) => unknown, options?: unknown): () => void;
+  /** Get an optional registered service (structural mirror of cordis ctx.get). */
+  get(name: string): unknown;
+  /** Human-command registry (`ctx.commands`) for /search slash entries. */
+  commands: WebToolsCommands;
+}
+
+// ---------------------------------------------------------------------------
+// Search Mode / Web Tools runtime faces (agent scope, command service)
+// ---------------------------------------------------------------------------
+
+/** An agent's scoped context (carries `on`/`effect` for agent-scoped events). */
+export interface WebToolsAgentCtx {
+  on(event: string, listener: (...args: any[]) => unknown, options?: unknown): () => void;
+  effect(fn: () => void | (() => void), label?: string): void;
+}
+
+/** Minimal live agent face the Search Mode runtime touches. */
+export interface WebToolsAgent {
+  id: string;
+  status?: string;
+  ctx: WebToolsAgentCtx;
+  steer(input: unknown): void;
+  cancel(cause: unknown): void;
+}
+
+/** The agents service face (`ctx.agents`) for agent lifecycle events. */
+export interface WebToolsAgents {
+  get(id: string): WebToolsAgent | undefined;
+  list(): WebToolsAgent[];
+}
+
+/** A command registration (Host `ctx.commands.register`). */
+export interface WebToolsCommandInvocation {
+  agent: WebToolsAgent;
+  rawInput: string;
+}
+export type WebToolsCommandResult =
+  | { kind: "success"; text?: string; sourceEventSeq?: number }
+  | { kind: "error"; text: string };
+export interface WebToolsCommandDefinition {
+  name: string;
+  description: string;
+  input?: { hint: string };
+  recordInput?: boolean;
+  handler(invocation: WebToolsCommandInvocation): WebToolsCommandResult | Promise<WebToolsCommandResult>;
+}
+export interface WebToolsCommands {
+  register(definition: WebToolsCommandDefinition): () => void;
 }
 

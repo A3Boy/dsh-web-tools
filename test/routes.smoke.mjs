@@ -54,6 +54,13 @@ const deps = {
   testProviderSearch: async (provider, query) => ({ ok: true, provider, query, latencyMs: 100, resultCount: 3 }),
   testFullSearch: async (query, provider) => ({ ok: true, backend: provider ?? "tavily", latencyMs: 200, resultCount: 3, attempts: [{ provider: "tavily", outcome: "success", latencyMs: 200 }] }),
   describeQuotas: async () => ({ tavily: { supported: true, authoritative: true, unit: "credits", remaining: 950, limit: 1000, source: "api", fetchedAt: Date.now() } }),
+  searchMode: (() => {
+    let mode = "auto";
+    return {
+      view: (sessionId) => ({ mode, available: true }),
+      set: (sessionId, next) => { mode = next; return { mode, available: true }; },
+    };
+  })(),
 };
 
 const { server, getHandler } = mockServer();
@@ -243,4 +250,28 @@ test("removing the LAST key writes an empty value (routes hand empty to the writ
   assert.ok(written, "writer called on last removal");
   assert.equal(written.value, "", "last key removal hands an empty value (host unsets)");
   assert.equal(written.ref, "WEB_TOOLS_TAVILY");
+});
+
+test("search-mode/get returns the mode + availability and validation rejects a bad session", async () => {
+  const { status, body } = await call("search-mode/get", { sessionId: "sess-1" });
+  assert.equal(status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.value, { mode: "auto", available: true });
+
+  const missing = await call("search-mode/get", {});
+  assert.equal(missing.status, 500);
+  assert.equal(missing.body.ok, false);
+});
+
+test("search-mode/set toggles and persists, rejecting invalid modes", async () => {
+  const on = await call("search-mode/set", { sessionId: "sess-2", mode: "required" });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.value.mode, "required");
+  // The same runtime reflects the new mode on read-back.
+  const again = await call("search-mode/get", { sessionId: "sess-2" });
+  assert.equal(again.body.value.mode, "required");
+
+  const invalid = await call("search-mode/set", { sessionId: "sess-2", mode: "banana" });
+  assert.equal(invalid.status, 500);
+  assert.equal(invalid.body.ok, false);
 });

@@ -108,6 +108,19 @@ export interface CredentialView {
 export interface CredentialsView {
     credentials: Record<string, CredentialView>;
 }
+/**
+ * "Web Search mode" per-session policy: `auto` lets the agent decide whether
+ * to call web_search; `required` demands at least one completed web_search
+ * call (success OR failure) before that turn may end. Host-owned state, so it
+ * survives browser refresh / relaunch.
+ */
+export type SearchMode = "auto" | "required";
+/** The search-mode state surfaced to the client. */
+export interface SearchModeView {
+    mode: SearchMode;
+    /** True when there is currently a usable search provider (button gray-out). */
+    available: boolean;
+}
 /** The full quota/describe response. */
 export interface QuotaDescribeView {
     quotas: Record<string, QuotaView>;

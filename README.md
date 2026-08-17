@@ -58,6 +58,7 @@ Uses the native DSH `web_search` / `web_fetch` tools.
 - System proxy / Windows proxy support
 - Self-hosted SearXNG
 - Chinese / English UI
+- Per-session "Web Search" toggle (require a search before answering each turn)
 - API keys stored with DSH Credentials
 
 The plugin does not provide shared API keys or a proxy service. Requests go directly from the local DSH Host to each provider.
@@ -375,6 +376,33 @@ English
 ```
 
 The language setting only affects this plugin page.
+
+## Per-session "Web Search" toggle
+
+A small toggle sits at the left end of the input row (session-scoped; it stays
+on until you click it again).
+
+```text
+off: ◎ Web Search
+on:  🌐 Web Search   (highlighted)
+```
+
+- **off (auto)** — the agent decides whether to call `web_search`
+- **on (required)** — every turn must complete at least one `web_search`
+  before answering; if all providers fail, the agent says the search could
+  not be completed instead of answering the factual question from memory
+- the state lives in the **DSH Host** (single source of truth) — a browser
+  refresh, session switch, or extra tab cannot desync it
+- the button grays out when there is no usable search source (plugin disabled
+  or no provider configured)
+- equivalent slash command: `/search` or `/网页搜索` (toggles the same switch)
+
+Implementation is a thin turn policy: `agent/pre-step` injects a "search
+first" instruction, `tools/result` records whether a `web_search` actually ran
+(completion, success or failure, counts as tried), and `agent/turn-stopping`
+corrects once via `agent.steer()` when the model ignores it, then `cancel()`
+on a second offense (no infinite loop). **The 8-provider search layer is
+untouched.**
 
 ## Security
 

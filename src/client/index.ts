@@ -19,6 +19,7 @@
  */
 import { WebToolsSection } from "./WebToolsSection.tsx";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
+import { SearchModeButton } from "./SearchModeButton.tsx";
 
 /** Locale namespace for this page's copy. */
 export const NS = "dsh-web-tools";
@@ -261,4 +262,18 @@ export function apply(ctx: any) {
   };
 
   registerSettingsSection(ctx, t, WebToolsSection, ui);
+
+  // "联网搜索" per-session toggle — a small always-visible control at the left
+  // end of the composer tool row (official `conversation.input.left` seat).
+  // Session-scoped: the button receives `sessionId` via the standard props.
+  ctx.slots.inject("conversation.input.left", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.input.left",
+        id: "dsh-web-tools-search-mode",
+        order: 30,
+      },
+      SearchModeButton,
+    ),
+  );
 }

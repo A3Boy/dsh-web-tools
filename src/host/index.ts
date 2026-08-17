@@ -23,12 +23,14 @@ import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
 import { proxyStatus } from "./fetch-proxy.ts";
+import { installSearchModeRuntime, SearchModeRuntime } from "./search-mode-runtime.ts";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "webRuntime", "settings", "credentials", "web"];
+export const inject = ["webServer", "webRuntime", "settings", "credentials", "web", "agents", "commands"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
@@ -330,6 +332,31 @@ export function apply(ctx: WebToolsContext) {
       .catch(() => {});
   });
 
+  // ---- Search Mode (per-session "required web search" turn policy) ---------
+  // Host-owned state riding the provider seam: `available()` means the search
+  // provider is configured+enabled. `createUserMessage` (official DSH factory)
+  // builds the injected plugin-source UserMessage for pre-step.
+  const searchModeRuntime = new SearchModeRuntime(() => provider.available());
+  ctx.effect(
+    () =>
+      installSearchModeRuntime(
+        ctx,
+        { searchAvailable: () => provider.available() },
+        searchModeRuntime,
+        (input) => createUserMessage(input as never),
+      ),
+    "dsh-web-tools: search-mode runtime",
+  );
+
+  // The routes expose the same runtime map to the button / slash commands.
+  const searchMode = {
+    view: (sessionId: string) => searchModeRuntime.view(sessionId),
+    set: (sessionId: string, mode: "auto" | "required") => {
+      searchModeRuntime.setMode(sessionId, mode);
+      return searchModeRuntime.view(sessionId);
+    },
+  };
+
   // ---- fenced HTTP routes for the card ------------------------------------
   ctx.effect(
     () =>
@@ -343,6 +370,7 @@ export function apply(ctx: WebToolsContext) {
         describeQuotas,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,
+        searchMode,
       }),
     "dsh-web-tools: /web-tools/api routes",
   );

@@ -15,7 +15,7 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView } from "../shared/api-types.ts";
 import { createHash } from "node:crypto";
 
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
@@ -42,6 +42,11 @@ export interface RouteDeps {
   poolEntries?: (provider: string) => Promise<PoolEntry[]>;
   /** Proxy support status (configured + whether undici is loadable). */
   proxyStatus?: () => Promise<{ configured: boolean; degraded: boolean }>;
+  /** Search-Mode runtime access (see search-mode-runtime.ts). */
+  searchMode?: {
+    view(sessionId: string): SearchModeView;
+    set(sessionId: string, mode: SearchMode): SearchModeView;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +270,23 @@ async function handleQuotaDescribe(deps: RouteDeps, payload: unknown) {
   return { quotas: await deps.describeQuotas(force) };
 }
 
+async function handleSearchModeGet(deps: RouteDeps, payload: unknown) {
+  const sessionId = String((payload as { sessionId?: unknown })?.sessionId ?? "");
+  if (!sessionId) throw new Error("missing sessionId");
+  if (!deps.searchMode) throw new Error("search-mode runtime unavailable");
+  return deps.searchMode.view(sessionId);
+}
+
+async function handleSearchModeSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { sessionId?: unknown; mode?: unknown };
+  const sessionId = String(p.sessionId ?? "");
+  const mode = p.mode;
+  if (!sessionId) throw new Error("missing sessionId");
+  if (mode !== "auto" && mode !== "required") throw new Error("invalid mode");
+  if (!deps.searchMode) throw new Error("search-mode runtime unavailable");
+  return deps.searchMode.set(sessionId, mode);
+}
+
 // ---------------------------------------------------------------------------
 // route registration
 // ---------------------------------------------------------------------------
@@ -279,6 +301,8 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
   "test/search": (deps, payload) => handleTestSearch(deps, payload),
   "quota/describe": (deps, payload) => handleQuotaDescribe(deps, payload),
+  "search-mode/get": (deps, payload) => handleSearchModeGet(deps, payload),
+  "search-mode/set": (deps, payload) => handleSearchModeSet(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */
