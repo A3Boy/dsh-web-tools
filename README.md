@@ -101,7 +101,7 @@ Currently developed and tested against DeepSeek Harness `0.1.0-rc.6`.
 | [Tavily](https://tavily.com) | ✅ | ✅ | ✅ |
 | [Exa](https://exa.ai) | ✅ | ✅ | — |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | ✅ |
-| [Parallel](https://parallel.ai) | ✅ | ✅ | coding |
+| [Parallel](https://parallel.ai) | ✅ | ✅ | Dashboard only |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | ✅ |
 | [You.com](https://you.com) | ✅ | — | ✅ |
 | [Jina](https://jina.ai) | ✅ | ✅ | Best effort |
@@ -242,7 +242,7 @@ Current quota support:
 | You.com | ✅ |
 | Jina | ✅ |
 | Exa | — |
-| Parallel | coding…… |
+| Parallel | Dashboard only |
 | SearXNG | Self-hosted |
 
 For supported providers, quota from multiple API keys is combined.

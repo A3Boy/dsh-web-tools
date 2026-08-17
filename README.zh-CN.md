@@ -99,7 +99,7 @@ dsh plugin --profile web remove dsh-web-tools
 | [Tavily](https://tavily.com) | ✅ | ✅ | ✅ |
 | [Exa](https://exa.ai) | ✅ | ✅ | — |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | ✅ |
-| [Parallel](https://parallel.ai) | ✅ | ✅ | 开发中 |
+| [Parallel](https://parallel.ai) | ✅ | ✅ | Dashboard only |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | ✅ |
 | [You.com](https://you.com) | ✅ | — | ✅ |
 | [Jina](https://jina.ai) | ✅ | ✅ | Best effort |
@@ -233,7 +233,7 @@ Tavily
 | You.com | ✅ |
 | Jina | ✅ |
 | Exa | — |
-| Parallel | 制作中 |
+| Parallel | Dashboard only |
 | SearXNG | Self-hosted |
 
 支持多 Key 的 Provider 会合并显示总额度。
