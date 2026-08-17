@@ -379,30 +379,24 @@ The language setting only affects this plugin page.
 
 ## Per-session "Web Search" toggle
 
-A small toggle sits at the left end of the input row (session-scoped; it stays
-on until you click it again).
+A small "Web Search" toggle sits at the left end of the input row. Click it to
+turn it on or off; once on, it stays on until you click again.
 
-```text
-off: ◎ Web Search
-on:  🌐 Web Search   (highlighted)
-```
+- **off** — lets the AI decide on its own whether a question needs a web search
+- **on** — always searches the web first, then answers; if the search fails, it
+  honestly tells you it couldn't fetch anything instead of guessing from memory
+- the state follows the current conversation: refreshing the page or switching
+  conversations doesn't lose it
+- the button grays out when there is no usable search source (the plugin is
+  disabled, or no search source is available)
+- you can also use `/search` to toggle the same switch
 
-- **off (auto)** — the agent decides whether to call `web_search`
-- **on (required)** — every turn must complete at least one `web_search`
-  before answering; if all providers fail, the agent says the search could
-  not be completed instead of answering the factual question from memory
-- the state lives in the **DSH Host** (single source of truth) — a browser
-  refresh, session switch, or extra tab cannot desync it
-- the button grays out when there is no usable search source (plugin disabled
-  or no provider configured)
-- equivalent slash command: `/search` or `/网页搜索` (toggles the same switch)
+It works with the 8 search sources: when on, the search automatically falls
+back through the sources in the order you've configured.
 
-Implementation is a thin turn policy: `agent/pre-step` injects a "search
-first" instruction, `tools/result` records whether a `web_search` actually ran
-(completion, success or failure, counts as tried), and `agent/turn-stopping`
-corrects once via `agent.steer()` when the model ignores it, then `cancel()`
-on a second offense (no infinite loop). **The 8-provider search layer is
-untouched.**
+<p align="center">
+  <img src="assets/searchMode.png" width="480" alt="Web Search toggle" />
+</p>
 
 ## Security
 
