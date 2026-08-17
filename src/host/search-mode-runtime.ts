@@ -35,15 +35,23 @@ export interface TurnState {
   correctionCount: number;
 }
 
-/** The injected "you must search" instruction the model sees on step 1. */
+/** The injected "you must search" instruction the model sees on step 1.
+ * This is a Web Research policy, not a tool-call gate: require the search,
+ * guide how to use it, and let a failed search stop at honest disclosure
+ * rather than blocking work the user's own context already supports. */
 export const REQUIRED_SEARCH_TEXT = [
   "Web Search mode is enabled for this turn.",
   "",
-  "Before giving a substantive answer, complete at least one web_search call.",
-  "Use web_fetch afterward when useful.",
+  "Before answering, complete at least one web_search call. Use web_fetch when the full page context matters. If the first search is insufficient, ambiguous, or conflicting, refine the query and search again.",
   "",
-  "If web_search fails, do not answer the factual question from memory.",
-  "Tell the user that web search could not be completed.",
+  "Use web results as evidence:",
+  "- For current, factual, API, protocol, or compatibility claims, prefer up-to-date primary or official sources.",
+  "- For coding, debugging, architecture, or implementation work, also inspect mature open-source implementations and relevant issue, PR, or community discussions when they can materially inform the solution. Compare approaches and adapt them to the current codebase instead of copying blindly.",
+  "- Distinguish sourced facts from your own inference.",
+  "",
+  "When usable web sources were found, cite relevant claims with markdown links and end the answer with a short Sources / 参考来源 section listing the key sources actually used. Match the section title to the user's language and keep it concise.",
+  "",
+  "If web_search fails or finds no useful source, say what could not be verified. You may still continue from the user's code or provided context, but do not present unverified current facts as web-verified.",
 ].join("\n");
 
 /** One-shot steer used when the model tries to end without searching. */

@@ -32,7 +32,10 @@ export interface TurnState {
     webSearchSucceeded: boolean;
     correctionCount: number;
 }
-/** The injected "you must search" instruction the model sees on step 1. */
+/** The injected "you must search" instruction the model sees on step 1.
+ * This is a Web Research policy, not a tool-call gate: require the search,
+ * guide how to use it, and let a failed search stop at honest disclosure
+ * rather than blocking work the user's own context already supports. */
 export declare const REQUIRED_SEARCH_TEXT: string;
 /** One-shot steer used when the model tries to end without searching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT: string;

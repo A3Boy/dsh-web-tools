@@ -23,14 +23,6 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Providers-8-111111?style=flat-square" alt="8 Providers" />
-  <img src="https://img.shields.io/badge/Fallback-supported-2ea44f?style=flat-square" alt="Fallback" />
-  <img src="https://img.shields.io/badge/Multi--Key-supported-2ea44f?style=flat-square" alt="Multi-Key" />
-  <img src="https://img.shields.io/badge/BYOK-yes-2ea44f?style=flat-square" alt="BYOK" />
-  <img src="https://img.shields.io/badge/SearXNG-self--hosted-555555?style=flat-square" alt="SearXNG" />
-</p>
-
 [English](README.md) | **简体中文**
 
 </div>
@@ -41,23 +33,13 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
 
 ## 功能
 
-- 8 个搜索源
-- 自定义搜索顺序
-- 搜索失败自动切换下一家
-- Provider 独立启用 / 禁用
+- Tavily、Exa、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG
+- 自定义搜索顺序和 Provider fallback
 - 每个 Provider 支持多个 API Key
-- API Key 健康状态
-- 额度 / 余额 / Rate Limit 查看
-- 多 Key 额度合并
-- 后台自动刷新额度
-- Provider 连接测试
-- Test Search
-- 搜索失败过程展示
-- 系统代理 / Windows 系统代理
-- SearXNG 自托管
-- 中文 / English 界面
-- 会话级「联网搜索」开关（每轮强制先搜索，再回答）
-- API Key 保存到 DSH Credentials
+- 额度、Key 状态和连接测试
+- `web_search` / `web_fetch` 原生接入
+- 会话级「联网搜索」开关
+- 系统代理和自托管 SearXNG
 
 插件不提供共享 Key 或中转服务，请求由本地 DSH 直接访问对应 Provider。
 
@@ -67,21 +49,11 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
-一条命令即可，无需额外配置：编译产物 `lib/` 已包含在 git 仓库里（包本身不带 `prepare` 构建脚本，因此 pnpm 从 GitHub 安装时不会触发构建检查，直接用现成产物）。
-
 重启 `dsh web` 后打开：
 
 ```text
 Settings → Web Search
 ```
-
-检查插件：
-
-```bash
-dsh --profile web --dump-config
-```
-
-（应能看到 `# == dsh-web-tools` 条目，并且它被注册为 `web.searchProvider`）
 
 更新：
 
@@ -94,8 +66,6 @@ dsh plugin --profile web update dsh-web-tools
 ```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
-
-**给开发者**：本仓库没有 `prepare` 脚本，改动 `src/` 后请手动跑一次 `npm run build` 并连同 `lib/` 产物一起提交（否则安装拉到的仍是旧产物）。CI 也会在 `npm run build` 时校验一致性。
 
 当前针对 DeepSeek Harness `0.1.0-rc.6` 开发和测试。
 
@@ -133,37 +103,21 @@ dsh plugin --profile web remove dsh-web-tools
 
 ## 免费额度参考
 
-> 截至 2026-08-16。上游价格和免费计划可能调整，请以 Provider 官网为准。
+<details>
+<summary>免费额度 / 新用户额度（以官方为准）</summary>
 
 | Provider | 免费额度 / 新用户额度 |
 | --- | --- |
-| Tavily | **1,000 credits / 月** |
-| Exa | **注册送 $20 + 每月 $10** |
-| Firecrawl | **1,000 credits / 月** |
-| Parallel | **注册送最高 $80 + 每月 $5** |
-| Brave Search | **每月 $5 credits** |
-| You.com | **新账号 $100 credits** |
-| Jina | **新 API Key 10M tokens** |
-| SearXNG | **自托管，无平台额度** |
+| Tavily | 1,000 credits / 月 |
+| Exa | 注册送 $20 + 每月 $10 |
+| Firecrawl | 1,000 credits / 月 |
+| Parallel | 注册送最高 $80 + 每月 $5 |
+| Brave Search | 每月 $5 credits |
+| You.com | 新账号 $100 credits |
+| Jina | 新 API Key 10M tokens |
+| SearXNG | 自托管，无平台额度 |
 
-每月持续免费：
-
-```text
-Tavily       1,000 credits
-Exa          $10
-Firecrawl    1,000 credits
-Parallel     $5
-Brave        $5
-```
-
-一次性新用户额度：
-
-```text
-Parallel     最高 $80
-Exa          $20
-You.com      $100
-Jina         10M tokens
-```
+</details>
 
 部分 Provider 的免费额度需要注册或绑定支付方式，具体以官方规则为准。
 
@@ -373,7 +327,7 @@ English
 输入框左侧有一个「联网搜索」开关，点击即可开启或关闭，开启后会一直保持到再次点击。
 
 - **关闭**：让 AI 自己判断当前问题需不需要上网搜
-- **开启**：每一轮都先联网搜索，再回答问题；如果搜索失败，AI 会如实告诉你没搜到，而不会拿旧记忆冒充最新信息
+- **开启**：每轮回答前至少执行一次联网搜索；搜索无法完成时，会提示 Agent 明确说明哪些信息没有经过联网验证
 - 状态跟着当前会话走：刷新页面、切换会话都不会丢失
 - 当前没有可用搜索源（插件被禁用或没有任何一个搜索源可用）时，按钮会置灰
 - 也可以用快捷命令 `/search` 一键切换同一个开关
@@ -419,6 +373,8 @@ npx tsc -p tsconfig.client.json --noEmit
 ```bash
 npm run build
 ```
+
+改动 `src/` 后请运行一次 `npm run build`，并把生成的 `lib/` 产物一起提交。包没有 `prepare` 脚本，GitHub 安装会直接使用仓库里已提交的 `lib/`，因此源码与 `lib/` 必须保持一致。
 
 Provider Adapter 位于：
 

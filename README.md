@@ -25,14 +25,6 @@ Uses the native DSH `web_search` / `web_fetch` tools.
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Providers-8-111111?style=flat-square" alt="8 Providers" />
-  <img src="https://img.shields.io/badge/Fallback-supported-2ea44f?style=flat-square" alt="Fallback" />
-  <img src="https://img.shields.io/badge/Multi--Key-supported-2ea44f?style=flat-square" alt="Multi-Key" />
-  <img src="https://img.shields.io/badge/BYOK-yes-2ea44f?style=flat-square" alt="BYOK" />
-  <img src="https://img.shields.io/badge/SearXNG-self--hosted-555555?style=flat-square" alt="SearXNG" />
-</p>
-
 **English** | [简体中文](README.zh-CN.md)
 
 </div>
@@ -43,23 +35,13 @@ Uses the native DSH `web_search` / `web_fetch` tools.
 
 ## Features
 
-- 8 search providers
-- Configurable provider order
-- Automatic fallback
-- Enable / disable providers independently
+- Tavily, Exa, Firecrawl, Parallel, Brave, You.com, Jina, SearXNG
+- Configurable provider order and fallback
 - Multiple API keys per provider
-- API key health status
-- Balance / quota / rate-limit display
-- Combined quota for multiple keys
-- Background quota refresh
-- Provider connection test
-- Test Search
-- Fallback attempt history
-- System proxy / Windows proxy support
-- Self-hosted SearXNG
-- Chinese / English UI
-- Per-session "Web Search" toggle (require a search before answering each turn)
-- API keys stored with DSH Credentials
+- Quota, key health, and connection test
+- Native `web_search` / `web_fetch`
+- Per-session "Web Search" toggle
+- System proxy and self-hosted SearXNG
 
 The plugin does not provide shared API keys or a proxy service. Requests go directly from the local DSH Host to each provider.
 
@@ -69,21 +51,11 @@ The plugin does not provide shared API keys or a proxy service. Requests go dire
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
-A single command, no extra configuration: the compiled `lib/` is committed to git (the package ships no `prepare` build script), so pnpm installs the GitHub dependency without triggering a build check and uses the shipped artifacts directly.
-
 Restart `dsh web`, then open:
 
 ```text
 Settings → Web Search
 ```
-
-Check the plugin:
-
-```bash
-dsh --profile web --dump-config
-```
-
-(You should see a `# == dsh-web-tools` entry, and it is registered as `web.searchProvider`.)
 
 Update:
 
@@ -135,37 +107,21 @@ One provider is enough to use the plugin. Multiple providers enable fallback.
 
 ## Free tier reference
 
-> Updated 2026-08-16. Pricing and free tiers may change. Check the provider website for current details.
+<details>
+<summary>Free / signup credits (check upstream for current details)</summary>
 
 | Provider | Free / signup credits |
 | --- | --- |
-| Tavily | **1,000 credits / month** |
-| Exa | **$20 on signup + $10 / month** |
-| Firecrawl | **1,000 credits / month** |
-| Parallel | **Up to $80 on signup + $5 / month** |
-| Brave Search | **$5 credits / month** |
-| You.com | **$100 for new accounts** |
-| Jina | **10M tokens for a new API key** |
-| SearXNG | **Self-hosted, no platform quota** |
+| Tavily | 1,000 credits / month |
+| Exa | $20 on signup + $10 / month |
+| Firecrawl | 1,000 credits / month |
+| Parallel | Up to $80 on signup + $5 / month |
+| Brave Search | $5 credits / month |
+| You.com | $100 for new accounts |
+| Jina | 10M tokens for a new API key |
+| SearXNG | Self-hosted, no platform quota |
 
-Recurring monthly free allowances:
-
-```text
-Tavily       1,000 credits
-Exa          $10
-Firecrawl    1,000 credits
-Parallel     $5
-Brave        $5
-```
-
-Signup / one-time credits:
-
-```text
-Parallel     up to $80
-Exa          $20
-You.com      $100
-Jina         10M tokens
-```
+</details>
 
 Some free tiers require account registration or a payment method. Check the upstream provider rules.
 
@@ -383,8 +339,9 @@ A small "Web Search" toggle sits at the left end of the input row. Click it to
 turn it on or off; once on, it stays on until you click again.
 
 - **off** — lets the AI decide on its own whether a question needs a web search
-- **on** — always searches the web first, then answers; if the search fails, it
-  honestly tells you it couldn't fetch anything instead of guessing from memory
+- **on** — runs at least one web search before answering each turn; when a
+  search can't complete, the agent is asked to say which parts were not
+  web-verified
 - the state follows the current conversation: refreshing the page or switching
   conversations doesn't lose it
 - the button grays out when there is no usable search source (the plugin is
@@ -433,6 +390,8 @@ Build:
 ```bash
 npm run build
 ```
+
+After changing `src/`, run `npm run build` and commit the resulting `lib/` too. The package has no `prepare` script, so GitHub installs use the committed `lib/` directly — keep it in sync with `src/`.
 
 Provider adapters are in:
 
