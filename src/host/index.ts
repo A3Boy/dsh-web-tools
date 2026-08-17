@@ -23,7 +23,7 @@ import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
 import { proxyStatus } from "./fetch-proxy.ts";
-import { installSearchModeRuntime, SearchModeRuntime } from "./search-mode-runtime.ts";
+import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -334,8 +334,10 @@ export function apply(ctx: WebToolsContext) {
 
   // ---- Search Mode (per-session "required web search" turn policy) ---------
   // Host-owned state riding the provider seam: `available()` means the search
-  // provider is configured+enabled. `createUserMessage` (official DSH factory)
-  // builds the injected plugin-source UserMessage for pre-step.
+  // provider service is enabled with a chain provider. Messages use the
+  // OFFICIAL @deepseek-ai/dsh-llm createUserMessage ({ content, source }):
+  // required = durable snapshot section, correction = one-shot notice.
+  const searchModeMessages = createSearchModeMessages((input) => createUserMessage(input as never));
   const searchModeRuntime = new SearchModeRuntime(() => provider.available());
   ctx.effect(
     () =>
@@ -343,7 +345,7 @@ export function apply(ctx: WebToolsContext) {
         ctx,
         { searchAvailable: () => provider.available() },
         searchModeRuntime,
-        (input) => createUserMessage(input as never),
+        searchModeMessages,
       ),
     "dsh-web-tools: search-mode runtime",
   );

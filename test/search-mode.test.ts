@@ -8,7 +8,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SearchModeRuntime } from "../src/host/search-mode-runtime.ts";
+import {
+  SearchModeRuntime,
+  createSearchModeMessages,
+  REQUIRED_SEARCH_TEXT,
+  REQUIRED_SEARCH_CORRECTION_TEXT,
+} from "../src/host/search-mode-runtime.ts";
 
 function runtime(available = true): SearchModeRuntime {
   return new SearchModeRuntime(() => available);
@@ -109,4 +114,72 @@ test("view reports mode and availability", () => {
   const r2 = runtime(true);
   r2.setMode("s1", "required");
   assert.deepEqual(r2.view("s1"), { mode: "required", available: true });
+});
+
+// ---- hosted message shape (official createUserMessage contract) ------------
+
+/** Capture the exact input the official createUserMessage would receive. */
+function captureFactory() {
+  const calls: any[] = [];
+  const createUserMessage = (input: any) => {
+    calls.push(input);
+    return { __built: input };
+  };
+  return { calls, createUserMessage };
+}
+
+test("required message is a plugin snapshot section carrying REQUIRED_SEARCH_TEXT", () => {
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+  const built = messages.required();
+  assert.equal(calls.length, 1);
+  const input = calls[0];
+  assert.ok(Array.isArray(input.content));
+  assert.equal(input.content[0].type, "text");
+  assert.equal(input.content[0].text, REQUIRED_SEARCH_TEXT);
+  assert.equal(input.source.kind, "plugin");
+  assert.equal(input.source.plugin, "dsh-web-tools");
+  assert.equal(input.source.form, "snapshot");
+  assert.equal(input.source.sections[0].name, "web-search-mode");
+  assert.equal(input.source.sections[0].text, REQUIRED_SEARCH_TEXT);
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("complete at least one web_search call"));
+});
+
+test("correction message is a one-shot plugin notice (not a snapshot)", () => {
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+  messages.correction();
+  assert.equal(calls.length, 1);
+  const input = calls[0];
+  assert.equal(input.content[0].text, REQUIRED_SEARCH_CORRECTION_TEXT);
+  assert.equal(input.source.kind, "plugin");
+  assert.equal(input.source.plugin, "dsh-web-tools");
+  assert.equal(input.source.form, "notice");
+  assert.equal(input.source.summary, "Web Search required");
+});
+
+// ---- identity authority: UI sessionId drives the same Agent runtime --------
+
+test("a UI/route setMode(sessionId, required) makes that session's Agent turn required", () => {
+  const r = runtime();
+  // This is exactly what the /search-mode/set route does with the sessionId the
+  // conversation slot provides (identical to agent.id — one Session per Agent).
+  const sessionIdFromConversationSlot = "sess-abc";
+  r.setMode(sessionIdFromConversationSlot, "required");
+  // The Agent runtime keys turn state by agent.id === session.id; here the same
+  // string is used, so beginTurn() sees the required flag.
+  const agentId = sessionIdFromConversationSlot;
+  const turn = r.beginTurn(agentId, 7);
+  assert.equal(turn.required, true);
+});
+
+test("slash /search and the UI button write the same runtime", () => {
+  const r = runtime();
+  const id = "sess-xyz";
+  // UI button path (searchMode.set) and /search handler both call setMode(key).
+  r.setMode(id, "required");
+  assert.equal(r.getMode(id), "required");
+  // /search toggles: required → auto
+  r.setMode(id, r.getMode(id) === "required" ? "auto" : "required");
+  assert.equal(r.getMode(id), "auto");
 });

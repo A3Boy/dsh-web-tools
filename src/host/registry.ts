@@ -130,6 +130,14 @@ export function createSearchProvider(
   return {
     id: PROVIDER_ID,
 
+    /**
+     * "Web Search provider service available": the plugin is enabled AND the
+     * configured chain contains at least one enabled adapter. This deliberately
+     * does NOT check that an API key is configured — keys are resolved lazily
+     * per search and a missing key surfaces as an auth failure at call time.
+     * UI copy treats this as "service available" (a chain provider exists), not
+     * "a credential is ready"; per-key readiness is shown in the settings card.
+     */
     available() {
       const cfg = resolveConfig();
       if (!cfg.enabled) return false;

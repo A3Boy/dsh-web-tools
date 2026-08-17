@@ -20,6 +20,8 @@
 import { WebToolsSection } from "./WebToolsSection.tsx";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
+import * as React from "react";
+import { useSyncExternalStore } from "react";
 
 /** Locale namespace for this page's copy. */
 export const NS = "dsh-web-tools";
@@ -133,6 +135,8 @@ export const zhDict: Record<string, string> = {
   autoChain: "自动 · {s}",
   uiLanguage: "语言",
   uiLangAuto: "跟随系统",
+  searchModeLabel: "联网搜索",
+  searchModeUnavailable: "没有可用的搜索源",
 };
 
 /** en page copy, checked complete against the zh key set. */
@@ -241,6 +245,8 @@ export const enDict: Record<string, string> = {
   autoChain: "Auto · {s}",
   uiLanguage: "UI language",
   uiLangAuto: "Follow system",
+  searchModeLabel: "Web Search",
+  searchModeUnavailable: "No search provider available",
 };
 
 /** Register the Settings page. */
@@ -265,15 +271,31 @@ export function apply(ctx: any) {
 
   // "联网搜索" per-session toggle — a small always-visible control at the left
   // end of the composer tool row (official `conversation.input.left` seat).
-  // Session-scoped: the button receives `sessionId` via the standard props.
+  // Session-scoped: the seat supplies `sessionId` as a standard prop. Because
+  // this slot exposes no `inject`, a thin wrapper forwards the sessionId along
+  // with locale-localized copy (re-renders when the page language flips).
+  const SearchModeControl = (props: { sessionId: string }) => {
+    useSyncExternalStore(
+      (cb) => ctx.locale.subscribe(cb),
+      () => ctx.locale.getLocale().active,
+    );
+    return React.createElement(SearchModeButton, {
+      sessionId: props.sessionId,
+      label: t("searchModeLabel"),
+      unavailableLabel: t("searchModeUnavailable"),
+    });
+  };
+
   ctx.slots.inject("conversation.input.left", () =>
     ctx.slots.register(
       {
         name: "conversation.input.left",
         id: "dsh-web-tools-search-mode",
         order: 30,
+        // Localized projected label follows the active locale without re-register.
+        label: () => t("searchModeLabel"),
       },
-      SearchModeButton,
+      SearchModeControl,
     ),
   );
 }

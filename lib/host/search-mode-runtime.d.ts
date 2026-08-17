@@ -71,11 +71,28 @@ export interface SearchModeRuntimeDeps {
     searchAvailable: () => boolean;
 }
 /**
+ * The two UserMessages the runtime injects. Constructed with the OFFICIAL
+ * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
+ * ad-hoc shape. `required()` is a `form: "snapshot"` plugin source appended on
+ * pre-step; `correction()` is a one-shot `form: "notice"` used by steer().
+ */
+export interface SearchModeMessages {
+    required(): unknown;
+    correction(): unknown;
+}
+/**
+ * Build the two injected messages with the official `createUserMessage`
+ * ({ content, source }). Extracted so tests can assert the exact wire shape
+ * without booting the host.
+ * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
+ */
+export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown): SearchModeMessages;
+/**
  * Wire the Search Mode runtime into a host context. All agent-scoped listeners
  * register per created agent (the scope-filtered dispatch seam), and every
  * contribution is effect-scoped so stop/update/undefine removes it cleanly.
- * @param deps.createUserMessage - official `@deepseek-ai/dsh-llm` factory.
+ * @param messages - pre-built official UserMessage factories ({ content, source }).
  */
-export declare function installSearchModeRuntime(ctx: WebToolsContext, deps: SearchModeRuntimeDeps, runtime: SearchModeRuntime, createUserMessage: (input: unknown) => unknown): () => void;
+export declare function installSearchModeRuntime(ctx: WebToolsContext, deps: SearchModeRuntimeDeps, runtime: SearchModeRuntime, messages: SearchModeMessages): () => void;
 /** Register the slash command, toggling the SAME mode. */
 export declare function registerSearchCommands(ctx: WebToolsContext, runtime: SearchModeRuntime): (() => void) | undefined;

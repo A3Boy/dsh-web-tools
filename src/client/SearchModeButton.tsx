@@ -1,91 +1,109 @@
 /**
  * dsh-web-tools — "联网搜索" toggle button mounted in `conversation.input.left`.
  *
- * Renders a small always-visible per-session control: click toggles the
- * session's Search Mode between `auto` and `required`. The actual mode lives
- * in the HOST (survives refresh/session switch) — this component is a thin
- * read/write over `/web-tools/api/search-mode`.
+ * A small always-visible per-session control: click toggles the session's
+ * Search Mode between `auto` and `required`. The mode lives in the HOST; this
+ * is a thin read/write over `/web-tools/api/search-mode`.
  *
- * Agent-client React: no JSX beyond HMR/tsc compile, plain function component.
+ * Interaction mirrors the DSH composer toolbar: `onMouseDown` keeps the
+ * textarea caret, and clicks are optimistic (pending-guarded) so rapid toggles
+ * can't race against a stale `required` state.
  * @module
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { IconGlobeOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type SearchMode } from "./api.ts";
-import { accent, surface, text } from "./theme.ts";
+import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 
-/** Standard props the session-scoped `conversation.input.left` seat supplies. */
+/** Props the session-scoped seat supplies plus localized copy. */
 interface Props {
   sessionId: string;
+  label?: string;
+  unavailableLabel?: string;
 }
 
-/** The literal globe ("t") is not in the primitives set; use a small unicode. */
-const GLOBE = "🌐";
-
-export function SearchModeButton(props: Props) {
-  const { sessionId } = props;
-  const [mode, setMode] = useState<SearchMode | undefined>(undefined);
-  // `available` is ONLY ever set from a Host response. A failed fetch (stale
-  // host, momentary network) must NOT gray the button out as "no search
-  // source" — that label is reserved for a Host-confirmed answer.
+export function SearchModeButton({
+  sessionId,
+  label = "联网搜索",
+  unavailableLabel = "没有可用的搜索源",
+}: Props) {
+  const [mode, setMode] = useState<SearchMode>();
   const [available, setAvailable] = useState(true);
+  const [pending, setPending] = useState(false);
+  const generation = useRef(0);
 
-  // Read the host state on mount / session change (the button never guesses).
+  // Inject the one-time stylesheet so the class names in the JSX resolve.
   useEffect(() => {
-    let active = true;
+    adoptSearchModeStyles();
+  }, []);
+
+  // Read the host state on mount / session change. `generation` guards against
+  // a stale session's async response writing into the current session's UI.
+  useEffect(() => {
+    const current = ++generation.current;
     setMode(undefined);
-    api
+    setPending(false);
+
+    void api
       .searchModeGet(sessionId)
-      .then((v) => {
-        if (!active) return;
-        setMode(v.mode);
-        setAvailable(v.available);
+      .then((view) => {
+        if (generation.current !== current) return;
+        setMode(view.mode);
+        setAvailable(view.available);
       })
       .catch(() => {
-        // Unknown: keep the button usable rather than lie about availability.
-        if (active) setMode("auto");
+        // Unknown ≠ unavailable: keep the button usable rather than lie about
+        // having no search source. (A stale host 404 must not gray it out.)
+        if (generation.current === current) setMode("auto");
       });
-    return () => {
-      active = false;
-    };
   }, [sessionId]);
 
   const required = mode === "required";
-  const click = () => {
-    const next: SearchMode = required ? "auto" : "required";
-    api.searchModeSet(sessionId, next).then((v) => {
-      setMode(v.mode);
-      setAvailable(v.available);
-    }).catch(() => {
-      /* keep current on failure — UI never desyncs from Host */
-    });
+
+  const toggle = async () => {
+    if (mode === undefined || pending || !available) return;
+    const current = generation.current;
+    const previous = mode;
+    const next: SearchMode = previous === "required" ? "auto" : "required";
+
+    // Optimistic flip: no visible round-trip delay, no second click while pending.
+    setMode(next);
+    setPending(true);
+
+    try {
+      const view = await api.searchModeSet(sessionId, next);
+      if (generation.current !== current) return;
+      setMode(view.mode);
+      setAvailable(view.available);
+    } catch {
+      if (generation.current !== current) return;
+      setMode(previous); // rollback on failure
+    } finally {
+      if (generation.current === current) setPending(false);
+    }
   };
 
   return (
     <button
       type="button"
-      onClick={click}
-      disabled={!available}
-      title={available ? "联网搜索" : "没有可用的搜索源"}
+      className={searchModeCss.trigger}
+      data-active={required || undefined}
       aria-pressed={required}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        borderRadius: 8,
-        border: required ? `1px solid ${accent.primary}` : `1px solid ${surface.border}`,
-        background: required ? accent.primary : "transparent",
-        color: required ? accent.text : text.secondary,
-        cursor: available ? "pointer" : "not-allowed",
-        opacity: available ? 1 : 0.45,
-        padding: "3px 8px",
-        fontSize: 12,
-        lineHeight: 1,
-        whiteSpace: "nowrap",
-        transition: "background .15s ease, color .15s ease, border-color .15s ease",
+      aria-label={label}
+      title={available ? label : unavailableLabel}
+      disabled={!available || mode === undefined || pending}
+      onMouseDown={(event) => {
+        // Keep the textarea caret: toggling a mode must not steal compose focus.
+        event.preventDefault();
+      }}
+      onClick={() => {
+        void toggle();
       }}
     >
-      <span aria-hidden>{GLOBE}</span>
-      <span>{required ? "联网搜索" : "联网搜索"}</span>
+      <span className={searchModeCss.icon} aria-hidden>
+        <IconGlobeOutline14 size={14} />
+      </span>
+      <span className={searchModeCss.label}>{label}</span>
     </button>
   );
 }

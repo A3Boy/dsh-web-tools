@@ -135,6 +135,50 @@ export interface SearchModeRuntimeDeps {
   searchAvailable: () => boolean;
 }
 
+/**
+ * The two UserMessages the runtime injects. Constructed with the OFFICIAL
+ * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
+ * ad-hoc shape. `required()` is a `form: "snapshot"` plugin source appended on
+ * pre-step; `correction()` is a one-shot `form: "notice"` used by steer().
+ */
+export interface SearchModeMessages {
+  required(): unknown;
+  correction(): unknown;
+}
+
+/**
+ * Build the two injected messages with the official `createUserMessage`
+ * ({ content, source }). Extracted so tests can assert the exact wire shape
+ * without booting the host.
+ * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
+ */
+export function createSearchModeMessages(
+  createUserMessage: (input: unknown) => unknown,
+): SearchModeMessages {
+  return {
+    required: () =>
+      createUserMessage({
+        content: [{ type: "text", text: REQUIRED_SEARCH_TEXT }],
+        source: {
+          kind: "plugin",
+          plugin: "dsh-web-tools",
+          form: "snapshot",
+          sections: [{ name: "web-search-mode", text: REQUIRED_SEARCH_TEXT }],
+        },
+      }),
+    correction: () =>
+      createUserMessage({
+        content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],
+        source: {
+          kind: "plugin",
+          plugin: "dsh-web-tools",
+          form: "notice",
+          summary: "Web Search required",
+        },
+      }),
+  };
+}
+
 /** An agent-scoped context that can subscribe to its own pre-step result. */
 interface AgentScopedCtx {
   on(event: string, listener: (...args: any[]) => unknown, options?: unknown): () => void;
@@ -151,13 +195,13 @@ interface ScopedAgent {
  * Wire the Search Mode runtime into a host context. All agent-scoped listeners
  * register per created agent (the scope-filtered dispatch seam), and every
  * contribution is effect-scoped so stop/update/undefine removes it cleanly.
- * @param deps.createUserMessage - official `@deepseek-ai/dsh-llm` factory.
+ * @param messages - pre-built official UserMessage factories ({ content, source }).
  */
 export function installSearchModeRuntime(
   ctx: WebToolsContext,
   deps: SearchModeRuntimeDeps,
   runtime: SearchModeRuntime,
-  createUserMessage: (input: unknown) => unknown,
+  messages: SearchModeMessages,
 ) {
   const onCreated = ctx.on("agent/created", (payload: { agent: ScopedAgent }) => {
     const agent = payload.agent;
@@ -175,7 +219,7 @@ export function installSearchModeRuntime(
           const entered = decision as { kind: "enter"; messages: unknown[] };
           return {
             kind: "enter",
-            messages: [...(entered.messages ?? []), createUserMessage({ required: true })],
+            messages: [...(entered.messages ?? []), messages.required()],
           };
         },
       );
@@ -197,7 +241,7 @@ export function installSearchModeRuntime(
           if (!state?.required || state.webSearchCompleted) return;
           if (state.correctionCount === 0) {
             state.correctionCount += 1;
-            agent.steer(createUserMessage({ correction: REQUIRED_SEARCH_CORRECTION_TEXT }));
+            agent.steer(messages.correction());
             return;
           }
           agent.cancel({ kind: "hook", reason: "required web search was not completed" });
