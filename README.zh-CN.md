@@ -66,6 +66,8 @@ DeepSeek Harness 多搜索源 Web Search / Fetch 插件。
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
+一条命令即可，无需额外配置：编译产物 `lib/` 已包含在 git 仓库里（包本身不带 `prepare` 构建脚本，因此 pnpm 从 GitHub 安装时不会触发构建检查，直接用现成产物）。
+
 重启 `dsh web` 后打开：
 
 ```text
@@ -78,6 +80,8 @@ Settings → Web Search
 dsh --profile web --dump-config
 ```
 
+（应能看到 `# == dsh-web-tools` 条目，并且它被注册为 `web.searchProvider`）
+
 更新：
 
 ```bash
@@ -89,6 +93,8 @@ dsh plugin --profile web update dsh-web-tools
 ```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
+
+**给开发者**：本仓库没有 `prepare` 脚本，改动 `src/` 后请手动跑一次 `npm run build` 并连同 `lib/` 产物一起提交（否则安装拉到的仍是旧产物）。CI 也会在 `npm run build` 时校验一致性。
 
 当前针对 DeepSeek Harness `0.1.0-rc.6` 开发和测试。
 

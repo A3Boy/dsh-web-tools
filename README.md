@@ -68,6 +68,8 @@ The plugin does not provide shared API keys or a proxy service. Requests go dire
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
+A single command, no extra configuration: the compiled `lib/` is committed to git (the package ships no `prepare` build script), so pnpm installs the GitHub dependency without triggering a build check and uses the shipped artifacts directly.
+
 Restart `dsh web`, then open:
 
 ```text
@@ -80,6 +82,8 @@ Check the plugin:
 dsh --profile web --dump-config
 ```
 
+(You should see a `# == dsh-web-tools` entry, and it is registered as `web.searchProvider`.)
+
 Update:
 
 ```bash
@@ -91,6 +95,8 @@ Remove:
 ```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
+
+**For contributors**: this repo has no `prepare` script. After changing `src/`, run `npm run build` manually and commit the compiled `lib/` together with your change (otherwise installs fetch stale artifacts). CI also runs `npm run build` to enforce consistency.
 
 Currently developed and tested against DeepSeek Harness `0.1.0-rc.6`.
 
