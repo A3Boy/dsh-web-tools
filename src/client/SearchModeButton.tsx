@@ -24,6 +24,9 @@ const GLOBE = "🌐";
 export function SearchModeButton(props: Props) {
   const { sessionId } = props;
   const [mode, setMode] = useState<SearchMode | undefined>(undefined);
+  // `available` is ONLY ever set from a Host response. A failed fetch (stale
+  // host, momentary network) must NOT gray the button out as "no search
+  // source" — that label is reserved for a Host-confirmed answer.
   const [available, setAvailable] = useState(true);
 
   // Read the host state on mount / session change (the button never guesses).
@@ -38,7 +41,8 @@ export function SearchModeButton(props: Props) {
         setAvailable(v.available);
       })
       .catch(() => {
-        if (active) setAvailable(false);
+        // Unknown: keep the button usable rather than lie about availability.
+        if (active) setMode("auto");
       });
     return () => {
       active = false;
