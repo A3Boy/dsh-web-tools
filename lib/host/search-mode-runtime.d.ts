@@ -77,5 +77,5 @@ export interface SearchModeRuntimeDeps {
  * @param deps.createUserMessage - official `@deepseek-ai/dsh-llm` factory.
  */
 export declare function installSearchModeRuntime(ctx: WebToolsContext, deps: SearchModeRuntimeDeps, runtime: SearchModeRuntime, createUserMessage: (input: unknown) => unknown): () => void;
-/** Register the two slash-command entries, both toggling the SAME mode. */
+/** Register the slash command, toggling the SAME mode. */
 export declare function registerSearchCommands(ctx: WebToolsContext, runtime: SearchModeRuntime): (() => void) | undefined;

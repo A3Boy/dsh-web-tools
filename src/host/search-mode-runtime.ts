@@ -213,7 +213,7 @@ export function installSearchModeRuntime(
     }, "dsh-web-tools: search-mode agent listeners");
   });
 
-  // ---- /search and /网页搜索 slash commands (toggle, same Host state) ------
+  // ---- /search slash command (toggle, same Host state) ------
   const offCommands = registerSearchCommands(ctx, runtime);
   return () => {
     onCreated?.();
@@ -221,7 +221,7 @@ export function installSearchModeRuntime(
   };
 }
 
-/** Register the two slash-command entries, both toggling the SAME mode. */
+/** Register the slash command, toggling the SAME mode. */
 export function registerSearchCommands(
   ctx: WebToolsContext,
   runtime: SearchModeRuntime,
@@ -235,8 +235,7 @@ export function registerSearchCommands(
     handler: (invocation: WebToolsCommandInvocation) => toggleCommandHandler(runtime, invocation),
   });
   const a = commands.register(make("search"));
-  const b = commands.register(make("网页搜索"));
-  off.push(a, b);
+  off.push(a);
   return () => {
     for (const d of off) d();
   };
