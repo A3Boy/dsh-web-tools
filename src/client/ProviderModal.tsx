@@ -12,9 +12,9 @@
 import { useState } from "react";
 import { Button, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
-import { text, surface, state as stateColor, accent } from "./theme.ts";
+import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaTier, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
 
 interface Props {
   t: TFunc;
@@ -50,10 +50,10 @@ function QuotaBar(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) 
   }
 
   // Conditional progress: a bar is drawn ONLY when remaining ≤ limit in a
-  // countable unit (quotaFraction handles the honesty rule).
+  // countable unit (quotaFraction handles the honesty rule). Fill = GREEN
+  // (remaining share), track = gray (used share).
   const fraction = quotaFraction(quota);
-  const tier = quotaTier(fraction);
-  const tierColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : accent.primary;
+  const fillColor = stateColor.success;
   const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || t("quotaUnavailable");
   const ago = quota.fetchedAt !== undefined
     ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
@@ -82,7 +82,7 @@ function QuotaBar(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) 
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ fontSize: 14, color: text.primary }}>{label}</span>
         {fraction !== undefined && (
-          <span style={{ color: tierColor, fontSize: 12, fontWeight: 600 }}>{Math.round(fraction * 100)}%</span>
+          <span style={{ color: fillColor, fontSize: 12, fontWeight: 600 }}>{Math.round(fraction * 100)}%</span>
         )}
         <span style={{ marginLeft: "auto" }}>
           <Button size="sm" variant="ghost" icon={<IconRefreshOutline16 size={14} />} onClick={() => void refresh()} disabled={refreshing}>
@@ -92,7 +92,7 @@ function QuotaBar(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) 
       </div>
       {fraction !== undefined && (
         <div style={{ height: 6, borderRadius: 3, background: surface.layer2, overflow: "hidden" }}>
-          <div style={{ width: `${fraction * 100}%`, height: "100%", background: tierColor, transition: "width .3s ease" }} />
+          <div style={{ width: `${fraction * 100}%`, height: "100%", background: fillColor, transition: "width .3s ease" }} />
         </div>
       )}
       {meta && <span style={{ color: text.tertiary, fontSize: 11 }}>{meta}</span>}

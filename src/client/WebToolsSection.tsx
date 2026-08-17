@@ -32,7 +32,6 @@ import {
   testOutcomeStatus,
   quotaSummary,
   quotaFraction,
-  quotaTier,
   quotaDisplayKind,
   quotaRemainingLabel,
   quotaMetaLine,
@@ -238,19 +237,19 @@ function ProviderQuotaInline(props: { t: TFunc; quota: QuotaView }) {
 
   const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || t("quotaUnavailable");
   const meta = quotaMetaLine(t, quota);
-  const tier = quotaTier(fraction);
-  const tierColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : accentText();
+  // Fill stays GREEN = remaining share; the gray track under it = used share.
+  const fillColor = stateColor.success;
   return (
     <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 120, alignItems: "flex-end", textAlign: "right" }} className="wt-provider-quota">
       <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
         <span style={{ color: text.secondary, fontSize: 12, whiteSpace: "nowrap" }}>{label}</span>
         {fraction !== undefined && (
-          <span style={{ color: tierColor, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{Math.round(fraction * 100)}%</span>
+          <span style={{ color: fillColor, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{Math.round(fraction * 100)}%</span>
         )}
       </span>
       {fraction !== undefined && (
         <span style={{ width: 140, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", display: "block" }}>
-          <span style={{ width: `${fraction * 100}%`, height: "100%", background: tierColor, display: "block" }} />
+          <span style={{ width: `${fraction * 100}%`, height: "100%", background: fillColor, display: "block" }} />
         </span>
       )}
       {meta && <span style={{ color: text.tertiary, fontSize: 10, whiteSpace: "nowrap" }}>{meta}</span>}
