@@ -11,8 +11,12 @@ import assert from "node:assert/strict";
 import {
   SearchModeRuntime,
   createSearchModeMessages,
+  searchModeStepMessage,
   REQUIRED_SEARCH_TEXT,
+  REQUIRED_SEARCH_REMINDER,
+  REQUIRED_SEARCH_GROUNDING,
   REQUIRED_SEARCH_CORRECTION_TEXT,
+  type TurnState,
 } from "../src/host/search-mode-runtime.ts";
 
 function runtime(available = true): SearchModeRuntime {
@@ -156,6 +160,59 @@ test("correction message is a one-shot plugin notice (not a snapshot)", () => {
   assert.equal(input.source.plugin, "dsh-web-tools");
   assert.equal(input.source.form, "notice");
   assert.equal(input.source.summary, "Web Search required");
+});
+
+test("reminder and grounding are plugin snapshot sections (not notices)", () => {
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+  messages.reminder();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].source.kind, "plugin");
+  assert.equal(calls[0].source.form, "snapshot");
+  assert.equal(calls[0].content[0].text, REQUIRED_SEARCH_REMINDER);
+
+  messages.grounding();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].source.kind, "plugin");
+  assert.equal(calls[1].source.form, "snapshot");
+  assert.equal(calls[1].content[0].text, REQUIRED_SEARCH_GROUNDING);
+});
+
+// ---- three-phase pre-step message policy -----------------------------------
+
+function turnState(overrides: Partial<TurnState> = {}): TurnState {
+  return {
+    turn: 1,
+    required: true,
+    webSearchCompleted: false,
+    webSearchSucceeded: false,
+    correctionCount: 0,
+    ...overrides,
+  };
+}
+
+test("pre-step step 1 injects the compact research policy (required)", () => {
+  const messages = createSearchModeMessages(() => "M");
+  assert.equal(searchModeStepMessage(turnState(), 1, messages), "M");
+});
+
+test("pre-step later step before search completes injects the short reminder", () => {
+  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: false }), 2, messages);
+  assert.equal(out, `built:${REQUIRED_SEARCH_REMINDER}`);
+});
+
+test("pre-step later step after search completes injects the grounding reminder", () => {
+  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: true }), 3, messages);
+  assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+});
+
+test("pre-step injects nothing when the turn is not in required mode", () => {
+  const messages = createSearchModeMessages(() => "M");
+  assert.equal(searchModeStepMessage(turnState({ required: false }), 1, messages), undefined);
+  assert.equal(searchModeStepMessage(turnState({ required: false, webSearchCompleted: true }), 2, messages), undefined);
+  assert.equal(searchModeStepMessage(undefined, 1, messages), undefined);
 });
 
 // ---- identity authority: UI sessionId drives the same Agent runtime --------

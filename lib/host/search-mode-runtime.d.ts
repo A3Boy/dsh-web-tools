@@ -33,10 +33,15 @@ export interface TurnState {
     correctionCount: number;
 }
 /** The injected "you must search" instruction the model sees on step 1.
- * This is a Web Research policy, not a tool-call gate: require the search,
- * guide how to use it, and let a failed search stop at honest disclosure
- * rather than blocking work the user's own context already supports. */
+ * A COMPACT research policy: keep the hard requirement short, still carry the
+ * research-quality semantics (official sources, mature OSS / issue / PR,
+ * citing sources), and let a failed search stop at honest disclosure. */
 export declare const REQUIRED_SEARCH_TEXT: string;
+/** Short re-injection for later steps BEFORE the search has completed. */
+export declare const REQUIRED_SEARCH_REMINDER = "WEB SEARCH MODE is active. Complete web_search before finalizing.";
+/** Re-injection for later steps AFTER a search completed (keep using the
+ * fresh results as grounding instead of drifting into memory). */
+export declare const REQUIRED_SEARCH_GROUNDING = "WEB SEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
 /** One-shot steer used when the model tries to end without searching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT: string;
 /**
@@ -74,22 +79,38 @@ export interface SearchModeRuntimeDeps {
     searchAvailable: () => boolean;
 }
 /**
- * The two UserMessages the runtime injects. Constructed with the OFFICIAL
+ * The UserMessages the runtime injects. Constructed with the OFFICIAL
  * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
- * ad-hoc shape. `required()` is a `form: "snapshot"` plugin source appended on
- * pre-step; `correction()` is a one-shot `form: "notice"` used by steer().
+ * ad-hoc shape. All three pre-step messages are `form: "snapshot"` plugin
+ * sources; only `correction()` (the agent/turn-stopping steer) is a one-shot
+ * `form: "notice"`.
  */
 export interface SearchModeMessages {
+    /** Step 1: the compact research policy. */
     required(): unknown;
+    /** Later steps before the search completed: short reminder. */
+    reminder(): unknown;
+    /** Later steps after the search completed: keep using the results. */
+    grounding(): unknown;
+    /** turn-stopping steer (one-shot notice). */
     correction(): unknown;
 }
 /**
- * Build the two injected messages with the official `createUserMessage`
+ * Build the injected messages with the official `createUserMessage`
  * ({ content, source }). Extracted so tests can assert the exact wire shape
  * without booting the host.
  * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
  */
 export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown): SearchModeMessages;
+/**
+ * Decide which pre-step Search Mode message (if any) to append for one step.
+ * Pure so the three-phase policy is unit-testable:
+ *  - step 1                    -> required() (compact research policy)
+ *  - step > 1, not yet searched -> reminder()
+ *  - step > 1, search completed -> grounding()
+ * Returns undefined (no injection) when the turn is not in required mode.
+ */
+export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
 /**
  * Wire the Search Mode runtime into a host context. All agent-scoped listeners
  * register per created agent (the scope-filtered dispatch seam), and every

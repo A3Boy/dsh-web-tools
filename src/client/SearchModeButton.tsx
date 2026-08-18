@@ -105,6 +105,7 @@ export function SearchModeButton({
   }, [sessionId]);
 
   const required = mode === "required";
+  const loading = mode === undefined;
 
   const toggle = async () => {
     if (mode === undefined || pending || !available) return;
@@ -138,10 +139,14 @@ export function SearchModeButton({
       type="button"
       className={searchModeCss.trigger}
       data-active={required || undefined}
+      data-loading={loading || undefined}
+      data-pending={pending || undefined}
+      data-unavailable={!available || undefined}
+      aria-busy={loading || pending || undefined}
       aria-pressed={required}
       aria-label={label}
       title={available ? label : unavailableLabel}
-      disabled={!available || mode === undefined || pending}
+      disabled={!available || loading || pending}
       onMouseDown={(event) => {
         // Keep the textarea caret: toggling a mode must not steal compose focus.
         event.preventDefault();

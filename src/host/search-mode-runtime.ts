@@ -36,23 +36,29 @@ export interface TurnState {
 }
 
 /** The injected "you must search" instruction the model sees on step 1.
- * This is a Web Research policy, not a tool-call gate: require the search,
- * guide how to use it, and let a failed search stop at honest disclosure
- * rather than blocking work the user's own context already supports. */
+ * A COMPACT research policy: keep the hard requirement short, still carry the
+ * research-quality semantics (official sources, mature OSS / issue / PR,
+ * citing sources), and let a failed search stop at honest disclosure. */
 export const REQUIRED_SEARCH_TEXT = [
   "Web Search mode is enabled for this turn.",
   "",
-  "Before answering, complete at least one web_search call. Use web_fetch when the full page context matters. If the first search is insufficient, ambiguous, or conflicting, refine the query and search again.",
+  "Before answering, complete at least one web_search call; use web_fetch when the page beyond the snippet matters, and refine the query if the first search is insufficient or conflicting.",
   "",
-  "Use web results as evidence:",
-  "- For current, factual, API, protocol, or compatibility claims, prefer up-to-date primary or official sources.",
-  "- For coding, debugging, architecture, or implementation work, also inspect mature open-source implementations and relevant issue, PR, or community discussions when they can materially inform the solution. Compare approaches and adapt them to the current codebase instead of copying blindly.",
-  "- Distinguish sourced facts from your own inference.",
+  "Use web results as evidence: prefer primary/official sources for current, factual, API, or compatibility claims; for coding or architecture work also consult mature open-source implementations and relevant issue/PR/community discussions when they materially inform the solution, adapting rather than copying; distinguish sourced facts from your own inference.",
   "",
-  "When usable web sources were found, cite relevant claims with markdown links and end the answer with a short Sources / 参考来源 section listing the key sources actually used. Match the section title to the user's language and keep it concise.",
+  "Cite relevant claims with inline markdown links and end with a short Sources / 参考来源 section for the key sources used (match the user's language).",
   "",
-  "If web_search fails or finds no useful source, say what could not be verified. You may still continue from the user's code or provided context, but do not present unverified current facts as web-verified.",
+  "If web_search fails or finds no useful source, say what could not be verified; you may still continue from the user's code or provided context, but do not present unverified current facts as web-verified.",
 ].join("\n");
+
+/** Short re-injection for later steps BEFORE the search has completed. */
+export const REQUIRED_SEARCH_REMINDER =
+  "WEB SEARCH MODE is active. Complete web_search before finalizing.";
+
+/** Re-injection for later steps AFTER a search completed (keep using the
+ * fresh results as grounding instead of drifting into memory). */
+export const REQUIRED_SEARCH_GROUNDING =
+  "WEB SEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
 
 /** One-shot steer used when the model tries to end without searching. */
 export const REQUIRED_SEARCH_CORRECTION_TEXT = [
@@ -144,18 +150,25 @@ export interface SearchModeRuntimeDeps {
 }
 
 /**
- * The two UserMessages the runtime injects. Constructed with the OFFICIAL
+ * The UserMessages the runtime injects. Constructed with the OFFICIAL
  * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
- * ad-hoc shape. `required()` is a `form: "snapshot"` plugin source appended on
- * pre-step; `correction()` is a one-shot `form: "notice"` used by steer().
+ * ad-hoc shape. All three pre-step messages are `form: "snapshot"` plugin
+ * sources; only `correction()` (the agent/turn-stopping steer) is a one-shot
+ * `form: "notice"`.
  */
 export interface SearchModeMessages {
+  /** Step 1: the compact research policy. */
   required(): unknown;
+  /** Later steps before the search completed: short reminder. */
+  reminder(): unknown;
+  /** Later steps after the search completed: keep using the results. */
+  grounding(): unknown;
+  /** turn-stopping steer (one-shot notice). */
   correction(): unknown;
 }
 
 /**
- * Build the two injected messages with the official `createUserMessage`
+ * Build the injected messages with the official `createUserMessage`
  * ({ content, source }). Extracted so tests can assert the exact wire shape
  * without booting the host.
  * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
@@ -163,17 +176,20 @@ export interface SearchModeMessages {
 export function createSearchModeMessages(
   createUserMessage: (input: unknown) => unknown,
 ): SearchModeMessages {
+  const snapshot = (text: string, section: string) =>
+    createUserMessage({
+      content: [{ type: "text", text }],
+      source: {
+        kind: "plugin",
+        plugin: "dsh-web-tools",
+        form: "snapshot",
+        sections: [{ name: section, text }],
+      },
+    });
   return {
-    required: () =>
-      createUserMessage({
-        content: [{ type: "text", text: REQUIRED_SEARCH_TEXT }],
-        source: {
-          kind: "plugin",
-          plugin: "dsh-web-tools",
-          form: "snapshot",
-          sections: [{ name: "web-search-mode", text: REQUIRED_SEARCH_TEXT }],
-        },
-      }),
+    required: () => snapshot(REQUIRED_SEARCH_TEXT, "web-search-mode"),
+    reminder: () => snapshot(REQUIRED_SEARCH_REMINDER, "web-search-mode"),
+    grounding: () => snapshot(REQUIRED_SEARCH_GROUNDING, "web-search-mode"),
     correction: () =>
       createUserMessage({
         content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],
@@ -185,6 +201,25 @@ export function createSearchModeMessages(
         },
       }),
   };
+}
+
+/**
+ * Decide which pre-step Search Mode message (if any) to append for one step.
+ * Pure so the three-phase policy is unit-testable:
+ *  - step 1                    -> required() (compact research policy)
+ *  - step > 1, not yet searched -> reminder()
+ *  - step > 1, search completed -> grounding()
+ * Returns undefined (no injection) when the turn is not in required mode.
+ */
+export function searchModeStepMessage(
+  state: TurnState | undefined,
+  step: number,
+  messages: SearchModeMessages,
+): unknown | undefined {
+  if (!state?.required) return undefined;
+  if (step === 1) return messages.required();
+  if (!state.webSearchCompleted) return messages.reminder();
+  return messages.grounding();
 }
 
 /** An agent-scoped context that can subscribe to its own pre-step result. */
@@ -223,11 +258,13 @@ export function installSearchModeRuntime(
           if (!decision || (decision as { kind?: string }).kind === "reject") return decision;
           if (payload.signal?.aborted) return decision;
           const state = runtime.beginTurn(agent.id, payload.turn);
-          if (!state.required || payload.step !== 1) return decision;
+          const inject = searchModeStepMessage(state, payload.step, messages);
+          if (!inject) return decision;
           const entered = decision as { kind: "enter"; messages: unknown[] };
+          // Append LAST so the reminder sits closest to the current reasoning step.
           return {
             kind: "enter",
-            messages: [...(entered.messages ?? []), messages.required()],
+            messages: [...(entered.messages ?? []), inject],
           };
         },
       );
