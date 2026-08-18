@@ -2,14 +2,28 @@
 #
 # - Re-enables the DSH native model-facing web tools (web_search / web_fetch),
 #   which the web-app bundle disables by default.
-# - Points ctx.web at the dsh-web-tools provider so the seam executes through
-#   our multi-provider pool instead of the bundled DeepSeek search.
+# - The `tool-web` row is a full config replacement: DSH patch semantics assign
+#   `config` as a whole object (no per-key deep merge), so every base key must
+#   be restated here or it falls back to the plugin default.
+#   In particular `fetch: true` is what actually registers the `web_fetch`
+#   tool schema and its system-prompt guidance — without it the model never
+#   sees web_fetch at all, no matter what providers are registered.
+# - Points ctx.web at the dsh-web-tools providers so both seams execute
+#   through our multi-provider pool instead of the bundled DeepSeek search.
 - id: tool-web
   disabled: false
+  config:
+    search: true
+    fetch: true
+    searchMaxResults: 8
+    searchTimeoutMs: 60000
+    fetchTimeoutMs: 30000
+    fetchMaxOutputChars: 200000
 
 - id: web
   config:
     searchProvider: dsh-web-tools
+    fetchProvider: dsh-web-tools-fetch
 
 - insert:
     - id: dsh-web-tools

@@ -1,10 +1,11 @@
 /**
- * dsh-web-tools — "Web Search mode" per-session turn policy (Search Mode).
+ * dsh-web-tools — "Web Research mode" per-session turn policy (Search Mode).
  *
- * The layer sits ABOVE the provider layer: providers only execute web_search;
- * this module decides whether a turn must complete a web_search call before it
- * may end. Everything is Host-owned so browser refresh / session switch /
- * relaunch cannot desync the button from the real policy.
+ * The layer sits ABOVE the provider layer: providers only execute web tools;
+ * this module decides whether a turn must complete a web research call
+ * (web_search OR web_fetch) before it may end. Everything is Host-owned so
+ * browser refresh / session switch / relaunch cannot desync the button from
+ * the real policy.
  *
  * Deploy strategy follows the proven `dsh-at-file` pattern (agent-scoped event
  * listeners): every agent-scoped listener is registered on that agent's scope
@@ -12,10 +13,11 @@
  * the matching agent's events to it.
  *   - `agent/pre-step` (waterfall): freeze the per-turn flag and inject one
  *     plugin-source UserMessage (official `createUserMessage`) on step 1.
- *   - `tools/result` (emit): receipt that a web_search ran. Completion — even
- *     a total provider failure — counts as "tried"; that is the requirement.
- *   - `agent/turn-stopping` (serial): no web_search yet → `agent.steer()` once
- *     to continue; a second offense `agent.cancel()`s (no infinite loop).
+ *   - `tools/result` (emit): receipt that a web_search or web_fetch ran.
+ *     Completion — even a total provider failure — counts as "tried"; that is
+ *     the requirement.
+ *   - `agent/turn-stopping` (serial): no web research yet → `agent.steer()`
+ *     once to continue; a second offense `agent.cancel()`s (no infinite loop).
  *
  * `SearchModeRuntime` is pure/framework-free so its state model is unit-testable.
  * @module
@@ -30,19 +32,24 @@ export interface TurnState {
     required: boolean;
     webSearchCompleted: boolean;
     webSearchSucceeded: boolean;
+    webFetchCompleted: boolean;
+    webFetchSucceeded: boolean;
     correctionCount: number;
 }
-/** The injected "you must search" instruction the model sees on step 1.
- * A COMPACT research policy: keep the hard requirement short, still carry the
- * research-quality semantics (official sources, mature OSS / issue / PR,
- * citing sources), and let a failed search stop at honest disclosure. */
+/** Whether the turn has completed ANY web research (search OR fetch). */
+export declare function webResearchCompleted(state: TurnState): boolean;
+/** The injected "you must research" instruction the model sees on step 1.
+ * A COMPACT web-research policy: one hard requirement (complete an appropriate
+ * web tool), concrete routing (URL → web_fetch, otherwise web_search), one
+ * uncertainty at a time, official sources, and honest disclosure when the web
+ * cannot answer. */
 export declare const REQUIRED_SEARCH_TEXT: string;
-/** Short re-injection for later steps BEFORE the search has completed. */
-export declare const REQUIRED_SEARCH_REMINDER = "WEB SEARCH MODE is active. Complete web_search before finalizing.";
-/** Re-injection for later steps AFTER a search completed (keep using the
+/** Short re-injection for later steps BEFORE the research has completed. */
+export declare const REQUIRED_SEARCH_REMINDER = "WEB RESEARCH MODE is active. Complete a web_search or web_fetch call before finalizing.";
+/** Re-injection for later steps AFTER research completed (keep using the
  * fresh results as grounding instead of drifting into memory). */
-export declare const REQUIRED_SEARCH_GROUNDING = "WEB SEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
-/** One-shot steer used when the model tries to end without searching. */
+export declare const REQUIRED_SEARCH_GROUNDING = "WEB RESEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
+/** One-shot steer used when the model tries to end without researching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT: string;
 /**
  * Pure per-session state machine: one mode per session, one frozen flag per
@@ -64,10 +71,16 @@ export declare class SearchModeRuntime {
     beginTurn(sessionId: string, turn: number): TurnState;
     /**
      * Record that a web_search call COMPLETED. Completion (even a total provider
-     * failure) satisfies "must search first"; success additionally records that
+     * failure) satisfies "must research first"; success additionally records that
      * fresh web data was available.
      */
     markSearchResult(sessionId: string, succeeded: boolean): void;
+    /**
+     * Record that a web_fetch call COMPLETED. A fetch also satisfies the
+     * "must research first" requirement — a user-supplied URL is a valid
+     * research action and must not be gated behind a pointless search.
+     */
+    markFetchResult(sessionId: string, succeeded: boolean): void;
     getTurn(sessionId: string): TurnState | undefined;
     /** Drop every state for a disposed agent/session. */
     clear(sessionId: string): void;
@@ -105,10 +118,11 @@ export declare function createSearchModeMessages(createUserMessage: (input: unkn
 /**
  * Decide which pre-step Search Mode message (if any) to append for one step.
  * Pure so the three-phase policy is unit-testable:
- *  - step 1                    -> required() (compact research policy)
- *  - step > 1, not yet searched -> reminder()
- *  - step > 1, search completed -> grounding()
+ *  - step 1                        -> required() (compact research policy)
+ *  - step > 1, not yet researched   -> reminder()
+ *  - step > 1, research completed   -> grounding()
  * Returns undefined (no injection) when the turn is not in required mode.
+ * "Researched" = web_search OR web_fetch completed.
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
 /**

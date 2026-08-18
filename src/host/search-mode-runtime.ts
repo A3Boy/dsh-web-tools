@@ -1,10 +1,11 @@
 /**
- * dsh-web-tools — "Web Search mode" per-session turn policy (Search Mode).
+ * dsh-web-tools — "Web Research mode" per-session turn policy (Search Mode).
  *
- * The layer sits ABOVE the provider layer: providers only execute web_search;
- * this module decides whether a turn must complete a web_search call before it
- * may end. Everything is Host-owned so browser refresh / session switch /
- * relaunch cannot desync the button from the real policy.
+ * The layer sits ABOVE the provider layer: providers only execute web tools;
+ * this module decides whether a turn must complete a web research call
+ * (web_search OR web_fetch) before it may end. Everything is Host-owned so
+ * browser refresh / session switch / relaunch cannot desync the button from
+ * the real policy.
  *
  * Deploy strategy follows the proven `dsh-at-file` pattern (agent-scoped event
  * listeners): every agent-scoped listener is registered on that agent's scope
@@ -12,10 +13,11 @@
  * the matching agent's events to it.
  *   - `agent/pre-step` (waterfall): freeze the per-turn flag and inject one
  *     plugin-source UserMessage (official `createUserMessage`) on step 1.
- *   - `tools/result` (emit): receipt that a web_search ran. Completion — even
- *     a total provider failure — counts as "tried"; that is the requirement.
- *   - `agent/turn-stopping` (serial): no web_search yet → `agent.steer()` once
- *     to continue; a second offense `agent.cancel()`s (no infinite loop).
+ *   - `tools/result` (emit): receipt that a web_search or web_fetch ran.
+ *     Completion — even a total provider failure — counts as "tried"; that is
+ *     the requirement.
+ *   - `agent/turn-stopping` (serial): no web research yet → `agent.steer()`
+ *     once to continue; a second offense `agent.cancel()`s (no infinite loop).
  *
  * `SearchModeRuntime` is pure/framework-free so its state model is unit-testable.
  * @module
@@ -32,39 +34,51 @@ export interface TurnState {
   required: boolean;
   webSearchCompleted: boolean;
   webSearchSucceeded: boolean;
+  webFetchCompleted: boolean;
+  webFetchSucceeded: boolean;
   correctionCount: number;
 }
 
-/** The injected "you must search" instruction the model sees on step 1.
- * A COMPACT research policy: keep the hard requirement short, still carry the
- * research-quality semantics (official sources, mature OSS / issue / PR,
- * citing sources), and let a failed search stop at honest disclosure. */
+/** Whether the turn has completed ANY web research (search OR fetch). */
+export function webResearchCompleted(state: TurnState): boolean {
+  return state.webSearchCompleted || state.webFetchCompleted;
+}
+
+/** The injected "you must research" instruction the model sees on step 1.
+ * A COMPACT web-research policy: one hard requirement (complete an appropriate
+ * web tool), concrete routing (URL → web_fetch, otherwise web_search), one
+ * uncertainty at a time, official sources, and honest disclosure when the web
+ * cannot answer. */
 export const REQUIRED_SEARCH_TEXT = [
-  "Web Search mode is enabled for this turn.",
+  "Web Research mode is enabled for this turn.",
   "",
-  "Before answering, complete at least one web_search call; use web_fetch when the page beyond the snippet matters, and refine the query if the first search is insufficient or conflicting.",
+  "Before giving a substantive answer, complete at least one appropriate web tool call.",
   "",
-  "Use web results as evidence: prefer primary/official sources for current, factual, API, or compatibility claims; for coding or architecture work also consult mature open-source implementations and relevant issue/PR/community discussions when they materially inform the solution, adapting rather than copying; distinguish sourced facts from your own inference.",
+  "If the user provides a relevant HTTP(S) URL or asks about a specific page, repository, or document, use web_fetch on that URL directly. Otherwise, use web_search to discover relevant sources.",
   "",
-  "Cite relevant claims with inline markdown links and end with a short Sources / 参考来源 section for the key sources used (match the user's language).",
+  "Search one concrete uncertainty at a time. For named projects, APIs, or providers, include the exact name and relevant endpoint, error code, or code symbol. Prefer official documentation and repositories.",
   "",
-  "If web_search fails or finds no useful source, say what could not be verified; you may still continue from the user's code or provided context, but do not present unverified current facts as web-verified.",
+  "If the first search returns only generic or irrelevant sources, refine the query and search again.",
+  "",
+  "Cite the relevant URLs as markdown links in your answer.",
+  "",
+  "If web research fails or finds nothing useful, say what could not be verified; you may still continue from the user's code or provided context, but do not present unverified current facts as web-verified.",
 ].join("\n");
 
-/** Short re-injection for later steps BEFORE the search has completed. */
+/** Short re-injection for later steps BEFORE the research has completed. */
 export const REQUIRED_SEARCH_REMINDER =
-  "WEB SEARCH MODE is active. Complete web_search before finalizing.";
+  "WEB RESEARCH MODE is active. Complete a web_search or web_fetch call before finalizing.";
 
-/** Re-injection for later steps AFTER a search completed (keep using the
+/** Re-injection for later steps AFTER research completed (keep using the
  * fresh results as grounding instead of drifting into memory). */
 export const REQUIRED_SEARCH_GROUNDING =
-  "WEB SEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
+  "WEB RESEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
 
-/** One-shot steer used when the model tries to end without searching. */
+/** One-shot steer used when the model tries to end without researching. */
 export const REQUIRED_SEARCH_CORRECTION_TEXT = [
-  "Web Search is required for this turn and has not been completed yet.",
+  "Web Research is required for this turn and has not been completed yet.",
   "",
-  "Call web_search now before completing the turn.",
+  "Call web_search (to discover sources) or web_fetch (for a specific URL) now before completing the turn.",
 ].join("\n");
 
 /**
@@ -110,6 +124,8 @@ export class SearchModeRuntime {
       required: this.getMode(sessionId) === "required",
       webSearchCompleted: false,
       webSearchSucceeded: false,
+      webFetchCompleted: false,
+      webFetchSucceeded: false,
       correctionCount: 0,
     };
     this.turns.set(sessionId, state);
@@ -118,7 +134,7 @@ export class SearchModeRuntime {
 
   /**
    * Record that a web_search call COMPLETED. Completion (even a total provider
-   * failure) satisfies "must search first"; success additionally records that
+   * failure) satisfies "must research first"; success additionally records that
    * fresh web data was available.
    */
   markSearchResult(sessionId: string, succeeded: boolean): void {
@@ -126,6 +142,18 @@ export class SearchModeRuntime {
     if (!state) return;
     state.webSearchCompleted = true;
     state.webSearchSucceeded ||= succeeded;
+  }
+
+  /**
+   * Record that a web_fetch call COMPLETED. A fetch also satisfies the
+   * "must research first" requirement — a user-supplied URL is a valid
+   * research action and must not be gated behind a pointless search.
+   */
+  markFetchResult(sessionId: string, succeeded: boolean): void {
+    const state = this.turns.get(sessionId);
+    if (!state) return;
+    state.webFetchCompleted = true;
+    state.webFetchSucceeded ||= succeeded;
   }
 
   getTurn(sessionId: string): TurnState | undefined {
@@ -206,10 +234,11 @@ export function createSearchModeMessages(
 /**
  * Decide which pre-step Search Mode message (if any) to append for one step.
  * Pure so the three-phase policy is unit-testable:
- *  - step 1                    -> required() (compact research policy)
- *  - step > 1, not yet searched -> reminder()
- *  - step > 1, search completed -> grounding()
+ *  - step 1                        -> required() (compact research policy)
+ *  - step > 1, not yet researched   -> reminder()
+ *  - step > 1, research completed   -> grounding()
  * Returns undefined (no injection) when the turn is not in required mode.
+ * "Researched" = web_search OR web_fetch completed.
  */
 export function searchModeStepMessage(
   state: TurnState | undefined,
@@ -218,7 +247,7 @@ export function searchModeStepMessage(
 ): unknown | undefined {
   if (!state?.required) return undefined;
   if (step === 1) return messages.required();
-  if (!state.webSearchCompleted) return messages.reminder();
+  if (!webResearchCompleted(state)) return messages.reminder();
   return messages.grounding();
 }
 
@@ -272,9 +301,10 @@ export function installSearchModeRuntime(
       const stopResult = agent.ctx.on(
         "tools/result",
         (exec: { name?: string; agent?: { id: string } | null }, result: { isError?: boolean }) => {
-          if (exec?.name !== "web_search") return;
           if (!exec.agent?.id) return;
-          runtime.markSearchResult(exec.agent.id, result?.isError === false);
+          const succeeded = result?.isError === false;
+          if (exec?.name === "web_search") runtime.markSearchResult(exec.agent.id, succeeded);
+          else if (exec?.name === "web_fetch") runtime.markFetchResult(exec.agent.id, succeeded);
         },
       );
 
@@ -283,13 +313,13 @@ export function installSearchModeRuntime(
         (payload: { turn: number; signal?: AbortSignal }) => {
           if (payload.signal?.aborted) return;
           const state = runtime.getTurn(agent.id);
-          if (!state?.required || state.webSearchCompleted) return;
+          if (!state?.required || webResearchCompleted(state)) return;
           if (state.correctionCount === 0) {
             state.correctionCount += 1;
             agent.steer(messages.correction());
             return;
           }
-          agent.cancel({ kind: "hook", reason: "required web search was not completed" });
+          agent.cancel({ kind: "hook", reason: "required web research was not completed" });
         },
       );
 

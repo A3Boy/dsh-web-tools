@@ -338,10 +338,11 @@ The language setting only affects this plugin page.
 A small "Web Search" toggle sits at the left end of the input row. Click it to
 turn it on or off; once on, it stays on until you click again.
 
-- **off** — lets the AI decide on its own whether a question needs a web search
-- **on** — runs at least one web search before answering each turn; when a
-  search can't complete, the agent is asked to say which parts were not
-  web-verified
+- **off** — lets the AI decide on its own whether a question needs the web
+- **on** — completes at least one web research action before answering each
+  turn: if you give a specific URL it fetches that page directly (`web_fetch`),
+  otherwise it searches (`web_search`) and fetches on demand; when research
+  can't complete, the agent is asked to say which parts were not web-verified
 - the state follows the current conversation: refreshing the page or switching
   conversations doesn't lose it
 - the button grays out when there is no usable search source (the plugin is

@@ -12,6 +12,7 @@ import {
   SearchModeRuntime,
   createSearchModeMessages,
   searchModeStepMessage,
+  webResearchCompleted,
   REQUIRED_SEARCH_TEXT,
   REQUIRED_SEARCH_REMINDER,
   REQUIRED_SEARCH_GROUNDING,
@@ -64,6 +65,28 @@ test("markSearchResult success records succeeded", () => {
   r.markSearchResult("s1", true);
   assert.equal(r.getTurn("s1")?.webSearchCompleted, true);
   assert.equal(r.getTurn("s1")?.webSearchSucceeded, true);
+});
+
+test("markFetchResult: a completed fetch (even failure) satisfies the requirement", () => {
+  const r = runtime();
+  r.setMode("s1", "required");
+  r.beginTurn("s1", 5);
+  assert.equal(r.getTurn("s1")?.webFetchCompleted, false);
+  r.markFetchResult("s1", false);
+  const state = r.getTurn("s1");
+  assert.equal(state?.webFetchCompleted, true, "failure still counts as completed");
+  assert.equal(state?.webFetchSucceeded, false);
+  assert.equal(webResearchCompleted(state!), true, "a fetch alone completes web research");
+});
+
+test("markFetchResult success records succeeded", () => {
+  const r = runtime();
+  r.setMode("s1", "required");
+  r.beginTurn("s1", 1);
+  r.markFetchResult("s1", true);
+  assert.equal(r.getTurn("s1")?.webFetchCompleted, true);
+  assert.equal(r.getTurn("s1")?.webFetchSucceeded, true);
+  assert.equal(webResearchCompleted(r.getTurn("s1")!), true);
 });
 
 test("correction counter increments on steer (no infinite loop), then cancel path", () => {
@@ -146,7 +169,11 @@ test("required message is a plugin snapshot section carrying REQUIRED_SEARCH_TEX
   assert.equal(input.source.form, "snapshot");
   assert.equal(input.source.sections[0].name, "web-search-mode");
   assert.equal(input.source.sections[0].text, REQUIRED_SEARCH_TEXT);
-  assert.ok(REQUIRED_SEARCH_TEXT.includes("complete at least one web_search call"));
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("complete at least one appropriate web tool call"));
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("use web_fetch on that URL directly"),
+    "URL routing guidance must mention web_fetch");
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("use web_search to discover relevant sources"),
+    "non-URL routing guidance must mention web_search");
 });
 
 test("correction message is a one-shot plugin notice (not a snapshot)", () => {
@@ -186,6 +213,8 @@ function turnState(overrides: Partial<TurnState> = {}): TurnState {
     required: true,
     webSearchCompleted: false,
     webSearchSucceeded: false,
+    webFetchCompleted: false,
+    webFetchSucceeded: false,
     correctionCount: 0,
     ...overrides,
   };
@@ -206,6 +235,20 @@ test("pre-step later step after search completes injects the grounding reminder"
   const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
   const out = searchModeStepMessage(turnState({ webSearchCompleted: true }), 3, messages);
   assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+});
+
+test("pre-step later step after a FETCH completes also injects grounding (fetch counts as research)", () => {
+  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
+  // no search at all, only a fetch — research is still complete
+  const out = searchModeStepMessage(turnState({ webFetchCompleted: true }), 3, messages);
+  assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+});
+
+test("webResearchCompleted is true when EITHER search or fetch completed", () => {
+  assert.equal(webResearchCompleted(turnState()), false);
+  assert.equal(webResearchCompleted(turnState({ webSearchCompleted: true })), true);
+  assert.equal(webResearchCompleted(turnState({ webFetchCompleted: true })), true);
+  assert.equal(webResearchCompleted(turnState({ webSearchCompleted: true, webFetchCompleted: true })), true);
 });
 
 test("pre-step injects nothing when the turn is not in required mode", () => {
