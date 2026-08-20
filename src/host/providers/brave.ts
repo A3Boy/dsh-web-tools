@@ -44,8 +44,12 @@ export const BraveProvider: ProviderAdapter = {
       try {
         const body: Record<string, unknown> = {
           q: query,
-          count: Math.min(Math.max(maxResults ?? 10, 1), 50),
+          count: Math.min(Math.max(maxResults ?? 10, 20), 50), // candidate pool: at least 20 for LLM Context rank
         };
+        // DSH maxResults controls the final URL count, not the candidate pool.
+        if (maxResults !== undefined) {
+          body.maximum_number_of_urls = Math.min(Math.max(maxResults, 1), 50);
+        }
         if (options?.contextThresholdMode) {
           body.context_threshold_mode = options.contextThresholdMode;
         }
@@ -112,7 +116,7 @@ export const BraveProvider: ProviderAdapter = {
     // --- Fallback path: classic Web Search endpoint ---
     const url = new URL(BRAVE_WEB_SEARCH_URL);
     url.searchParams.set("q", query);
-    url.searchParams.set("count", String(maxResults));
+    url.searchParams.set("count", String(Math.min(Math.max(maxResults ?? 10, 20), 50))); // candidate pool ≥ 20
     const res = await fetchWithProxy(url, {
       headers: { "x-subscription-token": token, accept: "application/json" },
       signal,

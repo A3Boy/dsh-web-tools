@@ -12,6 +12,8 @@ export interface TavilyProviderOptions {
     searchDepth?: "basic" | "advanced" | "fast" | "ultra-fast";
     chunksPerSource?: 1 | 2 | 3;
     autoParameters?: boolean;
+    /** Extract depth for /extract (web_fetch). */
+    fetchExtractDepth?: "basic" | "advanced";
 }
 export interface BraveProviderOptions {
     endpointPreference?: "auto" | "llm-context" | "web-search";
@@ -31,6 +33,30 @@ export interface ParallelProviderOptions {
     mode?: "turbo" | "fast" | "basic" | "advanced";
     maxCharsTotal?: number;
 }
+export interface JinaProviderOptions {
+    /**
+     * Reader page loading engine.
+     * undefined / auto = Jina default.
+     */
+    fetchEngine?: "auto" | "curl" | "browser";
+    /**
+     * Max acceptable cache age in seconds.
+     * undefined = Jina default. 0 = force fresh (X-No-Cache equivalent).
+     */
+    fetchCacheToleranceSec?: number;
+    /**
+     * Trim output rather than reject — the normal context-size guard.
+     */
+    fetchMaxTokens?: number;
+    /**
+     * Hard budget guard; Jina rejects the request if the page would exceed it.
+     */
+    fetchTokenBudget?: number;
+    /**
+     * Higher-quality HTML→Markdown conversion (ReaderLM-v2); ~3x Reader tokens.
+     */
+    fetchReaderLmV2?: boolean;
+}
 export interface ProviderOptionsMap {
     exa: ExaProviderOptions;
     tavily: TavilyProviderOptions;
@@ -38,6 +64,7 @@ export interface ProviderOptionsMap {
     you: YouProviderOptions;
     firecrawl: FirecrawlProviderOptions;
     parallel: ParallelProviderOptions;
+    jina: JinaProviderOptions;
 }
 export type KnownProviderWithOptions = keyof ProviderOptionsMap;
 export type StoredProviderOptions = Partial<{

@@ -126,16 +126,20 @@ export const TavilyProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, contextOrSignal) {
-    const { signal } = resolveContext(contextOrSignal);
+    const { signal, options } = resolveContext<TavilyProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Tavily API key is not configured");
+    const body: Record<string, unknown> = { urls: [url] };
+    if (options?.fetchExtractDepth) {
+      body.extract_depth = options.fetchExtractDepth;
+    }
     const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ urls: [url] }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) await throwTavilyError(res);

@@ -135,19 +135,24 @@ export const ExaProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, contextOrSignal) {
-    const { signal } = resolveContext(contextOrSignal);
+    const { signal, options } = resolveContext<ExaProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Exa API key is not configured");
+    const body: Record<string, unknown> = {
+      urls: [url],
+      text: true,
+    };
+    // Share the same content freshness setting as search (maxAgeHours).
+    if (typeof options?.maxAgeHours === "number") {
+      body.maxAgeHours = options.maxAgeHours;
+    }
     const res = await fetchWithProxy(EXA_CONTENTS_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-api-key": token,
       },
-      body: JSON.stringify({
-        urls: [url],
-        text: true,
-      }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) await throwExaError(res);
