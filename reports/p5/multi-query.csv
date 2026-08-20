@@ -1,0 +1,16 @@
+label,scenario,queries,elapsed_ms,sources,dedup_urls,indicators_found,indicator_total
+3-independent-unknowns,1-query,1,2740,5,5,3,4
+3-independent-unknowns,2-query,2,3313,10,10,4,4
+3-independent-unknowns,4-query,4,4536,20,20,4,4
+provider-seam-architecture,1-query,1,1154,5,5,4,4
+provider-seam-architecture,2-query,2,2615,10,7,4,4
+provider-seam-architecture,4-query,4,4899,20,17,4,4
+paraphrase-spam,1-query,1,1187,5,5,1,2
+paraphrase-spam,2-query,2,2140,10,9,2,2
+paraphrase-spam,4-query,4,3847,20,17,2,2
+exa-search-types,1-query,1,937,5,5,4,4
+exa-search-types,2-query,2,2666,10,6,4,4
+exa-search-types,4-query,4,4370,20,13,4,4
+exa-vs-tavily,1-query,1,1508,5,5,3,3
+exa-vs-tavily,2-query,2,2095,10,10,3,3
+exa-vs-tavily,4-query,4,3813,20,20,3,3

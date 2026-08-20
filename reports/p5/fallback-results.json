@@ -1,0 +1,47 @@
+{
+  "keyTrim": {
+    "tavily": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 4336
+    },
+    "exa": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 1576
+    },
+    "firecrawl": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 2521
+    },
+    "brave": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 1160
+    },
+    "you": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 1365
+    },
+    "parallel": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 1851
+    },
+    "jina": {
+      "ok": true,
+      "sources": 3,
+      "elapsedMs": 3820
+    }
+  },
+  "optionsFallbackInvariant": {
+    "exaFailedAsExpected": true,
+    "tavilyUsedOwnOptions": true,
+    "tavilyOptions": {
+      "searchDepth": "advanced"
+    },
+    "verdict": "PASS"
+  }
+}
