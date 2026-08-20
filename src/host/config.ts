@@ -15,8 +15,11 @@ import type { StoredProviderOptions } from "../shared/provider-options.ts";
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
 
-/** Default provider when nothing is configured. */
-export const DEFAULT_PROVIDER = "tavily";
+/** Default provider when nothing is configured. Changed from tavily to exa
+ *  based on P5 evaluation: Exa achieves 72.2% Top-1, 97.2% Top-3 evidence,
+ *  75% official source hit, 0% generic, 0% error across 36 tasks.
+ *  This only affects new installs — existing users keep their saved provider. */
+export const DEFAULT_PROVIDER = "exa";
 
 /**
  * Explicit defaults. The resolved settings type is `WebToolsSettings` (below);
