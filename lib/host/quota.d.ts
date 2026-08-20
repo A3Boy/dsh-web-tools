@@ -50,7 +50,10 @@ export interface QuotaProvider {
 export declare function selfHostedQuota(note: string): QuotaSnapshot;
 /** A snapshot for providers whose balance is only in their dashboard. */
 export declare function dashboardOnlyQuota(note: string): QuotaSnapshot;
-/** A local-usage estimate (never authoritative, never used by the router). */
+/** A local-usage estimate (never authoritative, never used by the router).
+ *  The value is a locally-observed SPEND estimate (usage), not a remaining
+ *  balance — it must ride `used`, never `remaining`, so the UI renders
+ *  "已用 / used" and never fabricates a fake "剩余 / remaining" balance. */
 export declare function localEstimateQuota(estimatedUsdCents: number, note: string): QuotaSnapshot;
 /** True when a snapshot says the provider is effectively exhausted. */
 export declare function isExhausted(snapshot: QuotaSnapshot | undefined): boolean;

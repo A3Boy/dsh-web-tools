@@ -28,7 +28,7 @@ export interface FirecrawlProviderOptions {
     fetchMaxAgeMs?: number;
 }
 export interface ParallelProviderOptions {
-    mode?: "advanced" | "basic";
+    mode?: "turbo" | "fast" | "basic" | "advanced";
     maxCharsTotal?: number;
 }
 export interface ProviderOptionsMap {
