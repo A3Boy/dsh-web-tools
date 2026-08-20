@@ -74,6 +74,10 @@ export const REQUIRED_SEARCH_REMINDER =
 export const REQUIRED_SEARCH_GROUNDING =
   "WEB RESEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
 
+/** Re-injection for later steps when research was attempted but FAILED to retrieve live data. */
+export const REQUIRED_SEARCH_FAILED_NOTICE =
+  "WEB RESEARCH WAS ATTEMPTED BUT UNAVAILABLE. Acknowledge that web research was attempted but failed/returned no results, and state what cannot be verified.";
+
 /** One-shot steer used when the model tries to end without researching. */
 export const REQUIRED_SEARCH_CORRECTION_TEXT = [
   "Web Research is required for this turn and has not been completed yet.",
@@ -191,6 +195,8 @@ export interface SearchModeMessages {
   reminder(): unknown;
   /** Later steps after the search completed: keep using the results. */
   grounding(): unknown;
+  /** Later steps after research was attempted but all calls FAILED. */
+  failedNotice(): unknown;
   /** turn-stopping steer (one-shot notice). */
   correction(): unknown;
 }
@@ -218,6 +224,7 @@ export function createSearchModeMessages(
     required: () => snapshot(REQUIRED_SEARCH_TEXT, "web-search-mode"),
     reminder: () => snapshot(REQUIRED_SEARCH_REMINDER, "web-search-mode"),
     grounding: () => snapshot(REQUIRED_SEARCH_GROUNDING, "web-search-mode"),
+    failedNotice: () => snapshot(REQUIRED_SEARCH_FAILED_NOTICE, "web-search-mode"),
     correction: () =>
       createUserMessage({
         content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],
@@ -236,9 +243,9 @@ export function createSearchModeMessages(
  * Pure so the three-phase policy is unit-testable:
  *  - step 1                        -> required() (compact research policy)
  *  - step > 1, not yet researched   -> reminder()
- *  - step > 1, research completed   -> grounding()
+ *  - step > 1, research completed   -> grounding() (if succeeded) or failedNotice() (if all failed)
  * Returns undefined (no injection) when the turn is not in required mode.
- * "Researched" = web_search OR web_fetch completed.
+ * "Researched" = web_search OR web_fetch completed (attempted).
  */
 export function searchModeStepMessage(
   state: TurnState | undefined,
@@ -248,7 +255,10 @@ export function searchModeStepMessage(
   if (!state?.required) return undefined;
   if (step === 1) return messages.required();
   if (!webResearchCompleted(state)) return messages.reminder();
-  return messages.grounding();
+  if (state.webSearchSucceeded || state.webFetchSucceeded) {
+    return messages.grounding();
+  }
+  return messages.failedNotice();
 }
 
 /** An agent-scoped context that can subscribe to its own pre-step result. */

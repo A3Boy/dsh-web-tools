@@ -16,6 +16,7 @@ import {
   REQUIRED_SEARCH_TEXT,
   REQUIRED_SEARCH_REMINDER,
   REQUIRED_SEARCH_GROUNDING,
+  REQUIRED_SEARCH_FAILED_NOTICE,
   REQUIRED_SEARCH_CORRECTION_TEXT,
   type TurnState,
 } from "../src/host/search-mode-runtime.ts";
@@ -233,15 +234,22 @@ test("pre-step later step before search completes injects the short reminder", (
 
 test("pre-step later step after search completes injects the grounding reminder", () => {
   const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
-  const out = searchModeStepMessage(turnState({ webSearchCompleted: true }), 3, messages);
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: true, webSearchSucceeded: true }), 3, messages);
   assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
 });
 
 test("pre-step later step after a FETCH completes also injects grounding (fetch counts as research)", () => {
   const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
   // no search at all, only a fetch — research is still complete
-  const out = searchModeStepMessage(turnState({ webFetchCompleted: true }), 3, messages);
+  const out = searchModeStepMessage(turnState({ webFetchCompleted: true, webFetchSucceeded: true }), 3, messages);
   assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+});
+
+test("pre-step later step after search attempted and FAILED injects failedNotice", () => {
+  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
+  // search attempted but succeeded is false (e.g. 500 error / 429)
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: true, webSearchSucceeded: false }), 3, messages);
+  assert.equal(out, `built:${REQUIRED_SEARCH_FAILED_NOTICE}`);
 });
 
 test("webResearchCompleted is true when EITHER search or fetch completed", () => {

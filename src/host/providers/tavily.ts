@@ -88,9 +88,8 @@ export const TavilyProvider: ProviderAdapter = {
       body: JSON.stringify({
         query,
         search_depth: "basic",
-        chunks_per_source: 3,
         max_results,
-        include_answer: "basic",
+        include_answer: false,
       }),
       signal,
     });
@@ -103,8 +102,7 @@ export const TavilyProvider: ProviderAdapter = {
         if (!url) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // Tavily returns `content` (query-relevant chunks joined as
-        // "<chunk 1> [...] <chunk 2>" — the best agent evidence field.
+        // Tavily returns `content` (NLP summary in basic mode) — the best evidence field.
         if (typeof r.content === "string" && r.content) {
           s.snippet = r.content.length > 1200 ? r.content.slice(0, 1200) + "…" : r.content;
         }
@@ -112,10 +110,7 @@ export const TavilyProvider: ProviderAdapter = {
         return s;
       })
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
-    const outcome: SearchOutcome = { sources };
-    // Tavily's include_answer returns an LLM-generated answer.
-    if (typeof raw?.answer === "string" && raw.answer) outcome.content = raw.answer;
-    return outcome;
+    return { sources };
   },
 
   async fetch(url, apiKey, _baseUrl, signal) {

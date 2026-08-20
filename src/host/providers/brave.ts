@@ -74,17 +74,25 @@ export const BraveProvider: ProviderAdapter = {
         return { sources };
       }
 
-      // 403 = plan doesn't support LLM Context → same-provider degrade to Web Search.
-      // 429 = rate limit on LLM Context → same-provider degrade to Web Search.
-      if (res.status !== 403 && res.status !== 429) {
+      // Whitelist same-provider degrade:
+      // - 403 = LLM Context forbidden / unavailable for this key/plan → degrade to Web Search
+      // - 404 = endpoint not available → degrade to Web Search
+      // Explicitly reject fallback on:
+      // - 401 (auth failure — classic will also fail)
+      // - 429 (rate-limited — should not blast the same key again; let outer pool/fallback handle it)
+      // - >= 500 (server errors)
+      if (res.status === 403 || res.status === 404) {
+        // Safe to degrade to classic Web Search
+      } else {
         throwIfHttp("Brave LLM Context", res);
       }
-      // Fall through to classic Web Search.
     } catch (error) {
-      // Only degrade on HTTP errors, not on network/abort errors.
-      const code = (error as { code?: string })?.code;
-      if (code === "aborted" || code === "network") throw error;
-      // Other errors → degrade to classic Web Search.
+      // Re-throw classified ProviderErrors (from throwIfHttp) or aborts
+      if (error && typeof error === "object" && "code" in error) {
+        throw error;
+      }
+      // Unknown client/network errors — re-throw rather than fallback
+      throw error;
     }
 
     // --- Fallback path: classic Web Search endpoint ---

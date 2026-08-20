@@ -46,9 +46,7 @@ test("ExaProvider search uses headers and parses highlights", async () => {
     assert.equal(capturedBody.type, "auto");
     assert.equal(capturedBody.numResults, 10);
     assert.deepEqual(capturedBody.contents, {
-      highlights: {
-        maxCharacters: 4000,
-      },
+      highlights: true,
     });
 
     assert.equal(outcome.sources.length, 2);

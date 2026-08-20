@@ -1,23 +1,9 @@
-/**
- * dsh-web-tools — You.com provider adapter.
- *
- * API (2026-08, verified against the official You.com docs / SKILL):
- *   Search : POST https://api.you.com/v1/search
- *            X-API-Key: <apiKey>            (official header, see docs)
- *            body { query, num_web_results }
- *            → results.web[] (url/title/description/snippets/page_age)
- *   Balance: GET https://api.you.com/v1/billing/account_balance
- *            X-API-Key: <apiKey>
- *            → data.attributes.balance in USD cents (authoritative)
- *
- * The legacy POST /llm/search endpoint returns 404 — do not reintroduce it.
- * @module
- */
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
-import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { QuotaSnapshot } from "../quota-types.ts";
 
-const YOU_SEARCH_URL = "https://api.you.com/v1/search";
+const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
+const YOU_CONTENTS_URL = "https://ydc-index.io/v1/contents";
 const YOU_BALANCE_URL = "https://api.you.com/v1/billing/account_balance";
 
 export const YOU_META = {
@@ -25,13 +11,21 @@ export const YOU_META = {
   label: "You.com",
   description: "AI search with USD credit balance",
   credSuffix: "YOU",
-  fetchCapable: false,
+  fetchCapable: true,
   needsBaseUrl: false,
-} as const;
+};
 
 /** Official You.com auth header (X-API-Key, per the API reference). */
 function youAuthHeader(apiKey: string): Record<string, string> {
   return { "x-api-key": apiKey };
+}
+
+/** Error handler that highlights missing product scope for 403. */
+function throwYouError(res: Response): void {
+  if (res.status === 403) {
+    throw providerError("auth", "You.com returned 403: Forbidden (check API key permissions and product scopes)", 403);
+  }
+  throwIfHttp("You.com", res);
 }
 
 export const YouProvider: ProviderAdapter = {
@@ -39,9 +33,9 @@ export const YouProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
-    // POST /v1/search with extraction.extraction_mode = "highlights" (added 2026-08-11).
+    // POST /v1/search with extraction.extraction_mode = "highlights" (official 2026-08-11).
     // Returns query-relevant passages in contents.highlights, sized for token-sensitive
-    // agent workflows. Omits standard snippets in highlights mode.
+    // agent workflows.
     const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
@@ -52,7 +46,7 @@ export const YouProvider: ProviderAdapter = {
       }),
       signal,
     });
-    throwIfHttp("You.com", res);
+    if (!res.ok) throwYouError(res);
     const raw = await res.json();
     // POST /v1/search → { results: { web: [...], news: [...] } }
     const webResults = Array.isArray(raw?.results?.web) ? raw.results.web : [];
@@ -69,10 +63,11 @@ export const YouProvider: ProviderAdapter = {
         const contents = r.contents as { highlights?: unknown } | undefined;
         let snippet: string | undefined;
         if (Array.isArray(contents?.highlights) && contents.highlights.length > 0) {
-          snippet = contents.highlights
+          const joined = contents.highlights
             .filter((h): h is string => typeof h === "string")
             .join("\n\n")
-            .slice(0, 1500);
+            .trim();
+          if (joined) snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
         } else if (Array.isArray(r.snippets) && typeof r.snippets[0] === "string") {
           snippet = r.snippets[0];
         } else if (typeof r.description === "string") {
@@ -86,31 +81,45 @@ export const YouProvider: ProviderAdapter = {
     return { sources };
   },
 
-  async fetch(_url, _apiKey, _baseUrl, _signal) {
-    throw providerError("config", "You.com does not provide native fetch");
+  async fetch(url, apiKey, _baseUrl, signal) {
+    if (!apiKey) throw providerError("config", "You.com API key is not configured");
+    // POST /v1/contents returns full Markdown for specified URLs.
+    const res = await fetchWithProxy(YOU_CONTENTS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
+      body: JSON.stringify({
+        urls: [url],
+        formats: ["markdown"],
+      }),
+      signal,
+    });
+    if (!res.ok) throwYouError(res);
+    const data = await res.json();
+    // /contents returns an array of result objects: [{ url, title, markdown }]
+    const item = Array.isArray(data) ? data[0] : (data?.results?.[0] ?? data);
+    const text = typeof item?.markdown === "string" ? item.markdown : typeof item?.text === "string" ? item.text : "";
+    if (!text) throw providerError("server", `You.com returned no content for ${url}`);
+    return { text };
   },
 };
 
-/** You.com official account balance (USD cents, Bearer auth). */
-export async function youQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
-  if (!apiKey) throw providerError("config", "You.com API key is not configured");
+/** Snapshot provider for You.com. */
+export async function youQuota(apiKey: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
+  return pollYouQuota(apiKey);
+}
+export async function pollYouQuota(apiKey: string): Promise<QuotaSnapshot> {
   const res = await fetchWithProxy(YOU_BALANCE_URL, {
+    method: "GET",
     headers: youAuthHeader(apiKey),
-    signal,
   });
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) throw providerError("auth", `You.com balance auth failed (HTTP ${res.status})`, res.status);
-    if (res.status === 429) throw providerError("rate-limit", "You.com rate limit exceeded (HTTP 429)", res.status);
-    throw providerError("server", `You.com balance failed (HTTP ${res.status})`, res.status);
-  }
-  const raw = await res.json();
-  const balanceCents = raw?.data?.attributes?.balance;
+  if (!res.ok) return { kind: "paygo", currency: "USD", available: false };
+  const data = await res.json();
+  const balance = typeof data?.account_balance === "number" ? data.account_balance : undefined;
   return {
-    supported: true,
-    authoritative: true,
-    unit: "usd_cents",
-    ...(typeof balanceCents === "number" ? { remaining: balanceCents } : {}),
-    source: "api",
-    fetchedAt: Date.now(),
+    kind: "paygo",
+    balanceUsd: balance,
+    currency: "USD",
+    available: balance !== undefined,
+    label: balance !== undefined ? `$${balance.toFixed(2)}` : undefined,
   };
 }

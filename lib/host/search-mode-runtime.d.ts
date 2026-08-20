@@ -49,6 +49,8 @@ export declare const REQUIRED_SEARCH_REMINDER = "WEB RESEARCH MODE is active. Co
 /** Re-injection for later steps AFTER research completed (keep using the
  * fresh results as grounding instead of drifting into memory). */
 export declare const REQUIRED_SEARCH_GROUNDING = "WEB RESEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
+/** Re-injection for later steps when research was attempted but FAILED to retrieve live data. */
+export declare const REQUIRED_SEARCH_FAILED_NOTICE = "WEB RESEARCH WAS ATTEMPTED BUT UNAVAILABLE. Acknowledge that web research was attempted but failed/returned no results, and state what cannot be verified.";
 /** One-shot steer used when the model tries to end without researching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT: string;
 /**
@@ -105,6 +107,8 @@ export interface SearchModeMessages {
     reminder(): unknown;
     /** Later steps after the search completed: keep using the results. */
     grounding(): unknown;
+    /** Later steps after research was attempted but all calls FAILED. */
+    failedNotice(): unknown;
     /** turn-stopping steer (one-shot notice). */
     correction(): unknown;
 }
@@ -120,9 +124,9 @@ export declare function createSearchModeMessages(createUserMessage: (input: unkn
  * Pure so the three-phase policy is unit-testable:
  *  - step 1                        -> required() (compact research policy)
  *  - step > 1, not yet researched   -> reminder()
- *  - step > 1, research completed   -> grounding()
+ *  - step > 1, research completed   -> grounding() (if succeeded) or failedNotice() (if all failed)
  * Returns undefined (no injection) when the turn is not in required mode.
- * "Researched" = web_search OR web_fetch completed.
+ * "Researched" = web_search OR web_fetch completed (attempted).
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
 /**

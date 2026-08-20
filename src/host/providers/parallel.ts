@@ -16,8 +16,7 @@
  *   - REST only — the anonymous Search MCP endpoint is intentionally NOT
  *     wired into the provider (two auth semantics in one adapter would be
  *     confusing);
- *   - mode fixed to "basic" (low latency for foreground agent tools, the
- *     same mode Parallel's own Search MCP uses);
+ *   - mode set to "advanced" (deep agent-optimized retrieval, official default);
  *   - no session_id (optional upstream; correlating search→extract runs
  *     would need per-run state this plugin deliberately avoids);
  *   - quota is dashboard-only — Parallel exposes usage/spend in its
