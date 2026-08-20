@@ -15,6 +15,7 @@
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { JinaProviderOptions } from "../../shared/provider-options.ts";
 
 const JINA_SEARCH_URL = "https://s.jina.ai/";
 const JINA_READER_URL = "https://r.jina.ai/";
@@ -30,6 +31,44 @@ export const JINA_META = {
   fetchCapable: true,
   needsBaseUrl: false,
 } as const;
+
+/**
+ * Build Reader request headers from user-configured options.
+ * Pure function (no side effects) for testability.
+ * - X-Engine: auto | curl | browser (NOT direct — deprecated upstream).
+ * - X-Cache-Tolerance: seconds; 0 = force fresh.
+ * - X-Max-Tokens: trim output guard.
+ * - X-Token-Budget: hard budget guard (rejects on overage).
+ * - X-Respond-With: readerlm-v2 for higher-quality HTML→Markdown conversion.
+ */
+export function buildJinaReaderHeaders(token: string, options?: Readonly<JinaProviderOptions>): Record<string, string> {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    accept: "text/plain",
+  };
+
+  if (options?.fetchEngine && options.fetchEngine !== "auto") {
+    headers["x-engine"] = options.fetchEngine;
+  }
+
+  if (typeof options?.fetchCacheToleranceSec === "number") {
+    headers["x-cache-tolerance"] = String(options.fetchCacheToleranceSec);
+  }
+
+  if (typeof options?.fetchMaxTokens === "number") {
+    headers["x-max-tokens"] = String(options.fetchMaxTokens);
+  }
+
+  if (typeof options?.fetchTokenBudget === "number") {
+    headers["x-token-budget"] = String(options.fetchTokenBudget);
+  }
+
+  if (options?.fetchReaderLmV2 === true) {
+    headers["x-respond-with"] = "readerlm-v2";
+  }
+
+  return headers;
+}
 
 export const JinaProvider: ProviderAdapter = {
   ...JINA_META,
@@ -56,15 +95,18 @@ export const JinaProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, contextOrSignal) {
-    const { signal } = resolveContext(contextOrSignal);
+    const { signal, options } = resolveContext<JinaProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Jina API key is not configured");
     const res = await fetchWithProxy(`${JINA_READER_URL}${encodeURIComponent(url)}`, {
-      headers: { authorization: `Bearer ${token}` },
+      method: "GET",
+      headers: buildJinaReaderHeaders(token, options),
       signal,
     });
     throwIfHttp("Jina", res);
-    return { text: await res.text() };
+    const text = await res.text();
+    if (!text.trim()) throw providerError("invalid-response", `Jina Reader returned empty content for ${url}`);
+    return { text };
   },
 };
 

@@ -12,6 +12,7 @@ import type {
   YouProviderOptions,
   FirecrawlProviderOptions,
   ParallelProviderOptions,
+  JinaProviderOptions,
   ProviderOptionView,
 } from "../shared/provider-options.ts";
 
@@ -46,6 +47,11 @@ export const DEFAULT_FIRECRAWL_OPTIONS: Required<FirecrawlProviderOptions> = {
 export const DEFAULT_PARALLEL_OPTIONS: Required<ParallelProviderOptions> = {
   mode: "advanced",
   maxCharsTotal: 25000, // NOT sent by default; only when user overrides (see buildProviderOptionView)
+};
+
+export const DEFAULT_JINA_OPTIONS: Required<Pick<JinaProviderOptions, "fetchEngine" | "fetchReaderLmV2">> = {
+  fetchEngine: "auto",
+  fetchReaderLmV2: false,
 };
 
 /** Validate options patch for a specific provider. Throws or returns sanitized options. */
@@ -126,6 +132,40 @@ export function sanitizeProviderOptions(
       }
       break;
     }
+    case "jina": {
+      const engines = ["auto", "curl", "browser"];
+      if (typeof raw.fetchEngine === "string" && engines.includes(raw.fetchEngine)) {
+        out.fetchEngine = raw.fetchEngine;
+      }
+      if (
+        typeof raw.fetchCacheToleranceSec === "number" &&
+        Number.isFinite(raw.fetchCacheToleranceSec) &&
+        raw.fetchCacheToleranceSec >= 0 &&
+        raw.fetchCacheToleranceSec <= 30 * 24 * 3600
+      ) {
+        out.fetchCacheToleranceSec = Math.round(raw.fetchCacheToleranceSec);
+      }
+      if (
+        typeof raw.fetchMaxTokens === "number" &&
+        Number.isFinite(raw.fetchMaxTokens) &&
+        raw.fetchMaxTokens >= 500 &&
+        raw.fetchMaxTokens <= 200_000
+      ) {
+        out.fetchMaxTokens = Math.round(raw.fetchMaxTokens);
+      }
+      if (
+        typeof raw.fetchTokenBudget === "number" &&
+        Number.isFinite(raw.fetchTokenBudget) &&
+        raw.fetchTokenBudget >= 500 &&
+        raw.fetchTokenBudget <= 200_000
+      ) {
+        out.fetchTokenBudget = Math.round(raw.fetchTokenBudget);
+      }
+      if (typeof raw.fetchReaderLmV2 === "boolean") {
+        out.fetchReaderLmV2 = raw.fetchReaderLmV2;
+      }
+      break;
+    }
   }
 
   return out;
@@ -162,6 +202,11 @@ export function buildProviderOptionView(
       // maxCharsTotal omitted from effective by default: only included on the
       // wire when the user overrides it (top-level field, not advanced_settings).
       effective = { mode: DEFAULT_PARALLEL_OPTIONS.mode, ...cleanOverrides };
+      break;
+    case "jina":
+      // token/cache numeric fields omitted from effective by default; only
+      // fetchEngine and fetchReaderLmV2 have static defaults.
+      effective = { fetchEngine: DEFAULT_JINA_OPTIONS.fetchEngine, fetchReaderLmV2: DEFAULT_JINA_OPTIONS.fetchReaderLmV2, ...cleanOverrides };
       break;
     default:
       effective = cleanOverrides;

@@ -147,7 +147,7 @@ function NumberField(props: {
 
 export function ProviderPreferencesSection(props: Props) {
   const { p, onConfigChanged } = props;
-  const isExcluded = p.name === "jina" || p.name === "searxng";
+  const isExcluded = p.name === "searxng";
   if (isExcluded || !p.options) {
     // Jina/SearXNG expose no user-facing native options.
     return null;

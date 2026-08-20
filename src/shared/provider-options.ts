@@ -38,6 +38,31 @@ export interface ParallelProviderOptions {
   maxCharsTotal?: number;
 }
 
+export interface JinaProviderOptions {
+  /**
+   * Reader page loading engine.
+   * undefined / auto = Jina default.
+   */
+  fetchEngine?: "auto" | "curl" | "browser";
+  /**
+   * Max acceptable cache age in seconds.
+   * undefined = Jina default. 0 = force fresh (X-No-Cache equivalent).
+   */
+  fetchCacheToleranceSec?: number;
+  /**
+   * Trim output rather than reject — the normal context-size guard.
+   */
+  fetchMaxTokens?: number;
+  /**
+   * Hard budget guard; Jina rejects the request if the page would exceed it.
+   */
+  fetchTokenBudget?: number;
+  /**
+   * Higher-quality HTML→Markdown conversion (ReaderLM-v2); ~3x Reader tokens.
+   */
+  fetchReaderLmV2?: boolean;
+}
+
 export interface ProviderOptionsMap {
   exa: ExaProviderOptions;
   tavily: TavilyProviderOptions;
@@ -45,6 +70,7 @@ export interface ProviderOptionsMap {
   you: YouProviderOptions;
   firecrawl: FirecrawlProviderOptions;
   parallel: ParallelProviderOptions;
+  jina: JinaProviderOptions;
 }
 
 export type KnownProviderWithOptions = keyof ProviderOptionsMap;

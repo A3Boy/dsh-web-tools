@@ -246,6 +246,12 @@ export function formatProviderOptionsSummary(providerName: string, effective: Re
       if (mode === "turbo") return "极速模式";
       return "高质量搜索 · 推荐";
     }
+    case "jina": {
+      const engine = String(effective.fetchEngine ?? "auto");
+      const readerLm = effective.fetchReaderLmV2 === true;
+      const engineLabel = engine === "curl" ? "快速读取" : engine === "browser" ? "浏览器渲染" : "自动引擎";
+      return readerLm ? `${engineLabel} · 高质量转换` : engineLabel;
+    }
     default:
       return "推荐设置";
   }
