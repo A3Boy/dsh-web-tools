@@ -119,16 +119,19 @@ export function normalizeParallelQuery(query: string): string {
  * module doc. Count is the ALREADY clamped value.
  */
 export function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown> {
-  const advSettings: Record<string, unknown> = { max_results: count };
-  if (typeof options?.maxCharsTotal === "number") {
-    advSettings.max_chars_total = options.maxCharsTotal;
-  }
-  return {
+  const body: Record<string, unknown> = {
     objective: query,
     search_queries: [normalizeParallelQuery(query)],
     mode: options?.mode ?? "advanced",
-    advanced_settings: advSettings,
+    advanced_settings: { max_results: count },
   };
+  // max_chars_total is a top-level /v1/search field (docs.parallel.ai).
+  // Putting it in advanced_settings — as the original code did — causes
+  // HTTP 422. Only send it when the user explicitly overrides it.
+  if (typeof options?.maxCharsTotal === "number") {
+    body.max_chars_total = options.maxCharsTotal;
+  }
+  return body;
 }
 
 /**

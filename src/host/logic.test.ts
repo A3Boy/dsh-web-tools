@@ -237,6 +237,26 @@ test("buildParallelSearchBody: objective + one query + mode advanced + clamped m
   assert.equal((body as { objective: string }).objective.includes("  "), true);
 });
 
+test("buildParallelSearchBody: max_chars_total at top level when set, never in advanced_settings", () => {
+  const body = buildParallelSearchBody("test", 5, { mode: "advanced", maxCharsTotal: 50000 });
+  assert.deepEqual(body, {
+    objective: "test",
+    search_queries: ["test"],
+    mode: "advanced",
+    max_chars_total: 50000,
+    advanced_settings: { max_results: 5 },
+  });
+  // No max_chars_total inside advanced_settings — that would cause HTTP 422.
+  const adv = body.advanced_settings as Record<string, unknown>;
+  assert.equal(adv.max_chars_total, undefined);
+});
+
+test("buildParallelSearchBody: max_chars_total omitted when not set", () => {
+  const body = buildParallelSearchBody("test", 5, { mode: "basic" });
+  assert.equal(body.max_chars_total, undefined);
+  assert.deepEqual(body.advanced_settings, { max_results: 5 });
+});
+
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {
   const body = {
     results: [

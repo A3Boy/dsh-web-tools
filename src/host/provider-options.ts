@@ -45,7 +45,7 @@ export const DEFAULT_FIRECRAWL_OPTIONS: Required<FirecrawlProviderOptions> = {
 
 export const DEFAULT_PARALLEL_OPTIONS: Required<ParallelProviderOptions> = {
   mode: "advanced",
-  maxCharsTotal: 25000,
+  maxCharsTotal: 25000, // NOT sent by default; only when user overrides (see buildProviderOptionView)
 };
 
 /** Validate options patch for a specific provider. Throws or returns sanitized options. */
@@ -159,7 +159,9 @@ export function buildProviderOptionView(
       effective = { ...DEFAULT_FIRECRAWL_OPTIONS, ...cleanOverrides };
       break;
     case "parallel":
-      effective = { ...DEFAULT_PARALLEL_OPTIONS, ...cleanOverrides };
+      // maxCharsTotal omitted from effective by default: only included on the
+      // wire when the user overrides it (top-level field, not advanced_settings).
+      effective = { mode: DEFAULT_PARALLEL_OPTIONS.mode, ...cleanOverrides };
       break;
     default:
       effective = cleanOverrides;
