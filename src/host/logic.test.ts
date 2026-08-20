@@ -224,12 +224,12 @@ test("normalizeParallelQuery: collapses whitespace and caps at 200 chars", () =>
   assert.equal(normalizeParallelQuery(long).length, 200);
 });
 
-test("buildParallelSearchBody: objective + one query + mode basic + clamped max_results", () => {
+test("buildParallelSearchBody: objective + one query + mode advanced + clamped max_results", () => {
   const body = buildParallelSearchBody("  DeepSeek   Harness \n release ", 10);
   assert.deepEqual(body, {
     objective: "  DeepSeek   Harness \n release ",
     search_queries: ["DeepSeek Harness release"],
-    mode: "basic",
+    mode: "advanced",
     advanced_settings: { max_results: 10 },
   });
   // objective keeps the raw query verbatim — only search_queries is normalized

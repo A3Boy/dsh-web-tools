@@ -1,9 +1,19 @@
-﻿/**
+/**
  * dsh-web-tools — Tavily provider adapter.
- * Uses Tavily's REST API (POST https://api.tavily.com/search and /extract).
+ *
+ * API reference: https://docs.tavily.com/documentation/api-reference/endpoint/search
+ * - Base URL: https://api.tavily.com
+ * - Auth: `Authorization: Bearer tvly-...` (verified 2026-08-20)
+ * - POST /search — search_depth basic/advanced/fast/ultra-fast, chunks_per_source
+ * - POST /extract — URL extraction for web_fetch
+ *
+ * Error codes (verified):
+ *   400 bad request, 401 auth, 429 rate-limit,
+ *   432 plan limit exceeded, 433 paygo limit exceeded, 500 server
+ *
  * @module
  */
-import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, classifyHttpStatus, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
@@ -12,24 +22,79 @@ const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 export const TAVILY_META = {
   name: "tavily",
   label: "Tavily",
-  description: "AI-optimized web search",
+  description: "AI-optimized web search (chunks & depth)",
   credSuffix: "TAVILY",
   fetchCapable: true,
   needsBaseUrl: false,
 } as const;
+
+/**
+ * Parse a Tavily HTTP error response into a classified ProviderError.
+ * Tavily returns `{ detail: { error: "..." } }` on error.
+ * 432 = plan limit, 433 = paygo limit — both treated as quota.
+ */
+async function throwTavilyError(res: Response): Promise<never> {
+  const status = res.status;
+  let message: string | undefined;
+  try {
+    const body = await res.json();
+    message = typeof body?.detail?.error === "string" ? body.detail.error : undefined;
+  } catch {
+    // Non-JSON body — fall through to status-based classification.
+  }
+
+  const retryAfterRaw = res.headers.get("retry-after");
+  let retryHint = "";
+  if (retryAfterRaw) {
+    const seconds = Number(retryAfterRaw);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      retryHint = ` (retry after ${seconds}s)`;
+    }
+  }
+
+  if (status === 401 || status === 403) {
+    throw providerError("auth", `Tavily: ${message ?? "auth failed"}${retryHint}`, status);
+  }
+  if (status === 432 || status === 433) {
+    throw providerError("quota", `Tavily: ${message ?? "plan limit exceeded"}${retryHint}`, status);
+  }
+  if (status === 429) {
+    throw providerError("rate-limit", `Tavily: rate limit exceeded${retryHint}`, status);
+  }
+  if (status === 408) {
+    throw providerError("timeout", `Tavily: request timed out`, status);
+  }
+  if (status >= 500) {
+    throw providerError("server", `Tavily: server error (HTTP ${status})${retryHint}`, status);
+  }
+
+  const code = classifyHttpStatus(status);
+  throw providerError(code, `Tavily: ${message ?? `HTTP ${status}`}${retryHint}`, status);
+}
 
 export const TavilyProvider: ProviderAdapter = {
   ...TAVILY_META,
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Tavily API key is not configured");
+    // Tavily caps max_results at 20 (verified 2026-08-20).
+    const max_results = Math.min(Math.max(maxResults ?? 5, 1), 20);
     const res = await fetchWithProxy(TAVILY_SEARCH_URL, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey, query, max_results: maxResults }),
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: "basic",
+        chunks_per_source: 3,
+        max_results,
+        include_answer: "basic",
+      }),
       signal,
     });
-    throwIfHttp("Tavily", res);
+    if (!res.ok) await throwTavilyError(res);
     const raw = await res.json();
     const results = Array.isArray(raw?.results) ? raw.results : [];
     const sources = results
@@ -38,12 +103,17 @@ export const TavilyProvider: ProviderAdapter = {
         if (!url) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        if (typeof r.content === "string" && r.content) s.snippet = r.content;
+        // Tavily returns `content` (query-relevant chunks joined as
+        // "<chunk 1> [...] <chunk 2>" — the best agent evidence field.
+        if (typeof r.content === "string" && r.content) {
+          s.snippet = r.content.length > 1200 ? r.content.slice(0, 1200) + "…" : r.content;
+        }
         if (typeof r.published_date === "string" && r.published_date) s.publishedAt = r.published_date;
         return s;
       })
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
     const outcome: SearchOutcome = { sources };
+    // Tavily's include_answer returns an LLM-generated answer.
     if (typeof raw?.answer === "string" && raw.answer) outcome.content = raw.answer;
     return outcome;
   },
@@ -52,11 +122,14 @@ export const TavilyProvider: ProviderAdapter = {
     if (!apiKey) throw providerError("config", "Tavily API key is not configured");
     const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({ urls: [url] }),
       signal,
     });
-    throwIfHttp("Tavily", res);
+    if (!res.ok) await throwTavilyError(res);
     const data = await res.json();
     const failed = Array.isArray(data?.failed_results) ? data.failed_results[0] : undefined;
     if (failed) throw providerError("server", `Tavily extract failed for ${failed.url ?? url}: ${failed.error ?? "unknown"}`);

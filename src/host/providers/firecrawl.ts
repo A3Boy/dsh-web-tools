@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — Firecrawl provider adapter.
  *
  * API reference: https://docs.firecrawl.dev
@@ -38,15 +38,27 @@ export const FirecrawlProvider: ProviderAdapter = {
     });
     throwIfHttp("Firecrawl", res);
     const raw = await res.json();
-    // v2 search returns { success, data: { web: [{url,title,description,...}] } }
-    const results = Array.isArray(raw?.data?.web) ? raw.data.web : [];
+    // v2 search returns { success, data: { web: [{url,title,description,markdown,...}] } }
+    // or array directly in data[].
+    const results = Array.isArray(raw?.data?.web)
+      ? raw.data.web
+      : Array.isArray(raw?.data)
+        ? raw.data
+        : [];
     const sources = results
       .map((r: Record<string, unknown>) => {
         const url = typeof r?.url === "string" ? r.url : "";
         if (!url) return null;
-        const s: { url: string; title?: string; snippet?: string } = { url };
+        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        if (typeof r.description === "string" && r.description) s.snippet = r.description.slice(0, 500);
+        // Prefer rich excerpt/markdown slice > description
+        const text = typeof r.markdown === "string" && r.markdown
+          ? r.markdown.slice(0, 1500)
+          : typeof r.description === "string"
+            ? r.description.slice(0, 500)
+            : undefined;
+        if (text) s.snippet = text;
+        if (typeof r.publishedDate === "string") s.publishedAt = r.publishedDate;
         return s;
       })
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
@@ -58,7 +70,7 @@ export const FirecrawlProvider: ProviderAdapter = {
     const res = await fetchWithProxy(FIRECRAWL_SCRAPE_URL, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ url, formats: ["markdown"] }),
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true }),
       signal,
     });
     throwIfHttp("Firecrawl", res);

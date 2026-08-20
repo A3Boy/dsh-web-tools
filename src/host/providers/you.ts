@@ -39,30 +39,46 @@ export const YouProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
+    // POST /v1/search with extraction.extraction_mode = "highlights" (added 2026-08-11).
+    // Returns query-relevant passages in contents.highlights, sized for token-sensitive
+    // agent workflows. Omits standard snippets in highlights mode.
     const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
-      body: JSON.stringify({ query, num_web_results: maxResults }),
+      body: JSON.stringify({
+        query,
+        count: maxResults,
+        extraction: { extraction_mode: "highlights" },
+      }),
       signal,
     });
     throwIfHttp("You.com", res);
     const raw = await res.json();
-    // POST /v1/search → { results: { web: [...] } } (legacy shape was hits[]).
-    const results = Array.isArray(raw?.results?.web) ? raw.results.web : Array.isArray(raw?.hits) ? raw.hits : [];
+    // POST /v1/search → { results: { web: [...], news: [...] } }
+    const webResults = Array.isArray(raw?.results?.web) ? raw.results.web : [];
+    const newsResults = Array.isArray(raw?.results?.news) ? raw.results.news : [];
+    const legacyHits = Array.isArray(raw?.hits) ? raw.hits : [];
+    const results = [...webResults, ...newsResults, ...legacyHits];
     const sources = results
       .map((r: Record<string, unknown>) => {
         const u = typeof r?.url === "string" ? r.url : "";
         if (!u) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url: u };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // v1/search puts the description on the result and longer text in
-        // snippets[]; prefer snippets[0] when present, else description.
-        const snippet = Array.isArray(r.snippets) && typeof r.snippets[0] === "string"
-          ? r.snippets[0]
-          : typeof r.description === "string"
-            ? r.description
-            : undefined;
-        if (typeof snippet === "string" && snippet) s.snippet = snippet;
+        // Priority: contents.highlights (query-relevant excerpts) > snippets[0] > description
+        const contents = r.contents as { highlights?: unknown } | undefined;
+        let snippet: string | undefined;
+        if (Array.isArray(contents?.highlights) && contents.highlights.length > 0) {
+          snippet = contents.highlights
+            .filter((h): h is string => typeof h === "string")
+            .join("\n\n")
+            .slice(0, 1500);
+        } else if (Array.isArray(r.snippets) && typeof r.snippets[0] === "string") {
+          snippet = r.snippets[0];
+        } else if (typeof r.description === "string") {
+          snippet = r.description;
+        }
+        if (snippet) s.snippet = snippet;
         if (typeof r.page_age === "string" && r.page_age) s.publishedAt = r.page_age;
         return s;
       })

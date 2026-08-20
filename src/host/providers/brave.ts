@@ -1,23 +1,28 @@
 /**
  * dsh-web-tools — Brave Search provider adapter.
  *
- * API: POST https://api.search.brave.com/res/v1/web/search
- * Auth: X-Subscription-Token header.
- * Quota: the response headers carry the monthly request budget
- *   (X-RateLimit-Limit / X-RateLimit-Remaining / X-RateLimit-Reset) — there is
- *   no separate balance endpoint, so quota is captured per search response.
+ * API reference: https://api-dashboard.search.brave.com/documentation/services/llm-context
+ * - LLM Context (preferred): POST https://api.search.brave.com/res/v1/llm/context
+ *   Returns pre-extracted content optimized for AI agents / RAG.
+ *   Response: { grounding: { generic: [{ url, title, snippets[] }] } }
+ * - Classic Web Search (fallback): GET https://api.search.brave.com/res/v1/web/search
+ *   Used when LLM Context is unavailable (e.g. plan doesn't support it → 403).
+ * - Auth: X-Subscription-Token header.
+ * - Quota: response headers carry the monthly request budget
+ *   (X-RateLimit-Limit / X-RateLimit-Remaining / X-RateLimit-Reset).
  * @module
  */
-import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, classifyHttpStatus, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 
-const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+const BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context";
+const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 
 export const BRAVE_META = {
   name: "brave",
   label: "Brave",
-  description: "Independent search index",
+  description: "Independent search index (LLM Context preferred)",
   credSuffix: "BRAVE",
   fetchCapable: false,
   needsBaseUrl: false,
@@ -28,7 +33,62 @@ export const BraveProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Brave API key is not configured");
-    const url = new URL(BRAVE_SEARCH_URL);
+
+    // --- Preferred path: LLM Context endpoint (agent-optimized) ---
+    try {
+      const res = await fetchWithProxy(BRAVE_LLM_CONTEXT_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-subscription-token": apiKey,
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          q: query,
+          count: Math.min(Math.max(maxResults ?? 10, 1), 50),
+        }),
+        signal,
+      });
+
+      if (res.ok) {
+        // Capture quota headers on success (same as classic endpoint).
+        const snapshot = braveQuotaFromHeaders(res.headers);
+        lastKnownQuotaByKey.set(apiKey, snapshot);
+        persistHook?.(apiKey, snapshot);
+
+        const raw = await res.json();
+        const generic = Array.isArray(raw?.grounding?.generic) ? raw.grounding.generic : [];
+        const sources = generic
+          .map((g: Record<string, unknown>) => {
+            const url = typeof g?.url === "string" ? g.url : "";
+            if (!url) return null;
+            const s: { url: string; title?: string; snippet?: string } = { url };
+            if (typeof g.title === "string" && g.title) s.title = g.title;
+            if (Array.isArray(g.snippets)) {
+              const text = g.snippets.filter((h: unknown): h is string => typeof h === "string").join("\n").trim();
+              if (text) s.snippet = text.length > 1200 ? text.slice(0, 1200) + "…" : text;
+            }
+            return s;
+          })
+          .filter((x: { url: string } | null): x is { url: string } => x !== null);
+        return { sources };
+      }
+
+      // 403 = plan doesn't support LLM Context → same-provider degrade to Web Search.
+      // 429 = rate limit on LLM Context → same-provider degrade to Web Search.
+      if (res.status !== 403 && res.status !== 429) {
+        throwIfHttp("Brave LLM Context", res);
+      }
+      // Fall through to classic Web Search.
+    } catch (error) {
+      // Only degrade on HTTP errors, not on network/abort errors.
+      const code = (error as { code?: string })?.code;
+      if (code === "aborted" || code === "network") throw error;
+      // Other errors → degrade to classic Web Search.
+    }
+
+    // --- Fallback path: classic Web Search endpoint ---
+    const url = new URL(BRAVE_WEB_SEARCH_URL);
     url.searchParams.set("q", query);
     url.searchParams.set("count", String(maxResults));
     const res = await fetchWithProxy(url, {
@@ -36,10 +96,6 @@ export const BraveProvider: ProviderAdapter = {
       signal,
     });
     throwIfHttp("Brave", res);
-    // Capture the rate-limit headers per KEY on every successful search — no
-    // extra request; quota/describe reads the snapshot for the current key.
-    // Persist it too: the header is the only Brave quota source and must
-    // survive restarts (no quota endpoint exists).
     const snapshot = braveQuotaFromHeaders(res.headers);
     lastKnownQuotaByKey.set(apiKey, snapshot);
     persistHook?.(apiKey, snapshot);

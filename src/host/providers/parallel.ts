@@ -118,7 +118,7 @@ export function buildParallelSearchBody(query: string, count: number): Record<st
   return {
     objective: query,
     search_queries: [normalizeParallelQuery(query)],
-    mode: "basic",
+    mode: "advanced",
     advanced_settings: { max_results: count },
   };
 }
