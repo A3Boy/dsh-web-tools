@@ -1,6 +1,6 @@
 import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
-import type { QuotaSnapshot } from "../quota-types.ts";
+import type { QuotaSnapshot } from "../quota.ts";
 
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOU_CONTENTS_URL = "https://ydc-index.io/v1/contents";
@@ -107,19 +107,31 @@ export const YouProvider: ProviderAdapter = {
 export async function youQuota(apiKey: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
   return pollYouQuota(apiKey);
 }
+
 export async function pollYouQuota(apiKey: string): Promise<QuotaSnapshot> {
+  const fetchedAt = Date.now();
   const res = await fetchWithProxy(YOU_BALANCE_URL, {
     method: "GET",
     headers: youAuthHeader(apiKey),
   });
-  if (!res.ok) return { kind: "paygo", currency: "USD", available: false };
+  if (!res.ok) {
+    return {
+      supported: true,
+      authoritative: false,
+      unit: "usd_cents",
+      source: "api",
+      fetchedAt,
+      note: `HTTP ${res.status}`,
+    };
+  }
   const data = await res.json();
-  const balance = typeof data?.account_balance === "number" ? data.account_balance : undefined;
+  const cents = typeof data?.data?.attributes?.balance === "number" ? data.data.attributes.balance : undefined;
   return {
-    kind: "paygo",
-    balanceUsd: balance,
-    currency: "USD",
-    available: balance !== undefined,
-    label: balance !== undefined ? `$${balance.toFixed(2)}` : undefined,
+    supported: true,
+    authoritative: cents !== undefined,
+    unit: "usd_cents",
+    remaining: cents,
+    source: "api",
+    fetchedAt,
   };
 }

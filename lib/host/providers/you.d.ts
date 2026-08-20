@@ -1,5 +1,5 @@
 import { type ProviderAdapter } from "./types.ts";
-import type { QuotaSnapshot } from "../quota-types.ts";
+import type { QuotaSnapshot } from "../quota.ts";
 export declare const YOU_META: {
     name: string;
     label: string;
