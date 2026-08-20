@@ -14,6 +14,8 @@
 export declare class PoolEntry {
     key: string;
     order: number;
+    /** Active concurrent requests currently using this key. */
+    inFlight: number;
     /** Searches dispatched through this key so far. */
     uses: number;
     /** False after a failed call; skipped by selection until a full reset. */
@@ -27,13 +29,17 @@ export declare class PoolEntry {
  */
 export declare function hintOf(key: string): string;
 /**
- * Select the next key index: among healthy entries, the one with the fewest
- * uses; ties break by fixed `order`. Deterministic.
+ * Select the next key index: among healthy entries, lowest inFlight first,
+ * then fewest total uses; ties broken by fixed `order`. Deterministic & concurrency-aware.
  * @param entries
  * @returns index into `entries`.
  * @throws {Error} empty pool or no healthy key.
  */
 export declare function selectIndex(entries: readonly PoolEntry[]): number;
+/** Reserve one dispatch slot through `index` (increments inFlight). */
+export declare function reserveKey(entries: PoolEntry[], index: number): void;
+/** Release one dispatch slot through `index` (decrements inFlight). */
+export declare function releaseKey(entries: PoolEntry[], index: number): void;
 /** Record one successful dispatch through `index`. */
 export declare function markUsed(entries: PoolEntry[], index: number): void;
 /** Record one failed dispatch through `index`. */

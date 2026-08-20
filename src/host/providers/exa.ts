@@ -1,11 +1,12 @@
-﻿/**
+/**
  * dsh-web-tools — Exa provider adapter (neural/semantic search).
  *
  * Canonical reference: https://docs.exa.ai/reference/search-api-guide-for-coding-agents
- * - POST https://api.exa.ai/search with `x-api-key` header
- * - Content mode: `contents.highlights: true` (token-efficient, recommended
- *   for agent workflows) — NOT `text: true` which can blow up context
- * - `type: "auto"` for balanced relevance/speed
+ * - POST https://api.exa.ai/search with `x-api-key` header (canonical raw REST)
+ * - Content mode: `contents.highlights = { maxCharacters: 4000 }` (token-efficient,
+ *   highly recommended for agent workflows) — falls back to `text` when highlights
+ *   are absent
+ * - `type: "auto"` for balanced neural / keyword retrieval
  * - /contents uses `urls` + `highlights` for fetch
  *
  * @module
@@ -19,7 +20,7 @@ const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
 export const EXA_META = {
   name: "exa",
   label: "Exa",
-  description: "Semantic / neural web search",
+  description: "Semantic / neural web search (highlights & auto search)",
   credSuffix: "EXA",
   fetchCapable: true,
   needsBaseUrl: false,
@@ -30,14 +31,22 @@ export const ExaProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
     if (!apiKey) throw providerError("config", "Exa API key is not configured");
+    const numResults = typeof maxResults === "number" && maxResults > 0 ? Math.min(maxResults, 25) : 10;
     const res = await fetchWithProxy(EXA_SEARCH_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+      },
       body: JSON.stringify({
         query,
         type: "auto",
-        numResults: maxResults,
-        contents: { highlights: true },
+        numResults,
+        contents: {
+          highlights: {
+            maxCharacters: 4000,
+          },
+        },
       }),
       signal,
     });
@@ -50,9 +59,12 @@ export const ExaProvider: ProviderAdapter = {
         if (!url) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // highlights[] is the query-relevant excerpt (recommended over text)
+        // highlights[] is query-relevant extractive markup (preferred over raw text for agent density)
         if (Array.isArray(r.highlights) && r.highlights.length > 0) {
-          s.snippet = r.highlights.filter((h): h is string => typeof h === "string").join(" ").slice(0, 500);
+          const joined = r.highlights.filter((h): h is string => typeof h === "string").join("\n\n").trim();
+          if (joined) s.snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+        } else if (typeof r.text === "string" && r.text) {
+          s.snippet = r.text.length > 600 ? r.text.slice(0, 600) + "…" : r.text;
         }
         if (typeof r.publishedDate === "string" && r.publishedDate) s.publishedAt = r.publishedDate;
         return s;
@@ -65,15 +77,24 @@ export const ExaProvider: ProviderAdapter = {
     if (!apiKey) throw providerError("config", "Exa API key is not configured");
     const res = await fetchWithProxy(EXA_CONTENTS_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify({ urls: [url], highlights: true }),
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        urls: [url],
+        highlights: {
+          maxCharacters: 4000,
+        },
+        text: true,
+      }),
       signal,
     });
     throwIfHttp("Exa", res);
     const data = await res.json();
     const result = data?.results?.[0];
     // Exa returns `highlights` (query-relevant excerpts) for token efficiency;
-    // fall back to `text` when highlights absent (e.g. /contents without query).
+    // fall back to full `text` when highlights absent.
     const highlights = Array.isArray(result?.highlights) ? result.highlights : [];
     const text = typeof result?.text === "string" ? result.text : "";
     const content = highlights.length > 0 ? highlights.join("\n\n") : text;

@@ -15,6 +15,8 @@
 export class PoolEntry {
   key: string;
   order: number;
+  /** Active concurrent requests currently using this key. */
+  inFlight = 0;
   /** Searches dispatched through this key so far. */
   uses = 0;
   /** False after a failed call; skipped by selection until a full reset. */
@@ -38,8 +40,8 @@ export function hintOf(key: string): string {
 }
 
 /**
- * Select the next key index: among healthy entries, the one with the fewest
- * uses; ties break by fixed `order`. Deterministic.
+ * Select the next key index: among healthy entries, lowest inFlight first,
+ * then fewest total uses; ties broken by fixed `order`. Deterministic & concurrency-aware.
  * @param entries
  * @returns index into `entries`.
  * @throws {Error} empty pool or no healthy key.
@@ -50,19 +52,43 @@ export function selectIndex(entries: readonly PoolEntry[]): number {
   if (usable.length === 0) throw new Error("provider pool has no healthy keys left");
   let best = usable[0];
   for (const e of usable) {
-    if (e.uses < best.uses || (e.uses === best.uses && e.order < best.order)) best = e;
+    if (
+      e.inFlight < best.inFlight ||
+      (e.inFlight === best.inFlight && e.uses < best.uses) ||
+      (e.inFlight === best.inFlight && e.uses === best.uses && e.order < best.order)
+    ) {
+      best = e;
+    }
   }
   return entries.indexOf(best);
 }
 
+/** Reserve one dispatch slot through `index` (increments inFlight). */
+export function reserveKey(entries: PoolEntry[], index: number): void {
+  if (entries[index]) {
+    entries[index].inFlight += 1;
+  }
+}
+
+/** Release one dispatch slot through `index` (decrements inFlight). */
+export function releaseKey(entries: PoolEntry[], index: number): void {
+  if (entries[index]) {
+    entries[index].inFlight = Math.max(0, entries[index].inFlight - 1);
+  }
+}
+
 /** Record one successful dispatch through `index`. */
 export function markUsed(entries: PoolEntry[], index: number): void {
-  entries[index].uses += 1;
+  if (entries[index]) {
+    entries[index].uses += 1;
+  }
 }
 
 /** Record one failed dispatch through `index`. */
 export function markUnhealthy(entries: PoolEntry[], index: number): void {
-  entries[index].healthy = false;
+  if (entries[index]) {
+    entries[index].healthy = false;
+  }
 }
 
 /** Reset every entry to healthy (called when the whole pool is exhausted). */

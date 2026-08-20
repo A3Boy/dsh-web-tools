@@ -9,7 +9,7 @@
  * @module
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
-import { buildPool, markUnhealthy, markUsed, selectIndex, type PoolEntry } from "./pool.ts";
+import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex, type PoolEntry } from "./pool.ts";
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -199,6 +199,7 @@ export function createSearchProvider(
         while (usable.length > 0) {
           const index = selectIndex(entries);
           const entry = entries[index];
+          if (entry) reserveKey(entries, index);
           const started = Date.now();
           try {
             const outcome = await runWithTimeout(
@@ -250,6 +251,8 @@ export function createSearchProvider(
             stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
             providerLevelDecision = "next-provider";
             break;
+          } finally {
+            if (entry) releaseKey(entries, index);
           }
         }
 

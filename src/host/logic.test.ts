@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
+import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf, reserveKey, releaseKey } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance, parseJinaSearchJson } from "./providers/jina.ts";
 import {
@@ -312,4 +312,39 @@ test("classifyHttpStatus: Parallel's documented codes map onto the closed union"
   assert.equal(classifyHttpStatus(500), "server");
   assert.equal(classifyHttpStatus(502), "server");
   assert.equal(classifyHttpStatus(503), "server");
+});
+
+test("pool inFlight allocation & reserve/release concurrency control", () => {
+  const p = buildPool("k1,k2");
+  // initially both inFlight=0, uses=0 -> picks k1 (index 0)
+  assert.equal(selectIndex(p), 0);
+
+  // simulate reserving k1 for in-flight request
+  reserveKey(p, 0);
+  assert.equal(p[0].inFlight, 1);
+
+  // next concurrent request should pick k2 (inFlight=0 < inFlight=1)
+  assert.equal(selectIndex(p), 1);
+  reserveKey(p, 1);
+  assert.equal(p[1].inFlight, 1);
+
+  // when both have inFlight=1, ties break on uses (both 0), then order (0)
+  assert.equal(selectIndex(p), 0);
+
+  // simulate request 0 finishes successfully
+  releaseKey(p, 0);
+  markUsed(p, 0);
+  assert.equal(p[0].inFlight, 0);
+  assert.equal(p[0].uses, 1);
+
+  // next request picks k1 (inFlight 0 < inFlight 1)
+  assert.equal(selectIndex(p), 0);
+
+  // release k2
+  releaseKey(p, 1);
+  assert.equal(p[1].inFlight, 0);
+
+  // clamp protection: releasing below 0 never produces negative inFlight
+  releaseKey(p, 1);
+  assert.equal(p[1].inFlight, 0);
 });
