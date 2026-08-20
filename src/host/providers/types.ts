@@ -88,7 +88,17 @@ export interface ProviderAdapter extends ProviderMeta {
    * @throws ProviderError when unsupported.
    */
   fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ text: string }>;
+  /**
+   * Optional provider-native advanced search contract. When present, the
+   * AdvancedSearchRuntime exposes a `web_search_<provider>` tool with the
+   * provider's own schema, validator, and wire mapping — never through
+   * `ctx.web.search()`. When absent, the provider only serves basic
+   * `web_search({query})`.
+   */
+  advanced?: ProviderAdvancedContract<unknown>;
 }
+
+import type { ProviderAdvancedContract } from "../advanced-search-types.ts";
 
 /**
  * Self-hosted provider that needs a base URL and has no Fetch API — and

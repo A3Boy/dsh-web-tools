@@ -41,8 +41,8 @@ export declare function webResearchCompleted(state: TurnState): boolean;
 /** The injected "you must research" instruction the model sees on step 1.
  * A COMPACT web-research policy: one hard requirement (complete an appropriate
  * web tool), concrete routing (URL → web_fetch, otherwise web_search), one
- * uncertainty at a time, official sources, and honest disclosure when the web
- * cannot answer. */
+ * uncertainty at a time (or multiple in parallel via queries array), official
+ * sources, and honest disclosure when the web cannot answer. */
 export declare const REQUIRED_SEARCH_TEXT: string;
 /** Short re-injection for later steps BEFORE the research has completed. */
 export declare const REQUIRED_SEARCH_REMINDER = "WEB RESEARCH MODE is active. Complete a web_search or web_fetch call before finalizing.";

@@ -123,6 +123,18 @@ export interface WebToolsContext {
   get(name: string): unknown;
   /** Human-command registry (`ctx.commands`) for /search slash entries. */
   commands: WebToolsCommands;
+  /** Tool registry (`ctx.tools`) for registering model-facing tools. */
+  tools: WebToolsTools;
+}
+
+// ---------------------------------------------------------------------------
+// Tools service (from DSH tools capability)
+// ---------------------------------------------------------------------------
+
+/** Structural mirror of the DSH tools registration service. */
+export interface WebToolsTools {
+  /** Register a tool definition (e.g. from defineTool). Returns a disposer. */
+  register(definition: unknown): () => void;
 }
 
 // ---------------------------------------------------------------------------

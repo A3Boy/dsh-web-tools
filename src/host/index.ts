@@ -25,12 +25,15 @@ import { mergePoolQuota } from "./quota.ts";
 import { proxyStatus } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { AdvancedSearchRuntime } from "./advanced-search-runtime.ts";
+import { createExaAdvancedTool } from "./advanced-tool-registration.ts";
+import type { ProviderAdapter } from "./providers/types.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "webRuntime", "settings", "credentials", "web", "agents", "commands"];
+export const inject = ["webServer", "webRuntime", "settings", "credentials", "web", "agents", "commands", "tools"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
@@ -106,6 +109,28 @@ export function apply(ctx: WebToolsContext) {
 
   const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore);
   ctx.web.registerFetchProvider(fetchProvider as never);
+
+  // ---- Advanced search runtime (provider-native tools) --------------------
+  // Builds the adapter registry from PROVIDER_LIST for the runtime to resolve
+  // the active advanced-capable provider.
+  const adapterRegistry: Record<string, ProviderAdapter> = {};
+  for (const meta of PROVIDER_LIST) {
+    adapterRegistry[meta.name] = getProvider(meta.name);
+  }
+
+  const advancedRuntime = new AdvancedSearchRuntime(
+    resolveRuntimeConfig,
+    resolveKeys,
+    adapterRegistry,
+    poolStore,
+  );
+
+  // Register web_search_exa only when ctx.tools is available (it is, via inject).
+  if (ctx.tools?.register) {
+    const exaTool = createExaAdvancedTool(advancedRuntime);
+    const disposeExaTool = ctx.tools.register(exaTool);
+    ctx.effect(() => disposeExaTool, "register:web_search_exa");
+  }
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
