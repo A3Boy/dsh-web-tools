@@ -308,6 +308,46 @@ async function handleProviderOptionsSet(deps: RouteDeps, payload: unknown) {
   return buildProviderOptionView(provider, cleaned);
 }
 
+async function handleProviderOptionsBatchSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { providers?: Record<string, Record<string, unknown> | null> };
+  if (!p.providers || typeof p.providers !== "object") throw new Error("missing providers");
+
+  // Validate all provider names first (atomic: reject the whole batch if any
+  // name is unknown) then sanitize every option payload.
+  const sanitized = new Map<string, Record<string, unknown> | null>();
+  for (const [rawName, rawOptions] of Object.entries(p.providers)) {
+    const provider = rawName.trim().toLowerCase();
+    const meta = PROVIDER_LIST.find((m) => m.name === provider);
+    if (!meta) throw new Error(`unknown provider: ${provider}`);
+    if (rawOptions === null) {
+      sanitized.set(provider, null);
+    } else if (typeof rawOptions === "object") {
+      sanitized.set(provider, sanitizeProviderOptions(provider, rawOptions));
+    } else {
+      throw new Error(`invalid options for ${provider}`);
+    }
+  }
+
+  // Single read + mutate + write: atomic.
+  const cfg = deps.readConfig();
+  const current = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  for (const [provider, options] of sanitized) {
+    if (options === null) {
+      delete current[provider];
+    } else {
+      current[provider] = options;
+    }
+  }
+  await deps.writeConfig({ providerOptions: current });
+
+  return Object.fromEntries(
+    [...sanitized.keys()].map((provider) => [
+      provider,
+      buildProviderOptionView(provider, current[provider]),
+    ]),
+  );
+}
+
 async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as { provider?: unknown };
   const provider = String(p.provider ?? "").trim().toLowerCase();
@@ -341,6 +381,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "search-mode/set": (deps, payload) => handleSearchModeSet(deps, payload),
   "provider-options/set": (deps, payload) => handleProviderOptionsSet(deps, payload),
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
+  "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

@@ -69,4 +69,6 @@ export const api = {
     call<{ saved: true; options: any }>("provider-options/set", { provider, options }),
   providerOptionsReset: (provider: string) =>
     call<{ reset: true; options: any }>("provider-options/reset", { provider }),
+  providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) =>
+    call<Record<string, any>>("provider-options/batch", { providers }),
 };

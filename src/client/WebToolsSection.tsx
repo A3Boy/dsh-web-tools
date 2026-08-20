@@ -485,6 +485,21 @@ export function WebToolsSection(props: SectionProps) {
     void save({ providerBaseUrls });
   };
   const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
+  const [resettingAll, setResettingAll] = useState(false);
+  const handleResetAll = async () => {
+    setResettingAll(true);
+    try {
+      const providers = config.providers.map((p) => p.name);
+      const patches: Record<string, null> = {};
+      for (const name of providers) patches[name] = null;
+      await api.providerOptionsBatch(patches);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResettingAll(false);
+    }
+  };
 
   // One ordered list: [defaultProvider, ...fallbackOrder] — Host schema unchanged.
   const orderedProviders = [
@@ -639,6 +654,11 @@ export function WebToolsSection(props: SectionProps) {
         <span style={{ color: surface.border }}>|</span>
         <span>
           {t("defaultProviderLabel")}: <strong style={{ color: text.primary }}>{providerOf(config.defaultProvider)?.label ?? config.defaultProvider}</strong>
+        </span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <Button size="sm" variant="ghost" onClick={handleResetAll} disabled={resettingAll}>
+            {resettingAll ? t("resetting") : t("resetAll")}
+          </Button>
         </span>
       </div>
 
