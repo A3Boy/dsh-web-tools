@@ -73,7 +73,8 @@ export const ParallelProvider: ProviderAdapter = {
     return { sources: parseParallelSearchResults(raw, count) };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Parallel API key is not configured");
     // full_content must be explicitly requested — Extract defaults to

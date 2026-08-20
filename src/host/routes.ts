@@ -300,11 +300,11 @@ async function handleProviderOptionsSet(deps: RouteDeps, payload: unknown) {
   const rawOpts = (p.options && typeof p.options === "object") ? (p.options as Record<string, unknown>) : {};
   const cleaned = sanitizeProviderOptions(provider, rawOpts);
 
-  const cfg = await deps.resolveConfig();
+  const cfg = deps.readConfig();
   const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
   currentMerged[provider] = cleaned;
 
-  await deps.patchConfig({ providerOptions: currentMerged });
+  await deps.writeConfig({ providerOptions: currentMerged });
   return buildProviderOptionView(provider, cleaned);
 }
 
@@ -315,11 +315,11 @@ async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
   const meta = PROVIDER_LIST.find((m) => m.name === provider);
   if (!meta) throw new Error(`unknown provider: ${provider}`);
 
-  const cfg = await deps.resolveConfig();
+  const cfg = deps.readConfig();
   const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
   delete currentMerged[provider];
 
-  await deps.patchConfig({ providerOptions: currentMerged });
+  await deps.writeConfig({ providerOptions: currentMerged });
   return buildProviderOptionView(provider, undefined);
 }
 

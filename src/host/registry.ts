@@ -111,8 +111,8 @@ export interface ProviderAdapterLike {
   name: string;
   needsBaseUrl: boolean;
   fetchCapable: boolean;
-  search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }> }>;
-  fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{ text: string }>;
+  search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown }): Promise<{ sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }> }>;
+  fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown }): Promise<{ text: string }>;
 }
 
 /** Build a WebToolsSearchProvider for `ctx.web.registerSearchProvider`.

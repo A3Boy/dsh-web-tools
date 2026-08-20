@@ -77,10 +77,11 @@ export interface ProviderAdapter extends ProviderMeta {
     }>;
 }
 /** Helper to extract signal and typed options from an execution context or bare signal. */
-export declare function extractContext<T>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
+export declare function resolveContext<T = unknown>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
     signal?: AbortSignal;
     options?: Readonly<T>;
 };
+export declare const extractContext: typeof resolveContext;
 /**
  * Self-hosted provider that needs a base URL and has no Fetch API — and
  * therefore works WITHOUT an API key (currently only SearXNG). Keyed-hosted

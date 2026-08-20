@@ -142,7 +142,9 @@ export function buildProviderOptionView(
   let effective: Record<string, unknown> = {};
   switch (provider) {
     case "exa":
-      effective = { ...DEFAULT_EXA_OPTIONS, ...cleanOverrides };
+      // maxAgeHours omitted by default (undefined = Exa default cache/livecrawl
+      // policy); only included on the wire when the user overrides it.
+      effective = { searchType: DEFAULT_EXA_OPTIONS.searchType, ...cleanOverrides };
       break;
     case "tavily":
       effective = { ...DEFAULT_TAVILY_OPTIONS, ...cleanOverrides };
@@ -169,4 +171,9 @@ export function buildProviderOptionView(
     customized: hasOverrides,
     isDefault: !hasOverrides,
   };
+}
+
+/** Resolve only the effective options map for a provider. */
+export function resolveEffectiveOptions(provider: string, overrides?: Record<string, unknown>): Record<string, unknown> {
+  return buildProviderOptionView(provider, overrides).effective;
 }

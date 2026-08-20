@@ -12,7 +12,7 @@
  *   parse failure must degrade to "quota unavailable", never break search.
  * @module
  */
-import { providerError, throwIfHttp, type ProviderAdapter, type Source } from "./types.ts";
+import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 
@@ -34,7 +34,8 @@ export const JINA_META = {
 export const JinaProvider: ProviderAdapter = {
   ...JINA_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Jina API key is not configured");
     const count = Math.min(Math.max(maxResults ?? 5, 1), JINA_MAX_RESULTS);
@@ -54,7 +55,8 @@ export const JinaProvider: ProviderAdapter = {
     return { sources: parseJinaSearchJson(body, count) };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Jina API key is not configured");
     const res = await fetchWithProxy(`${JINA_READER_URL}${encodeURIComponent(url)}`, {

@@ -29,7 +29,8 @@ export const FIRECRAWL_META = {
 export const FirecrawlProvider: ProviderAdapter = {
   ...FIRECRAWL_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Firecrawl API key is not configured");
     const res = await fetchWithProxy(FIRECRAWL_SEARCH_URL, {

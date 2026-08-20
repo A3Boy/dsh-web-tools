@@ -54,21 +54,23 @@ function stubAdapter(name, { fetchCapable = true, failWith, hang = false, fetchF
     fetchCapable,
     needsBaseUrl: false,
     calls,
-    async search(_q, _n, key, _b, signal) {
+    async search(_q, _n, key, _b, signalOrCtx) {
       calls.push({ kind: "search", key });
+      const sig = signalOrCtx?.signal ?? signalOrCtx;
       if (hang) {
         return await new Promise((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { code: "aborted" })));
+          sig?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { code: "aborted" })));
         });
       }
       if (failWith) throw failWith;
       return { sources: [{ url: `https://${name}.example`, title: name }] };
     },
-    async fetch(_url, key, _b, signal) {
+    async fetch(_url, key, _b, signalOrCtx) {
       calls.push({ kind: "fetch", key });
+      const sig = signalOrCtx?.signal ?? signalOrCtx;
       if (hang) {
         return await new Promise((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { code: "aborted" })));
+          sig?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { code: "aborted" })));
         });
       }
       if (fetchFail) throw fetchFail;

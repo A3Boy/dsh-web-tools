@@ -112,17 +112,22 @@ export interface ProviderAdapter extends ProviderMeta {
 }
 
 /** Helper to extract signal and typed options from an execution context or bare signal. */
-export function extractContext<T>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
+export function resolveContext<T = unknown>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
   signal?: AbortSignal;
   options?: Readonly<T>;
 } {
   if (!contextOrSignal) return {};
-  if (contextOrSignal instanceof AbortSignal) return { signal: contextOrSignal };
+  if (typeof contextOrSignal === "object" && ("aborted" in contextOrSignal || "addEventListener" in contextOrSignal)) {
+    return { signal: contextOrSignal as AbortSignal };
+  }
+  const ctx = contextOrSignal as ProviderExecutionContext<T>;
   return {
-    signal: contextOrSignal.signal,
-    options: contextOrSignal.options,
+    signal: ctx.signal,
+    options: ctx.options,
   };
 }
+
+export const extractContext = resolveContext;
 
 /**
  * Self-hosted provider that needs a base URL and has no Fetch API — and

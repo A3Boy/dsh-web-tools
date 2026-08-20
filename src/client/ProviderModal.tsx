@@ -389,18 +389,18 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
   };
 
   return (
-    <div style={{ marginTop: 16, borderTop: `1px solid ${border.subtle}`, paddingTop: 14 }}>
+    <div style={{ marginTop: 16, borderTop: `1px solid ${surface.border}`, paddingTop: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>搜索偏好</div>
-          <div style={{ fontSize: 12, color: isDef ? text.secondary : stateColor.info, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: isDef ? text.secondary : stateColor.business, marginTop: 2 }}>
             {formatProviderOptionsSummary(p.name, eff)}
           </div>
         </div>
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${border.default}`, background: "transparent", color: text.primary }}
+          style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${surface.border}`, background: "transparent", color: text.primary }}
         >
           {expanded ? "收起" : "自定义"}
         </button>
@@ -415,7 +415,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               <select
                 value={draft.searchType ?? "auto"}
                 onChange={(e) => setDraft({ ...draft, searchType: e.target.value })}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${surface.border}` }}
               >
                 <option value="auto">自动平衡（推荐）</option>
                 <option value="fast">快速（更低延迟）</option>
@@ -433,7 +433,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               <select
                 value={draft.searchDepth ?? "basic"}
                 onChange={(e) => setDraft({ ...draft, searchDepth: e.target.value })}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${surface.border}` }}
               >
                 <option value="basic">平衡搜索（1 credit，推荐）</option>
                 <option value="fast">快速搜索（1 credit）</option>
@@ -449,7 +449,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               <select
                 value={draft.endpointPreference ?? "auto"}
                 onChange={(e) => setDraft({ ...draft, endpointPreference: e.target.value })}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${surface.border}` }}
               >
                 <option value="auto">智能上下文 · 推荐（LLM Context，失败自动回退）</option>
                 <option value="llm-context">仅智能上下文（LLM Context）</option>
@@ -464,7 +464,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               <select
                 value={draft.extractionMode ?? "highlights"}
                 onChange={(e) => setDraft({ ...draft, extractionMode: e.target.value })}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${surface.border}` }}
               >
                 <option value="highlights">AI 相关片段（推荐，质量更高）</option>
                 <option value="none">简短摘要（轻量）</option>
@@ -478,7 +478,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               <select
                 value={draft.mode ?? "advanced"}
                 onChange={(e) => setDraft({ ...draft, mode: e.target.value })}
-                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${surface.border}` }}
               >
                 <option value="advanced">高质量搜索（推荐）</option>
                 <option value="basic">快速搜索</option>
@@ -492,7 +492,7 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
                 type="button"
                 onClick={handleReset}
                 disabled={saving}
-                style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${border.default}`, background: "transparent", color: text.secondary }}
+                style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${surface.border}`, background: "transparent", color: text.secondary }}
               >
                 恢复推荐
               </button>
@@ -501,12 +501,12 @@ function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) 
               type="button"
               onClick={handleSave}
               disabled={saving}
-              style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "none", background: stateColor.info, color: "#fff" }}
+              style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "none", background: stateColor.business, color: "#fff" }}
             >
               {saving ? "保存中..." : "保存偏好"}
             </button>
           </div>
-          {msg && <div style={{ fontSize: 12, color: stateColor.info, textAlign: "right" }}>{msg}</div>}
+          {msg && <div style={{ fontSize: 12, color: stateColor.business, textAlign: "right" }}>{msg}</div>}
         </div>
       )}
     </div>

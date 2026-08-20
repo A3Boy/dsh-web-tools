@@ -125,7 +125,8 @@ export const TavilyProvider: ProviderAdapter = {
     return { sources };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Tavily API key is not configured");
     const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {

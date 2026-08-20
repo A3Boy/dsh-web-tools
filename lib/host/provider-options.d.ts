@@ -16,3 +16,5 @@ export declare const DEFAULT_PARALLEL_OPTIONS: Required<ParallelProviderOptions>
 export declare function sanitizeProviderOptions(provider: string, raw: Record<string, unknown>): Record<string, unknown>;
 /** Build the ProviderOptionView for a provider. */
 export declare function buildProviderOptionView(provider: string, overrides?: Record<string, unknown>): ProviderOptionView;
+/** Resolve only the effective options map for a provider. */
+export declare function resolveEffectiveOptions(provider: string, overrides?: Record<string, unknown>): Record<string, unknown>;

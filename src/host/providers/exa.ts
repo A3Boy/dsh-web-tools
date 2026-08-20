@@ -134,7 +134,8 @@ export const ExaProvider: ProviderAdapter = {
     return { sources };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Exa API key is not configured");
     const res = await fetchWithProxy(EXA_CONTENTS_URL, {

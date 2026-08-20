@@ -15,7 +15,7 @@ import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./
 import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
-import { buildPool, selectIndex, markUsed, markUnhealthy } from "./pool.ts";
+import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
 import type { ProviderError } from "./providers/types.ts";
