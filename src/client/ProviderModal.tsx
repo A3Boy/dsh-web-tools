@@ -14,7 +14,7 @@ import { Button, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Mo
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaRemainingLabel, quotaDisplayKind, formatProviderOptionsSummary } from "./logic.ts";
 
 interface Props {
   t: TFunc;
@@ -338,8 +338,177 @@ export function ProviderModal(props: Props) {
           </div>
         )}
 
+        {/* Search Experience / Provider-native settings (P4) */}
+        <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+
         {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
       </div>
     </Modal>
+  );
+}
+
+function ProviderPreferencesSection({ t, p, onConfigChanged }: { t: (k: string) => string; p: ProviderView; onConfigChanged: () => void }) {
+  if (!p.options || p.name === "jina" || p.name === "searxng") return null;
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState<Record<string, any>>(() => ({ ...p.options?.overrides }));
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const eff = p.options.effective;
+  const isDef = p.options.isDefault;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api.providerOptionsSet(p.name, draft);
+      onConfigChanged();
+      setMsg("已保存");
+      setTimeout(() => setMsg(null), 2000);
+    } catch {
+      setMsg("保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api.providerOptionsReset(p.name);
+      setDraft({});
+      onConfigChanged();
+      setMsg("已恢复推荐");
+      setTimeout(() => setMsg(null), 2000);
+    } catch {
+      setMsg("恢复失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, borderTop: `1px solid ${border.subtle}`, paddingTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>搜索偏好</div>
+          <div style={{ fontSize: 12, color: isDef ? text.secondary : stateColor.info, marginTop: 2 }}>
+            {formatProviderOptionsSummary(p.name, eff)}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${border.default}`, background: "transparent", color: text.primary }}
+        >
+          {expanded ? "收起" : "自定义"}
+        </button>
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10, fontSize: 13 }}>
+          {/* Controls rendered conditionally per provider */}
+          {p.name === "exa" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: text.secondary, marginBottom: 4 }}>检索方式</label>
+              <select
+                value={draft.searchType ?? "auto"}
+                onChange={(e) => setDraft({ ...draft, searchType: e.target.value })}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+              >
+                <option value="auto">自动平衡（推荐）</option>
+                <option value="fast">快速（更低延迟）</option>
+                <option value="instant">极速（最低延迟）</option>
+                <option value="deep-lite">深度概览（较慢）</option>
+                <option value="deep">深度检索（慢）</option>
+                <option value="deep-reasoning">深度推理（最详尽）</option>
+              </select>
+            </div>
+          )}
+
+          {p.name === "tavily" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: text.secondary, marginBottom: 4 }}>检索深度</label>
+              <select
+                value={draft.searchDepth ?? "basic"}
+                onChange={(e) => setDraft({ ...draft, searchDepth: e.target.value })}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+              >
+                <option value="basic">平衡搜索（1 credit，推荐）</option>
+                <option value="fast">快速搜索（1 credit）</option>
+                <option value="ultra-fast">极速搜索（1 credit）</option>
+                <option value="advanced">高质量搜索（2 credits）</option>
+              </select>
+            </div>
+          )}
+
+          {p.name === "brave" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: text.secondary, marginBottom: 4 }}>检索模式</label>
+              <select
+                value={draft.endpointPreference ?? "auto"}
+                onChange={(e) => setDraft({ ...draft, endpointPreference: e.target.value })}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+              >
+                <option value="auto">智能上下文 · 推荐（LLM Context，失败自动回退）</option>
+                <option value="llm-context">仅智能上下文（LLM Context）</option>
+                <option value="web-search">传统网页搜索</option>
+              </select>
+            </div>
+          )}
+
+          {p.name === "you" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: text.secondary, marginBottom: 4 }}>检索展现</label>
+              <select
+                value={draft.extractionMode ?? "highlights"}
+                onChange={(e) => setDraft({ ...draft, extractionMode: e.target.value })}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+              >
+                <option value="highlights">AI 相关片段（推荐，质量更高）</option>
+                <option value="none">简短摘要（轻量）</option>
+              </select>
+            </div>
+          )}
+
+          {p.name === "parallel" && (
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: text.secondary, marginBottom: 4 }}>检索质量</label>
+              <select
+                value={draft.mode ?? "advanced"}
+                onChange={(e) => setDraft({ ...draft, mode: e.target.value })}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 4, border: `1px solid ${border.default}` }}
+              >
+                <option value="advanced">高质量搜索（推荐）</option>
+                <option value="basic">快速搜索</option>
+              </select>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+            {!isDef && (
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={saving}
+                style={{ padding: "4px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: `1px solid ${border.default}`, background: "transparent", color: text.secondary }}
+              >
+                恢复推荐
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "none", background: stateColor.info, color: "#fff" }}
+            >
+              {saving ? "保存中..." : "保存偏好"}
+            </button>
+          </div>
+          {msg && <div style={{ fontSize: 12, color: stateColor.info, textAlign: "right" }}>{msg}</div>}
+        </div>
+      )}
+    </div>
   );
 }

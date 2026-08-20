@@ -66,3 +66,8 @@ export declare function quotaRemainingLabel(t: TFunc, q: QuotaView | undefined):
 export declare function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string;
 /** Human-readable attempt outcome (from Host `attempts[].outcome`). */
 export declare function outcomeLabel(t: TFunc, outcome: string): string;
+/**
+ * Format a human-friendly summary of the currently resolved provider execution
+ * options for the collapsed Search Experience section.
+ */
+export declare function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined): string;

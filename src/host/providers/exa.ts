@@ -9,8 +9,9 @@
  *
  * @module
  */
-import { providerError, classifyHttpStatus, type ProviderAdapter, type SearchOutcome, type ProviderError } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome, type ProviderExecutionContext } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { ExaProviderOptions } from "../../shared/provider-options.ts";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
@@ -88,21 +89,24 @@ export const EXA_META = {
 export const ExaProvider: ProviderAdapter = {
   ...EXA_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Exa API key is not configured");
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const { signal, options } = resolveContext<ExaProviderOptions>(contextOrSignal);
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Exa API key is not configured");
     const numResults = typeof maxResults === "number" && maxResults > 0 ? Math.min(maxResults, 25) : 10;
     const res = await fetchWithProxy(EXA_SEARCH_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": token,
       },
       body: JSON.stringify({
         query,
-        type: "auto",
+        type: options?.searchType ?? "auto",
         numResults,
         contents: {
           highlights: true,
+          ...(typeof options?.maxAgeHours === "number" ? { maxAgeHours: options.maxAgeHours } : {}),
         },
       }),
       signal,
@@ -131,12 +135,13 @@ export const ExaProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Exa API key is not configured");
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Exa API key is not configured");
     const res = await fetchWithProxy(EXA_CONTENTS_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": token,
       },
       body: JSON.stringify({
         urls: [url],

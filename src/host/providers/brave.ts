@@ -12,9 +12,10 @@
  *   (X-RateLimit-Limit / X-RateLimit-Remaining / X-RateLimit-Reset).
  * @module
  */
-import { providerError, throwIfHttp, classifyHttpStatus, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { BraveProviderOptions } from "../../shared/provider-options.ts";
 
 const BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context";
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
@@ -31,26 +32,38 @@ export const BRAVE_META = {
 export const BraveProvider: ProviderAdapter = {
   ...BRAVE_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Brave API key is not configured");
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Brave API key is not configured");
+    const { signal, options } = resolveContext<BraveProviderOptions>(contextOrSignal);
 
-    // --- Preferred path: LLM Context endpoint (agent-optimized) ---
-    try {
-      const res = await fetchWithProxy(BRAVE_LLM_CONTEXT_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-subscription-token": apiKey,
-          accept: "application/json",
-        },
-        body: JSON.stringify({
+    const preferClassic = options?.endpointPreference === "web-search";
+
+    // --- Preferred path: LLM Context endpoint (agent-optimized), skipped if user chose web-search ---
+    if (!preferClassic) {
+      try {
+        const body: Record<string, unknown> = {
           q: query,
           count: Math.min(Math.max(maxResults ?? 10, 1), 50),
-        }),
-        signal,
-      });
+        };
+        if (options?.contextThresholdMode) {
+          body.context_threshold_mode = options.contextThresholdMode;
+        }
+        if (typeof options?.contextTokenBudget === "number") {
+          body.maximum_number_of_tokens = options.contextTokenBudget;
+        }
+        const res = await fetchWithProxy(BRAVE_LLM_CONTEXT_URL, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-subscription-token": token,
+            accept: "application/json",
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
 
-      if (res.ok) {
+        if (res.ok) {
         // Capture quota headers on success (same as classic endpoint).
         const snapshot = braveQuotaFromHeaders(res.headers);
         lastKnownQuotaByKey.set(apiKey, snapshot);
@@ -94,19 +107,20 @@ export const BraveProvider: ProviderAdapter = {
       // Unknown client/network errors — re-throw rather than fallback
       throw error;
     }
+  }
 
     // --- Fallback path: classic Web Search endpoint ---
     const url = new URL(BRAVE_WEB_SEARCH_URL);
     url.searchParams.set("q", query);
     url.searchParams.set("count", String(maxResults));
     const res = await fetchWithProxy(url, {
-      headers: { "x-subscription-token": apiKey, accept: "application/json" },
+      headers: { "x-subscription-token": token, accept: "application/json" },
       signal,
     });
     throwIfHttp("Brave", res);
     const snapshot = braveQuotaFromHeaders(res.headers);
-    lastKnownQuotaByKey.set(apiKey, snapshot);
-    persistHook?.(apiKey, snapshot);
+    lastKnownQuotaByKey.set(token, snapshot);
+    persistHook?.(token, snapshot);
     const raw = await res.json();
     const results = Array.isArray(raw?.web?.results) ? raw.web.results : [];
     const sources = results

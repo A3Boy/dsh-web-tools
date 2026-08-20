@@ -10,6 +10,7 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
 
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS = {
   fallbackOrder: [] as string[],
   providerBaseUrls: {} as Record<string, string>,
   providerEnabled: {} as Record<string, boolean>,
+  providerOptions: {} as StoredProviderOptions,
   // Brave has NO quota endpoint — its only quota signal is the X-RateLimit-*
   // response header captured during a real search. Persisted here so a
   // restart does not forget the last known balance (keyed by API key).
@@ -50,6 +52,7 @@ export interface WebToolsSettings {
   fallbackOrder: string[];
   providerBaseUrls: Record<string, string>;
   providerEnabled: Record<string, boolean>;
+  providerOptions: StoredProviderOptions;
   /** Brave per-key quota snapshots captured from search response headers. */
   braveQuotaCache: Record<string, QuotaSnapshot>;
   /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
@@ -64,6 +67,7 @@ export const Config: z<WebToolsSettings> = z.object({
   fallbackOrder: z.array(z.string()),
   providerBaseUrls: z.dict(z.string()),
   providerEnabled: z.dict(z.boolean()),
+  providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
   uiLanguage: z.union([z.const("auto"), z.const("zh"), z.const("en")]),
 });

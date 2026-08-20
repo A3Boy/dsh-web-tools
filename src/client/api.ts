@@ -65,4 +65,8 @@ export const api = {
   quotaDescribe: (force = false) => call<QuotaDescribeView>("quota/describe", { force }),
   searchModeGet: (sessionId: string) => call<SearchModeView>("search-mode/get", { sessionId }),
   searchModeSet: (sessionId: string, mode: SearchMode) => call<SearchModeView>("search-mode/set", { sessionId, mode }),
+  providerOptionsSet: (provider: string, options: Record<string, unknown>) =>
+    call<{ saved: true; options: any }>("provider-options/set", { provider, options }),
+  providerOptionsReset: (provider: string) =>
+    call<{ reset: true; options: any }>("provider-options/reset", { provider }),
 };

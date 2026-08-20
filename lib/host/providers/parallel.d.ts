@@ -25,6 +25,7 @@
  * @module
  */
 import { type ProviderAdapter, type Source } from "./types.ts";
+import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
 export declare const PARALLEL_META: {
     readonly name: "parallel";
     readonly label: "Parallel";
@@ -47,7 +48,7 @@ export declare function normalizeParallelQuery(query: string): string;
  * docs recommend 2–3 but accept one). Mode is pinned to "basic" — see the
  * module doc. Count is the ALREADY clamped value.
  */
-export declare function buildParallelSearchBody(query: string, count: number): Record<string, unknown>;
+export declare function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown>;
 /**
  * Parse Parallel's search envelope ({ results: [...] }) into normalized
  * sources. `url` is required per item; `excerpts` (an array of LLM-ranked

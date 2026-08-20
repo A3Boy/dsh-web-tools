@@ -13,6 +13,7 @@ import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export const PROVIDER_ID = "dsh-web-tools";
@@ -55,6 +56,7 @@ export interface WebToolsRuntimeConfig {
   fallbackOrder: string[];
   providerBaseUrls: Record<string, string>;
   enabledProviders: Record<string, boolean>;
+  providerOptions?: StoredProviderOptions;
 }
 
 /** Live per-provider key pools, keyed by provider name. */
@@ -201,9 +203,14 @@ export function createSearchProvider(
           const entry = entries[index];
           if (entry) reserveKey(entries, index);
           const started = Date.now();
+          const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];
           try {
             const outcome = await runWithTimeout(
-              (signal) => adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], signal),
+              (s) =>
+                adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], {
+                  signal: s,
+                  options: providerOptions,
+                }),
               cfg.providerAttemptTimeoutMs,
               signal,
             );
@@ -317,9 +324,14 @@ export function createFetchProvider(
         if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
         const index = selectIndex(entries);
         const entry = entries[index];
+        const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];
         try {
           const { text } = await runWithTimeout(
-            (sig) => adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[providerName], sig),
+            (sig) =>
+              adapter.fetch(request.url, entry?.key ?? "", cfg.providerBaseUrls[providerName], {
+                signal: sig,
+                options: providerOptions,
+              }),
             cfg.providerAttemptTimeoutMs,
             signal,
           );

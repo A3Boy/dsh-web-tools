@@ -13,8 +13,9 @@
  *
  * @module
  */
-import { providerError, classifyHttpStatus, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -75,22 +76,33 @@ async function throwTavilyError(res: Response): Promise<never> {
 export const TavilyProvider: ProviderAdapter = {
   ...TAVILY_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Tavily API key is not configured");
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const { signal, options } = resolveContext<TavilyProviderOptions>(contextOrSignal);
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Tavily API key is not configured");
     // Tavily caps max_results at 20 (verified 2026-08-20).
     const max_results = Math.min(Math.max(maxResults ?? 5, 1), 20);
+    const requestBody: Record<string, unknown> = {
+      query,
+      max_results,
+      include_answer: false,
+    };
+    if (options?.autoParameters) {
+      requestBody.auto_parameters = true;
+    } else {
+      const depth = options?.searchDepth ?? "basic";
+      requestBody.search_depth = depth;
+      if (depth === "advanced" && typeof options?.chunksPerSource === "number") {
+        requestBody.chunks_per_source = options.chunksPerSource;
+      }
+    }
     const res = await fetchWithProxy(TAVILY_SEARCH_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        query,
-        search_depth: "basic",
-        max_results,
-        include_answer: false,
-      }),
+      body: JSON.stringify(requestBody),
       signal,
     });
     if (!res.ok) await throwTavilyError(res);
@@ -114,12 +126,13 @@ export const TavilyProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Tavily API key is not configured");
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Tavily API key is not configured");
     const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ urls: [url] }),
       signal,

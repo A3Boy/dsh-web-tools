@@ -1,6 +1,7 @@
-import { providerError, throwIfHttp, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import type { YouProviderOptions } from "../../shared/provider-options.ts";
 
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOU_CONTENTS_URL = "https://ydc-index.io/v1/contents";
@@ -17,7 +18,8 @@ export const YOU_META = {
 
 /** Official You.com auth header (X-API-Key, per the API reference). */
 function youAuthHeader(apiKey: string): Record<string, string> {
-  return { "x-api-key": apiKey };
+  const token = (apiKey ?? "").trim();
+  return { "x-api-key": token };
 }
 
 /** Error handler that highlights missing product scope for 403. */
@@ -31,19 +33,22 @@ function throwYouError(res: Response): void {
 export const YouProvider: ProviderAdapter = {
   ...YOU_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
-    // POST /v1/search with extraction.extraction_mode = "highlights" (official 2026-08-11).
-    // Returns query-relevant passages in contents.highlights, sized for token-sensitive
-    // agent workflows.
+    const { signal, options } = resolveContext<YouProviderOptions>(contextOrSignal);
+
+    const body: Record<string, unknown> = {
+      query,
+      count: maxResults,
+    };
+    if (options?.extractionMode !== "none") {
+      body.extraction = { extraction_mode: "highlights" };
+    }
+
     const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
-      body: JSON.stringify({
-        query,
-        count: maxResults,
-        extraction: { extraction_mode: "highlights" },
-      }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) throwYouError(res);
@@ -81,16 +86,26 @@ export const YouProvider: ProviderAdapter = {
     return { sources };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
+    const { signal, options } = resolveContext<YouProviderOptions>(contextOrSignal);
+
+    const body: Record<string, unknown> = {
+      urls: [url],
+      formats: ["markdown"],
+    };
+    if (typeof options?.fetchCrawlTimeoutSec === "number") {
+      body.crawl_timeout = options.fetchCrawlTimeoutSec;
+    }
+    if (typeof options?.fetchMaxAgeSec === "number") {
+      body.max_age = options.fetchMaxAgeSec;
+    }
+
     // POST /v1/contents returns full Markdown for specified URLs.
     const res = await fetchWithProxy(YOU_CONTENTS_URL, {
       method: "POST",
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
-      body: JSON.stringify({
-        urls: [url],
-        formats: ["markdown"],
-      }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) throwYouError(res);

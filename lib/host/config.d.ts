@@ -10,6 +10,7 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
 /** Settings namespace for this plugin. */
 export declare const SETTINGS_NS = "dsh-web-tools";
 /** Default provider when nothing is configured. */
@@ -27,6 +28,7 @@ export declare const DEFAULT_SETTINGS: {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
     uiLanguage: "auto" | "zh" | "en";
 };
@@ -38,6 +40,7 @@ export interface WebToolsSettings {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    providerOptions: StoredProviderOptions;
     /** Brave per-key quota snapshots captured from search response headers. */
     braveQuotaCache: Record<string, QuotaSnapshot>;
     /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */

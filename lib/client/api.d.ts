@@ -40,4 +40,12 @@ export declare const api: {
     quotaDescribe: (force?: boolean) => Promise<QuotaDescribeView>;
     searchModeGet: (sessionId: string) => Promise<SearchModeView>;
     searchModeSet: (sessionId: string, mode: SearchMode) => Promise<SearchModeView>;
+    providerOptionsSet: (provider: string, options: Record<string, unknown>) => Promise<{
+        saved: true;
+        options: any;
+    }>;
+    providerOptionsReset: (provider: string) => Promise<{
+        reset: true;
+        options: any;
+    }>;
 };

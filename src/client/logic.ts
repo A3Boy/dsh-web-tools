@@ -204,3 +204,46 @@ export function outcomeLabel(t: TFunc, outcome: string): string {
   if (outcome.startsWith("skipped-")) return t("unknownOutcome");
   return t("unknownOutcome");
 }
+
+/**
+ * Format a human-friendly summary of the currently resolved provider execution
+ * options for the collapsed Search Experience section.
+ */
+export function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined): string {
+  if (!effective) return "使用推荐设置";
+  switch (providerName) {
+    case "exa": {
+      const type = String(effective.searchType ?? "auto");
+      const typeLabel = type === "fast" ? "快速搜索" : type === "instant" ? "极速搜索" : type.startsWith("deep") ? "深度搜索" : "自动搜索";
+      const freshness = effective.maxAgeHours === 0 ? "始终刷新" : effective.maxAgeHours === -1 ? "仅使用缓存" : "自动新鲜度";
+      return `${typeLabel} · ${freshness}`;
+    }
+    case "tavily": {
+      if (effective.autoParameters) return "自动优化 · 1-2 credits";
+      const depth = String(effective.searchDepth ?? "basic");
+      if (depth === "advanced") return "高质量 · 2 credits";
+      if (depth === "fast") return "快速 · 1 credit";
+      if (depth === "ultra-fast") return "极速 · 1 credit";
+      return "平衡 · 1 credit";
+    }
+    case "brave": {
+      const pref = String(effective.endpointPreference ?? "auto");
+      if (pref === "web-search") return "普通网页搜索";
+      return "智能上下文 · 推荐";
+    }
+    case "you": {
+      const ext = String(effective.extractionMode ?? "highlights");
+      return ext === "none" ? "简短摘要模式" : "AI 相关片段 · 推荐";
+    }
+    case "firecrawl": {
+      const fresh = effective.fetchMaxAgeMs === 0 ? "始终刷新" : "智能缓存";
+      return `正文清洗 · ${fresh}`;
+    }
+    case "parallel": {
+      const mode = String(effective.mode ?? "advanced");
+      return mode === "basic" ? "快速搜索" : "高质量搜索 · 推荐";
+    }
+    default:
+      return "推荐设置";
+  }
+}

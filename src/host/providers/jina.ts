@@ -35,12 +35,13 @@ export const JinaProvider: ProviderAdapter = {
   ...JINA_META,
 
   async search(query, maxResults, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Jina API key is not configured");
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Jina API key is not configured");
     const count = Math.min(Math.max(maxResults ?? 5, 1), JINA_MAX_RESULTS);
     const url = `${JINA_SEARCH_URL}${encodeURIComponent(query)}?count=${count}`;
     const res = await fetchWithProxy(url, {
       method: "GET",
-      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       signal,
     });
     throwIfHttp("Jina", res);
@@ -54,9 +55,10 @@ export const JinaProvider: ProviderAdapter = {
   },
 
   async fetch(url, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Jina API key is not configured");
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Jina API key is not configured");
     const res = await fetchWithProxy(`${JINA_READER_URL}${encodeURIComponent(url)}`, {
-      headers: { authorization: `Bearer ${apiKey}` },
+      headers: { authorization: `Bearer ${token}` },
       signal,
     });
     throwIfHttp("Jina", res);

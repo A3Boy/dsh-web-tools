@@ -87,6 +87,7 @@ export function apply(ctx: WebToolsContext) {
       fallbackOrder: cfg.fallbackOrder,
       providerBaseUrls: cfg.providerBaseUrls,
       enabledProviders: cfg.providerEnabled,
+      providerOptions: cfg.providerOptions,
     };
   };
   const resolveKeys = async (providerName: string) => {
@@ -120,12 +121,14 @@ export function apply(ctx: WebToolsContext) {
         // fresh pool where every key always looks healthy.
         const entries = await poolStore.poolOf(providerName);
         if (entries.length === 0) throw Object.assign(new Error("no API key configured"), { code: "config" });
+        if (!entries.some((e) => e.healthy)) resetHealth(entries);
         const index = selectIndex(entries);
         const entry = entries[index];
-        key = entry?.key ?? "";
+        key = (entry?.key ?? "").trim();
         try {
           const outcome = await adapter.search(query, 1, key, readConfig().providerBaseUrls[providerName]);
           markUsed(entries, index);
+          if (!entry.healthy) entry.healthy = true;
           const latencyMs = Date.now() - started;
           return {
             ok: true,

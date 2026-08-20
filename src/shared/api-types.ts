@@ -6,6 +6,8 @@
  * @module
  */
 
+import type { ProviderOptionView } from "./provider-options.ts";
+
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {
   name: string;
@@ -24,6 +26,8 @@ export interface ProviderView {
   poolSize: number;
   /** Per-key masked hints + live health (no secrets; display only). */
   keys?: Array<{ id: string; hint: string; healthy: boolean }>;
+  /** Provider-native execution settings (effective values + user overrides). */
+  options?: ProviderOptionView;
 }
 
 /** Full config snapshot for the card. */

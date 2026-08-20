@@ -16,6 +16,7 @@ import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { ConfigView, ProviderView, SearchMode, SearchModeView } from "../shared/api-types.ts";
+import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
@@ -149,6 +150,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const defaultProvider = (cfg.defaultProvider as string) ?? "tavily";
   const enabledMap = (cfg.providerEnabled as Record<string, boolean>) ?? {};
   const baseUrls = (cfg.providerBaseUrls as Record<string, string>) ?? {};
+  const providerOpts = (cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {};
 
   const providers: ProviderView[] = [];
   for (const meta of PROVIDER_LIST) {
@@ -171,6 +173,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
       keyHint: pool.length > 0 ? poolSummary(pool)[0].hint : undefined,
       poolSize: pool.length,
       keys: pool.map((e) => ({ id: keyIdOf(e.key), hint: hintOf(e.key), healthy: e.healthy })),
+      options: buildProviderOptionView(meta.name, providerOpts[meta.name]),
     });
   }
 
@@ -287,6 +290,39 @@ async function handleSearchModeSet(deps: RouteDeps, payload: unknown) {
   return deps.searchMode.set(sessionId, mode);
 }
 
+async function handleProviderOptionsSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: unknown; options?: unknown };
+  const provider = String(p.provider ?? "").trim().toLowerCase();
+  if (!provider) throw new Error("missing provider");
+  const meta = PROVIDER_LIST.find((m) => m.name === provider);
+  if (!meta) throw new Error(`unknown provider: ${provider}`);
+
+  const rawOpts = (p.options && typeof p.options === "object") ? (p.options as Record<string, unknown>) : {};
+  const cleaned = sanitizeProviderOptions(provider, rawOpts);
+
+  const cfg = await deps.resolveConfig();
+  const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  currentMerged[provider] = cleaned;
+
+  await deps.patchConfig({ providerOptions: currentMerged });
+  return buildProviderOptionView(provider, cleaned);
+}
+
+async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: unknown };
+  const provider = String(p.provider ?? "").trim().toLowerCase();
+  if (!provider) throw new Error("missing provider");
+  const meta = PROVIDER_LIST.find((m) => m.name === provider);
+  if (!meta) throw new Error(`unknown provider: ${provider}`);
+
+  const cfg = await deps.resolveConfig();
+  const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  delete currentMerged[provider];
+
+  await deps.patchConfig({ providerOptions: currentMerged });
+  return buildProviderOptionView(provider, undefined);
+}
+
 // ---------------------------------------------------------------------------
 // route registration
 // ---------------------------------------------------------------------------
@@ -303,6 +339,8 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "quota/describe": (deps, payload) => handleQuotaDescribe(deps, payload),
   "search-mode/get": (deps, payload) => handleSearchModeGet(deps, payload),
   "search-mode/set": (deps, payload) => handleSearchModeSet(deps, payload),
+  "provider-options/set": (deps, payload) => handleProviderOptionsSet(deps, payload),
+  "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

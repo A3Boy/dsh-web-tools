@@ -1,4 +1,5 @@
 import { type PoolEntry } from "./pool.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export declare const PROVIDER_ID = "dsh-web-tools";
 /** Structural mirror of the seam's WebSearchProvider contract. */
@@ -53,6 +54,7 @@ export interface WebToolsRuntimeConfig {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     enabledProviders: Record<string, boolean>;
+    providerOptions?: StoredProviderOptions;
 }
 /** Live per-provider key pools, keyed by provider name. */
 export type Pools = Record<string, PoolEntry[]>;

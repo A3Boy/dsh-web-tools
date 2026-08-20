@@ -48,25 +48,39 @@ export interface ProviderMeta {
     /** Default base URL when self-hosted. */
     defaultBaseUrl?: string;
 }
+/**
+ * Per-execution context passed to provider search / fetch adapters.
+ * Encapsulates the cancellation signal and any user-configured options
+ * for this specific provider (no universal cross-provider parameters).
+ */
+export interface ProviderExecutionContext<TOptions = unknown> {
+    readonly signal?: AbortSignal;
+    readonly options?: Readonly<TOptions>;
+}
 /** One configured adapter instance. */
 export interface ProviderAdapter extends ProviderMeta {
     /**
      * Run one search through this backend.
      * @param query
      * @param maxResults
-     * @param apiKeyPool the pool entries for this provider (may be empty for keyless self-hosted).
+     * @param apiKey
      * @param baseUrl
-     * @param signal
+     * @param contextOrSignal optional execution context with typed options and signal, or bare signal
      */
-    search(query: string, maxResults: number, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<SearchOutcome>;
+    search(query: string, maxResults: number, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | ProviderExecutionContext): Promise<SearchOutcome>;
     /**
      * Fetch one URL's text content through this backend (when fetchCapable).
      * @throws ProviderError when unsupported.
      */
-    fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{
+    fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | ProviderExecutionContext): Promise<{
         text: string;
     }>;
 }
+/** Helper to extract signal and typed options from an execution context or bare signal. */
+export declare function extractContext<T>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
+    signal?: AbortSignal;
+    options?: Readonly<T>;
+};
 /**
  * Self-hosted provider that needs a base URL and has no Fetch API — and
  * therefore works WITHOUT an API key (currently only SearXNG). Keyed-hosted

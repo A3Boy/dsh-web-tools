@@ -17,6 +17,7 @@ import {
 import { braveQuotaFromHeaders } from "./providers/brave.ts";
 import { classifyHttpStatus } from "./providers/types.ts";
 import { mergePoolQuota } from "./quota.ts";
+import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -347,4 +348,30 @@ test("pool inFlight allocation & reserve/release concurrency control", () => {
   // clamp protection: releasing below 0 never produces negative inFlight
   releaseKey(p, 1);
   assert.equal(p[1].inFlight, 0);
+});
+
+test("P4 providerOptions: resolveEffectiveOptions returns default when no overrides", () => {
+  const exaEff = resolveEffectiveOptions("exa", undefined);
+  assert.equal(exaEff.searchType, "auto");
+  assert.equal(exaEff.maxAgeHours, undefined);
+
+  const view = buildProviderOptionView("exa", undefined);
+  assert.equal(view?.isDefault, true);
+  assert.equal(view?.customized, false);
+});
+
+test("P4 providerOptions: sanitizeProviderOptions filters invalid enums and values", () => {
+  const sanitized = sanitizeProviderOptions("exa", { searchType: "invalid-type", maxAgeHours: 0 } as any);
+  assert.deepEqual(sanitized, { maxAgeHours: 0 });
+
+  const tavily = sanitizeProviderOptions("tavily", { searchDepth: "ultra-fast", autoParameters: true } as any);
+  assert.deepEqual(tavily, { searchDepth: "ultra-fast", autoParameters: true });
+});
+
+test("P4 providerOptions: buildProviderOptionView accurately merges overrides and detects customized state", () => {
+  const view = buildProviderOptionView("tavily", { searchDepth: "advanced" });
+  assert.equal(view?.customized, true);
+  assert.equal(view?.isDefault, false);
+  assert.equal(view?.effective.searchDepth, "advanced");
+  assert.equal(view?.overrides.searchDepth, "advanced");
 });
