@@ -241,7 +241,10 @@ export function formatProviderOptionsSummary(providerName: string, effective: Re
     }
     case "parallel": {
       const mode = String(effective.mode ?? "advanced");
-      return mode === "basic" ? "快速搜索" : "高质量搜索 · 推荐";
+      if (mode === "basic") return "平衡模式";
+      if (mode === "fast") return "快速模式";
+      if (mode === "turbo") return "极速模式";
+      return "高质量搜索 · 推荐";
     }
     default:
       return "推荐设置";

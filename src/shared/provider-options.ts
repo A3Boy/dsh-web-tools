@@ -34,7 +34,7 @@ export interface FirecrawlProviderOptions {
 }
 
 export interface ParallelProviderOptions {
-  mode?: "advanced" | "basic";
+  mode?: "turbo" | "fast" | "basic" | "advanced";
   maxCharsTotal?: number;
 }
 

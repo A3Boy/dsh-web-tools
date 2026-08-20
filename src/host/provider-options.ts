@@ -117,7 +117,7 @@ export function sanitizeProviderOptions(
       break;
     }
     case "parallel": {
-      const validModes = ["advanced", "basic"];
+      const validModes = ["turbo", "fast", "basic", "advanced"];
       if (typeof raw.mode === "string" && validModes.includes(raw.mode)) {
         out.mode = raw.mode;
       }

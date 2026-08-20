@@ -612,9 +612,21 @@ function ProviderControls(props: {
               />
               <ChoiceCard
                 selected={mode === "basic"}
-                title="快速"
-                description="响应更快"
+                title="平衡"
+                description="低延迟，适合明确问题"
                 onClick={() => setValue("mode", "basic", "advanced")}
+              />
+              <ChoiceCard
+                selected={mode === "fast"}
+                title="快速"
+                description="1 秒延迟预算内的高质量"
+                onClick={() => setValue("mode", "fast", "advanced")}
+              />
+              <ChoiceCard
+                selected={mode === "turbo"}
+                title="极速"
+                description="约 200ms 高吞吐"
+                onClick={() => setValue("mode", "turbo", "advanced")}
               />
             </div>
           </div>
