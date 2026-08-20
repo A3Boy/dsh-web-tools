@@ -13,7 +13,7 @@
  *
  * @module
  */
-import { providerError, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 
@@ -60,7 +60,7 @@ async function throwTavilyError(res: Response): Promise<never> {
     throw providerError("quota", `Tavily: ${message ?? "plan limit exceeded"}${retryHint}`, status);
   }
   if (status === 429) {
-    throw providerError("rate-limit", `Tavily: rate limit exceeded${retryHint}`, status);
+    throw providerError("rate-limit", `Tavily: rate limit exceeded${retryHint}`, status, parseRetryAfter(res));
   }
   if (status === 408) {
     throw providerError("timeout", `Tavily: request timed out`, status);

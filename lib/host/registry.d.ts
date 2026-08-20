@@ -1,5 +1,6 @@
 import { type PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import type { ProviderHealthStore } from "./provider-health.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export declare const PROVIDER_ID = "dsh-web-tools";
 /** Structural mirror of the seam's WebSearchProvider contract. */
@@ -104,10 +105,10 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
         outcome: string;
         latencyMs: number;
     }) => void;
-}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore): WebSearchProviderLike;
+}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebSearchProviderLike;
 /**
  * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`. V1 routes
  * fetch through the default provider's native extract endpoint; providers
  * without native fetch fail with a classified error.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebFetchProviderLike;

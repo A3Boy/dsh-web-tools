@@ -9,7 +9,7 @@
  *
  * @module
  */
-import { providerError, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome, type ProviderExecutionContext } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter, type SearchOutcome, type ProviderExecutionContext } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { ExaProviderOptions } from "../../shared/provider-options.ts";
 
@@ -63,7 +63,7 @@ async function throwExaError(res: Response): Promise<never> {
     throw providerError("auth", `Exa: access denied${retryHint}`, status);
   }
   if (status === 429) {
-    throw providerError("rate-limit", `Exa: rate limit exceeded${retryHint}`, status);
+    throw providerError("rate-limit", `Exa: rate limit exceeded${retryHint}`, status, parseRetryAfter(res));
   }
   if (status === 408) {
     throw providerError("timeout", `Exa: request timed out`, status);

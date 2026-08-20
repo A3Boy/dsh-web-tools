@@ -9,6 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSearchProvider, createFetchProvider } from "../src/host/registry.ts";
+import { createProviderHealthStore } from "../src/host/provider-health.ts";
 import { braveQuotaFromHeaders } from "../src/host/providers/brave.ts";
 
 test("Brave header parsing: dual window → monthly remaining/limit", () => {
@@ -232,4 +233,125 @@ test("auth failure fails over to the NEXT KEY in the same provider, then to next
   const r2 = await p2.search({ query: "q" });
   assert.equal(r2.backend, "exa", "both keys failed auth → fall through to exa");
   assert.deepEqual(keyCalls, ["bad1", "bad2"], "both keys tried before provider fallback");
+});
+
+// ---------------------------------------------------------------------------
+// Provider Retry-After cooldown (P5.1)
+// ---------------------------------------------------------------------------
+
+test("1. 429 + Retry-After=30 → cooldown set, current call falls back to next provider", async () => {
+  let t = 0; // injectable clock
+  const health = createProviderHealthStore({ now: () => t });
+  const rateLimit = Object.assign(new Error("429"), { code: "rate-limit", retryAfterMs: 30000 });
+
+  const tavily = stubAdapter("tavily", { failWith: rateLimit });
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg(),
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+    undefined,
+    health,
+  );
+
+  const result = await provider.search({ query: "q" });
+  assert.equal(result.backend, "exa", "429 falls back to exa");
+  assert.equal(tavily.calls.length, 1, "tavily called once");
+  assert.equal(exa.calls.length, 1, "exa called after fallback");
+  assert.ok(health.isCoolingDown("tavily", t), "tavily in cooldown immediately");
+});
+
+test("2. cooldown active → zero HTTP calls, skipped-cooldown, fallback succeeds", async () => {
+  let t = 1000;
+  const health = createProviderHealthStore({ now: () => t });
+  health.cooldownFor("tavily", 30000, "rate-limit"); // retryAfterUntil = 31000
+
+  const tavily = stubAdapter("tavily");
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg(),
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+    undefined,
+    health,
+  );
+
+  // At t=1000, tavily is cooling down (until 31000)
+  const result = await provider.search({ query: "q" });
+  assert.equal(result.backend, "exa", "fell back to exa");
+  assert.equal(tavily.calls.length, 0, "tavily made ZERO HTTP calls (cooldown)");
+  assert.equal(exa.calls.length, 1, "exa called");
+  const attempts = result.attempts;
+  assert.ok(attempts.some((a) => a.outcome === "skipped-cooldown"), "attempts record skipped-cooldown");
+});
+
+test("3. cooldown expires → provider participates again", async () => {
+  let t = 1000;
+  const health = createProviderHealthStore({ now: () => t });
+  health.cooldownFor("tavily", 30000, "rate-limit"); // until 31000
+
+  const tavily = stubAdapter("tavily");
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg({ fallbackOrder: [] }), // only tavily in chain
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+    undefined,
+    health,
+  );
+
+  // Advance clock past cooldown expiry
+  t = 32000;
+  const result = await provider.search({ query: "q" });
+  assert.equal(result.backend, "tavily", "tavily participated again after cooldown expired");
+  assert.equal(tavily.calls.length, 1, "tavily called once after expiry");
+  assert.equal(health.isCoolingDown("tavily", t), false, "cooldown cleared");
+});
+
+test("4. 401 → no cooldown, key unhealthy logic unchanged", async () => {
+  let t = 1000;
+  const health = createProviderHealthStore({ now: () => t });
+  const authErr = Object.assign(new Error("401"), { code: "auth" });
+
+  const tavily = stubAdapter("tavily", { failWith: authErr });
+  // No exa — only tavily in chain, both keys auth-fail, search rejects
+  const provider = createSearchProvider(
+    () => cfg({ fallbackOrder: [] }),
+    async () => "k1,badkey2",
+    { record() {} },
+    { tavily },
+    undefined,
+    health,
+  );
+
+  await assert.rejects(provider.search({ query: "q" }), /auth|failed/i);
+  // No cooldown should be set for auth errors
+  assert.equal(health.isCoolingDown("tavily", t), false, "no cooldown after auth error");
+});
+
+test("5. caller abort → no cooldown, no fallback", async () => {
+  let t = 1000;
+  const health = createProviderHealthStore({ now: () => t });
+  const tavily = stubAdapter("tavily", { hang: true });
+  const exa = stubAdapter("exa");
+  const provider = createSearchProvider(
+    () => cfg(),
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+    undefined,
+    health,
+  );
+
+  const controller = new AbortController();
+  controller.abort(new Error("user cancelled"));
+  await assert.rejects(
+    provider.search({ query: "q" }, controller.signal),
+    (err) => err.code === "WEB_ABORTED" || /abort/i.test(err.message),
+  );
+  assert.equal(health.isCoolingDown("tavily", t), false, "no cooldown after abort");
+  assert.equal(exa.calls.length, 0, "no fallback after abort");
 });

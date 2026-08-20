@@ -25,6 +25,7 @@ import { mergePoolQuota } from "./quota.ts";
 import { proxyStatus } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { createProviderHealthStore } from "./provider-health.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -100,12 +101,15 @@ export function apply(ctx: WebToolsContext) {
   // and health, and rebuild only when a credential actually changes.
   const poolStore = createPoolStore(resolveKeys);
 
+  // ONE shared health store so search + fetch respect the same cooldowns.
+  const healthStore = createProviderHealthStore();
+
   const provider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
-  }, undefined, poolStore);
+  }, undefined, poolStore, healthStore);
   ctx.web.registerSearchProvider(provider as never);
 
-  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore);
+  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
   ctx.web.registerFetchProvider(fetchProvider as never);
 
   /** Run one real minimal search through a single provider (test connection). */

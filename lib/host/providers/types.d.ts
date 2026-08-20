@@ -26,6 +26,10 @@ export interface ProviderError extends Error {
     code: ProviderErrorCode;
     /** Original HTTP status when applicable. */
     status?: number;
+    /** Server-requested cooldown in ms (from Retry-After header, 429 only). */
+    retryAfterMs?: number;
+    /** Upstream request ID for diagnostics. */
+    requestId?: string;
 }
 /**
  * Classify an HTTP status uniformly across every adapter. Single source of
@@ -88,11 +92,19 @@ export declare const extractContext: typeof resolveContext;
  * providers always require a key.
  */
 export declare function isKeylessSelfHosted(meta: Pick<ProviderMeta, "needsBaseUrl" | "fetchCapable">): boolean;
-/** Build a ProviderError with a classification code. */
-export declare function providerError(code: ProviderErrorCode, message: string, status?: number): ProviderError;
+/** Build a ProviderError with a classification code and optional retry-after metadata. */
+export declare function providerError(code: ProviderErrorCode, message: string, status?: number, retryAfterMs?: number): ProviderError;
+/**
+ * Parse the `Retry-After` response header into milliseconds from now.
+ * Supports:
+ *  - `Retry-After: 30` (delta-seconds)
+ *  - `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT` (HTTP-date)
+ * Returns undefined when the header is absent or unparseable.
+ */
+export declare function parseRetryAfter(res: Response, now?: number): number | undefined;
 /**
  * Throw a classified ProviderError from a non-OK HTTP response, with a
  * provider label for the message. Every adapter uses this — no per-adapter
- * status mapping.
+ * status mapping. Retry-After header is parsed and attached to rate-limit errors.
  */
 export declare function throwIfHttp(label: string, res: Response): void;

@@ -14,6 +14,7 @@ import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import type { ProviderHealthStore } from "./provider-health.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export const PROVIDER_ID = "dsh-web-tools";
@@ -126,6 +127,7 @@ export function createSearchProvider(
   },
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
   poolStore?: PoolStore,
+  healthStore?: ProviderHealthStore,
 ): WebSearchProviderLike {
   const pools = poolStore ?? createPoolStore(resolveKeys);
 
@@ -193,6 +195,13 @@ export function createSearchProvider(
           continue;
         }
 
+        // Provider-level cooldown (Retry-After). The store uses its own clock
+        // (injectable for tests) — zero HTTP when cooling down.
+        if (healthStore?.isCoolingDown(providerName)) {
+          attempts.push({ provider: providerName, outcome: "skipped-cooldown" });
+          continue;
+        }
+
         // Provider-internal key failover: on AUTH failures only, try the next
         // healthy key in the SAME provider before falling back to another
         // provider. Non-auth failures (429/5xx/network/timeout) do not rotate
@@ -254,6 +263,10 @@ export function createSearchProvider(
             }
             // non-auth retryable (429/5xx/network/timeout) → next provider
             lastError = err;
+            // Only rate-limit errors carry a server-requested cooldown.
+            if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
+              healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
+            }
             attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
             stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
             providerLevelDecision = "next-provider";
@@ -288,6 +301,7 @@ export function createFetchProvider(
   resolveKeys: (providerName: string) => Promise<string>,
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
   poolStore?: PoolStore,
+  healthStore?: ProviderHealthStore,
 ): WebFetchProviderLike {
   const pools = poolStore ?? createPoolStore(resolveKeys);
 
@@ -322,6 +336,8 @@ export function createFetchProvider(
         if (entries.length === 0) continue; // no credentials for this backend
         const usable = entries.filter((e) => e.healthy);
         if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
+        // Provider cooldown (Retry-After): skip without HTTP call.
+        if (healthStore?.isCoolingDown(providerName)) continue;
         const index = selectIndex(entries);
         const entry = entries[index];
         const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];

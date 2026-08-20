@@ -40,6 +40,10 @@ export interface ProviderError extends Error {
   code: ProviderErrorCode;
   /** Original HTTP status when applicable. */
   status?: number;
+  /** Server-requested cooldown in ms (from Retry-After header, 429 only). */
+  retryAfterMs?: number;
+  /** Upstream request ID for diagnostics. */
+  requestId?: string;
 }
 
 /**
@@ -138,22 +142,47 @@ export function isKeylessSelfHosted(meta: Pick<ProviderMeta, "needsBaseUrl" | "f
   return meta.needsBaseUrl && !meta.fetchCapable;
 }
 
-/** Build a ProviderError with a classification code. */
-export function providerError(code: ProviderErrorCode, message: string, status?: number): ProviderError {
+/** Build a ProviderError with a classification code and optional retry-after metadata. */
+export function providerError(code: ProviderErrorCode, message: string, status?: number, retryAfterMs?: number): ProviderError {
   const err = new Error(message) as ProviderError;
   err.code = code;
   if (status !== undefined) err.status = status;
+  if (retryAfterMs !== undefined && retryAfterMs > 0) err.retryAfterMs = retryAfterMs;
   return err;
+}
+
+/**
+ * Parse the `Retry-After` response header into milliseconds from now.
+ * Supports:
+ *  - `Retry-After: 30` (delta-seconds)
+ *  - `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT` (HTTP-date)
+ * Returns undefined when the header is absent or unparseable.
+ */
+export function parseRetryAfter(res: Response, now = Date.now()): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  // Try delta-seconds first
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds * 1000;
+  }
+  // Try HTTP-date
+  const parsed = Date.parse(trimmed);
+  if (Number.isFinite(parsed)) {
+    return Math.max(0, parsed - now);
+  }
+  return undefined;
 }
 
 /**
  * Throw a classified ProviderError from a non-OK HTTP response, with a
  * provider label for the message. Every adapter uses this — no per-adapter
- * status mapping.
+ * status mapping. Retry-After header is parsed and attached to rate-limit errors.
  */
 export function throwIfHttp(label: string, res: Response): void {
   if (res.ok) return;
   const code = classifyHttpStatus(res.status);
-  const codeName = code;
-  throw providerError(code, `${label} failed (HTTP ${res.status}, ${codeName})`, res.status);
+  const retryAfterMs = code === "rate-limit" ? parseRetryAfter(res) : undefined;
+  throw providerError(code, `${label} failed (HTTP ${res.status}, ${code})`, res.status, retryAfterMs);
 }
