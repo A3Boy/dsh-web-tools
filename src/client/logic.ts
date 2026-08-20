@@ -175,8 +175,8 @@ export function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string {
   if (kind === "remaining_of_limit" && q.remaining !== undefined && q.limit !== undefined && q.remaining > q.limit) {
     return t("quotaOverPlan", { r: q.remaining.toLocaleString(), l: q.limit.toLocaleString() });
   }
-  if (kind === "observed_usage" && q.remaining !== undefined) {
-    return t("quotaSince", { amount: (q.remaining / 100).toFixed(2) });
+  if (kind === "observed_usage" && q.used !== undefined) {
+    return t("quotaSince", { amount: (q.used / 100).toFixed(2) });
   }
   // rate_limit / balance: the kind already says it; keep the line clean.
   return "";
