@@ -13,6 +13,7 @@ import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
 import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
+import { PROVIDER_BRAND } from "./brand.ts";
 
 interface Props {
   t: TFunc;
@@ -213,6 +214,17 @@ export function ProviderModal(props: Props) {
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Provider identity: logo + name + description */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {PROVIDER_BRAND[p.name] && (
+              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={24} height={24} style={{ borderRadius: 6, flex: "none" }} />
+            )}
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 16, color: text.primary }}>{p.label}</div>
+              {p.description && <div style={{ fontSize: 12, color: text.secondary, marginTop: 1 }}>{p.description}</div>}
+            </div>
+          </div>
+
           {/* Top row: enabled + status + quota inline */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />

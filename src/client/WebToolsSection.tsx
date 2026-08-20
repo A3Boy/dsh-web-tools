@@ -27,6 +27,7 @@ import { text, surface, state as stateColor, button as buttonColor } from "./the
 import { ProviderModal } from "./ProviderModal.tsx";
 import { RoutingModal } from "./RoutingModal.tsx";
 import type { UiFace } from "./registration.ts";
+import { PROVIDER_BRAND } from "./brand.ts";
 import {
   providerStatusOf,
   testOutcomeStatus,
@@ -183,7 +184,12 @@ function ProviderCard(props: {
       ) : (
         <StateDot state={dotState} />
       )}
-      <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.label}</span>
+      <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
+            {PROVIDER_BRAND[p.name] && (
+              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={20} height={20} style={{ borderRadius: 5, flex: "none" }} />
+            )}
+            {p.label}
+          </span>
       <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }} className="wt-provider-meta">
         <span
           style={{
