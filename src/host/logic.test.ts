@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance, parseJinaSearchJson } from "./providers/jina.ts";
+import { buildTavilyExtractBody } from "./providers/tavily.ts";
 import {
   buildParallelSearchBody,
   clampParallelCount,
@@ -206,6 +207,15 @@ test("mergePoolQuota single key keeps the original note (no aggregation label)",
   assert.equal(snap.remaining, 932);
   assert.equal(snap.limit, 1000);
   assert.equal(snap.note, "plan: Researcher");
+});
+
+// ---- Tavily extract body (regression: must include api_key) ----
+
+test("buildTavilyExtractBody includes the api_key (fix for HTTP 401 on /extract)", () => {
+  assert.deepEqual(buildTavilyExtractBody("https://example.com/page", "sk-test-123"), {
+    urls: ["https://example.com/page"],
+    api_key: "sk-test-123",
+  });
 });
 
 // ---- Parallel adapter (search body / result normalization / extract) ----
