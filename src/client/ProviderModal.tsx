@@ -175,6 +175,7 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
           <IconChevronRightOutline14 size={12} />
         </span>
         <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
+        <span style={{ color: text.tertiary, fontSize: 12 }}>{t("developerOptionsHint")}</span>
       </div>
       {open && (
         <div>
@@ -224,12 +225,21 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
   const { t, p, onChanged, onError } = props;
   const [open, setOpen] = useState(false);
   const keys = p.keys ?? [];
-  const allHealthy = keys.length > 0 && keys.every((k) => k.healthy);
-  const summary = keys.length > 0
-    ? allHealthy
-      ? t("keysConfigured", { n: keys.length })
-      : t("keysSomeIssues", { n: keys.length })
-    : t("notConfigured");
+  const invalidCount = keys.filter((k) => !k.healthy).length;
+  const allHealthy = keys.length > 0 && invalidCount === 0;
+
+  const summaryText = keys.length === 0
+    ? t("notConfigured")
+    : allHealthy
+      ? t("keyReady")
+      : t("keysSomeIssues", { n: invalidCount });
+
+  const summaryColor = keys.length === 0
+    ? text.tertiary
+    : allHealthy
+      ? stateColor.success
+      : stateColor.danger;
+
   const canOpen = p.keyWritable;
 
   return (
@@ -249,7 +259,7 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
           <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: text.secondary }}>{summary}</span>
+          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
           {keys.length === 0 && canOpen && (
             <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setOpen(true); }} style={{ fontSize: 11 }}>
               {t("addKey")}
