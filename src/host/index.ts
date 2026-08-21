@@ -86,6 +86,7 @@ export function apply(ctx: WebToolsContext) {
       defaultProvider: cfg.defaultProvider,
       providerAttemptTimeoutMs: cfg.providerAttemptTimeoutMs,
       fallbackOrder: cfg.fallbackOrder,
+      searchRoutingPolicy: cfg.searchRoutingPolicy,
       providerBaseUrls: cfg.providerBaseUrls,
       enabledProviders: cfg.providerEnabled,
       providerOptions: cfg.providerOptions,

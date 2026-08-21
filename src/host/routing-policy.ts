@@ -27,7 +27,7 @@ export interface SearchRoutingState {
 export function resolveSearchChain(
   baseChain: string[],
   policy: SearchRoutingPolicy,
-  state: SearchRoutingState,
+  state?: SearchRoutingState,
   random: () => number = Math.random,
 ): string[] {
   if (baseChain.length <= 1) return [...baseChain];
@@ -37,8 +37,9 @@ export function resolveSearchChain(
   let offset = 0;
 
   if (policy === "round-robin") {
-    offset = state.nextRoundRobinIndex % baseChain.length;
-    state.nextRoundRobinIndex = (state.nextRoundRobinIndex + 1) % baseChain.length;
+    const st = state ?? { nextRoundRobinIndex: 0 };
+    offset = st.nextRoundRobinIndex % baseChain.length;
+    st.nextRoundRobinIndex = (st.nextRoundRobinIndex + 1) % baseChain.length;
   } else {
     offset = Math.floor(random() * baseChain.length);
   }

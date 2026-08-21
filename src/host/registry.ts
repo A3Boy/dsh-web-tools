@@ -9,6 +9,7 @@
  * @module
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
+import { resolveSearchChain, type SearchRoutingPolicy, type SearchRoutingState } from "./routing-policy.ts";
 import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex, type PoolEntry } from "./pool.ts";
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
@@ -55,6 +56,8 @@ export interface WebToolsRuntimeConfig {
   /** Per-attempt budget for ONE provider call (the DSH tool owns the overall timeout). */
   providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
+  /** Search routing policy — how the runtime picks the starting provider per query. */
+  searchRoutingPolicy?: SearchRoutingPolicy;
   providerBaseUrls: Record<string, string>;
   enabledProviders: Record<string, boolean>;
   providerOptions?: StoredProviderOptions;
@@ -130,6 +133,7 @@ export function createSearchProvider(
   healthStore?: ProviderHealthStore,
 ): WebSearchProviderLike {
   const pools = poolStore ?? createPoolStore(resolveKeys);
+  const routingState: SearchRoutingState = { nextRoundRobinIndex: 0 };
 
   return {
     id: PROVIDER_ID,
@@ -145,10 +149,14 @@ export function createSearchProvider(
     available() {
       const cfg = resolveConfig();
       if (!cfg.enabled) return false;
-      const chain = fallbackChain({
+      const baseChain = fallbackChain({
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
+      const chain = resolveSearchChain(
+        baseChain,
+        cfg.searchRoutingPolicy ?? "ordered",
+      );
       return chain.some((name) => {
         if (cfg.enabledProviders[name] === false) return false;
         return adapterRegistry[name] !== undefined;
@@ -161,10 +169,15 @@ export function createSearchProvider(
       // maxResults is owned by the DSH tool layer (it always passes its own);
       // the plugin does not override it.
       const maxResults = request.maxResults;
-      const chain = fallbackChain({
+      const baseChain = fallbackChain({
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
+      const chain = resolveSearchChain(
+        baseChain,
+        cfg.searchRoutingPolicy ?? "ordered",
+        routingState,
+      );
 
       const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
       let lastError: ProviderError | undefined;
