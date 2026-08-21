@@ -74,15 +74,80 @@ export function QuotaInline(props: { quota?: QuotaView }) {
 }
 
 export function QuotaCard(props: {
-  quota: QuotaView;
+  quota?: QuotaView;
   providerName?: string;
   t: TFunc;
   onRefresh: () => void;
 }) {
   const { quota, providerName, t, onRefresh } = props;
   const [refreshing, setRefreshing] = useState(false);
-  const kind = quotaDisplayKind(quota);
-  if (kind === "unavailable" || kind === "self_hosted") return null;
+
+  const dashboardUrls: Record<string, { label: string; url: string }> = {
+    exa: { label: "前往 Exa 控制台", url: "https://dashboard.exa.ai/billing" },
+    parallel: { label: "前往 Parallel 控制台", url: "https://platform.parallel.ai" },
+    brave: { label: "前往 Brave 控制台", url: "https://api.search.brave.com/app/keys" },
+    tavily: { label: "前往 Tavily 控制台", url: "https://app.tavily.com/home" },
+    firecrawl: { label: "前往 Firecrawl 控制台", url: "https://www.firecrawl.dev/app" },
+    jina: { label: "前往 Jina AI 控制台", url: "https://jina.ai" },
+    you: { label: "前往 You.com 控制台", url: "https://you.com/platform" },
+  };
+  const dash = providerName ? dashboardUrls[providerName] : undefined;
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      onRefresh();
+    } finally {
+      setTimeout(() => setRefreshing(false), 600);
+    }
+  };
+
+  // Fallback card when no quota snapshot exists or for dashboard-only/unsupported providers
+  if (!quota || !quota.supported || quota.source === "dashboard") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>使用统计与额度</span>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            title="刷新状态"
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: refreshing ? "not-allowed" : "pointer",
+              padding: 2,
+              borderRadius: 4,
+              color: text.tertiary,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
+              <IconRefreshOutline16 size={13} />
+            </span>
+          </button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, color: text.secondary }}>
+            {providerName === "parallel" || providerName === "exa" ? "按量计费 · 本地累计消耗 $0.00" : "控制台查询"}
+          </span>
+          {dash && (
+            <a
+              href={dash.url}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 2 }}
+            >
+              <span>{dash.label}</span>
+              <span>↗</span>
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const { main, unit } = formatQuotaNumbers(quota);
   const fraction = quotaFraction(quota);
@@ -101,26 +166,6 @@ export function QuotaCard(props: {
   const ago = quota.fetchedAt !== undefined
     ? (quota.fetchedAt > Date.now() - 60_000 ? "刚刚更新" : `${Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000))} 分钟前`)
     : undefined;
-
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      onRefresh();
-    } finally {
-      setTimeout(() => setRefreshing(false), 600);
-    }
-  };
-
-  const dashboardUrls: Record<string, { label: string; url: string }> = {
-    exa: { label: "前往 Exa 控制台", url: "https://dashboard.exa.ai/billing" },
-    parallel: { label: "前往 Parallel 控制台", url: "https://platform.parallel.ai" },
-    brave: { label: "前往 Brave 控制台", url: "https://api.search.brave.com/app/keys" },
-    tavily: { label: "前往 Tavily 控制台", url: "https://app.tavily.com/home" },
-    firecrawl: { label: "前往 Firecrawl 控制台", url: "https://www.firecrawl.dev/app" },
-    jina: { label: "前往 Jina AI 控制台", url: "https://jina.ai" },
-    you: { label: "前往 You.com 控制台", url: "https://you.com/platform" },
-  };
-  const dash = providerName ? dashboardUrls[providerName] : undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
