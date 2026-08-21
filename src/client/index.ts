@@ -293,7 +293,8 @@ export const zhDict: Record<string, string> = {
   developerEditSave: "保存",
   developerEditCancel: "取消",
   developerParseError: "JSON 格式错误",
-  manage: "管理",
+  prefsDefaultValueHint: "默认：{v}",
+  keyCountLabel: "{n} 个",
   collapse: "收起",
 };
 
@@ -562,6 +563,8 @@ export const enDict: Record<string, string> = {
   developerEditCancel: "Cancel",
   developerParseError: "Invalid JSON",
   manage: "Manage",
+  prefsDefaultValueHint: "Default: {v}",
+  keyCountLabel: "{n} keys",
   collapse: "Collapse",
 };
 

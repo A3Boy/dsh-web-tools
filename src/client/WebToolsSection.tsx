@@ -32,6 +32,8 @@ import {
   providerStatusOf,
   testOutcomeStatus,
   quotaSummary,
+  quotaFraction,
+  quotaTier,
   outcomeLabel,
   resolveUiLanguage,
   translateDict,
@@ -88,21 +90,75 @@ interface SectionProps {
   ui?: UiFace;
 }
 
-/** One provider card in the providers list (click → ProviderModal).
- *  Compact: logo, name, 首选/默认 state, status dot + text, chevron.
- *  No drag, no quota, no rank, no self-hosted label on the card. */
-function ProviderCard(props: {
+/** One compact quota + status display in the provider row.
+ *  Normal: silent (no green dots or 'ready' text); displays honest quota summary + micro progress bar when available.
+ *  Abnormal / Non-ready: displays status dot + issue text. */
+function ProviderRowRight(props: {
+  t: TFunc;
+  status: ProviderStatus;
+  statusText: string;
+  dotState: "done" | "warning" | "error" | "ongoing" | "hollow";
+  statusColor: string;
+  quota?: QuotaView;
+}) {
+  const { t, status, statusText, dotState, statusColor, quota } = props;
+
+  // Abnormal / disabled / unconfigured states speak up with status dot & text.
+  if (status !== "ready") {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
+        {dotState === "hollow" ? (
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
+        ) : (
+          <StateDot state={dotState} size={8} />
+        )}
+        <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
+          {statusText}
+        </span>
+      </span>
+    );
+  }
+
+  // Ready / healthy state: stay quiet, show quota if available.
+  const summary = quotaSummary(t, quota);
+  const fraction = quotaFraction(quota);
+  const tier = quotaTier(fraction);
+  const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : text.tertiary;
+
+  if (!summary && fraction === undefined) {
+    return null;
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "none" }}>
+      {summary && (
+        <span style={{ color: text.secondary, fontSize: 12, whiteSpace: "nowrap" }}>
+          {summary}
+        </span>
+      )}
+      {fraction !== undefined && (
+        <div style={{ width: 64, height: 3, borderRadius: 2, background: surface.layer2, overflow: "hidden", flex: "none" }}>
+          <div style={{ width: `${Math.round(fraction * 100)}%`, height: "100%", background: barColor, transition: "width .2s ease" }} />
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** One provider row inside the unified ProviderGroup list. */
+function ProviderRow(props: {
   t: TFunc;
   p: ProviderView;
   quota?: QuotaView;
   testResult?: TestProviderView;
   /** Whether this provider is in the routing order (default + fallback). */
   inOrder: boolean;
-  /** Show the "首选" badge — only for the first entry in ordered policy. */
+  /** Show the "首选" text — only for the first entry in ordered policy. */
   showPreferred: boolean;
+  isLast: boolean;
   onClick: () => void;
 }) {
-  const { t, p, quota, testResult, inOrder, showPreferred, onClick } = props;
+  const { t, p, quota, testResult, inOrder, showPreferred, isLast, onClick } = props;
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -121,7 +177,6 @@ function ProviderCard(props: {
   return (
     <div
       onClick={onClick}
-      className="wt-provider-row"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
@@ -131,41 +186,43 @@ function ProviderCard(props: {
         gap: 10,
         width: "100%",
         padding: "10px 14px",
-        background: surface.layer1,
-        border: `1px solid ${surface.border}`,
-        borderRadius: 12,
+        background: "transparent",
+        borderBottom: isLast ? "none" : `1px solid ${surface.border}`,
         cursor: "pointer",
         fontFamily: "inherit",
         fontSize: 14,
         color: text.primary,
         textAlign: "left",
         boxSizing: "border-box",
+        transition: "background .12s ease",
       }}
       onMouseEnter={(e) => { e.currentTarget.style.background = surface.hover; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = surface.layer1; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       {PROVIDER_BRAND[p.name] && (
-        <img src={PROVIDER_BRAND[p.name].icon} alt="" width={24} height={24} style={{ borderRadius: 6, flex: "none" }} />
+        <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
       )}
       <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "none" }}>
         {p.label}
       </span>
       {showPreferred && (
-        <span style={{ color: accentText(), fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px", whiteSpace: "nowrap" }}>
+        <span style={{ color: text.tertiary, fontSize: 12, fontWeight: 400, whiteSpace: "nowrap" }}>
           {t("preferredProviderLabel")}
         </span>
       )}
-      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
-        {dotState === "hollow" ? (
-          <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
-        ) : (
-          <StateDot state={dotState} size={8} />
-        )}
-        <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
-          {statusText}
+      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8, flex: "none" }}>
+        <ProviderRowRight
+          t={t}
+          status={status}
+          statusText={statusText}
+          dotState={dotState}
+          statusColor={statusColor}
+          quota={quota}
+        />
+        <span style={{ color: text.tertiary, display: "inline-flex", alignItems: "center" }}>
+          <IconChevronRightOutline14 size={14} />
         </span>
       </span>
-      <IconChevronRightOutline14 size={14} />
     </div>
   );
 }
@@ -486,50 +543,66 @@ export function WebToolsSection(props: SectionProps) {
       )}
 
       {/* 搜索顺序 (compact routing summary row) */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-            padding: "10px 14px",
-            borderRadius: 12,
-            background: surface.layer1,
-            border: `1px solid ${surface.border}`,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary, whiteSpace: "nowrap" }}>
-              {t("routingLabel")}
-            </span>
-            <span style={{ color: text.tertiary }}>·</span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary, whiteSpace: "nowrap" }}>
-              {t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)}
-            </span>
-            <span style={{ color: text.tertiary }}>·</span>
-            <span style={{ fontSize: 12, color: text.tertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {orderedProviders
-                .map((name) => providerOf(name)?.label ?? name)
-                .join((config.searchRoutingPolicy ?? "ordered") === "random" ? (t("save") === "保存" ? "、" : ", ") : " → ")}
-            </span>
-          </div>
-          <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-            {t("routingConfigure")}
-          </Button>
+      <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: text.primary }}>{t("routingLabel")}</h3>
+          <button
+            type="button"
+            onClick={() => setRoutingOpen(true)}
+            title={t("routingConfigure")}
+            aria-label={t("routingConfigure")}
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              padding: 4,
+              borderRadius: 6,
+              color: text.secondary,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = surface.hover; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+          >
+            <IconEditOutline16 size={14} />
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: text.secondary, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ color: text.tertiary }}>{t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)} ·</span>
+          <span>
+            {(() => {
+              const names = orderedProviders.map((name) => providerOf(name)?.label ?? name);
+              const separator = (config.searchRoutingPolicy ?? "ordered") === "random" ? (t("save") === "保存" ? "、" : ", ") : " → ";
+              if (names.length <= 3) {
+                return names.join(separator);
+              }
+              const head = names.slice(0, 3).join(separator);
+              return `${head} · +${names.length - 3}`;
+            })()}
+          </span>
         </div>
       </section>
 
-      {/* Providers: card list */}
+      {/* Providers: unified group container */}
       <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center" }}>
-          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500, color: text.primary }}>{t("providersLabel")}</h3>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: text.primary }}>{t("providersLabel")}</h3>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {renderedProviders.map((p) => {
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            background: surface.layer1,
+            border: `1px solid ${surface.border}`,
+            borderRadius: 12,
+            overflow: "hidden",
+          }}
+        >
+          {renderedProviders.map((p, idx) => {
             const testResult = providerTestResults[p.name];
             return (
-              <ProviderCard
+              <ProviderRow
                 key={p.name}
                 t={t}
                 p={p}
@@ -537,6 +610,7 @@ export function WebToolsSection(props: SectionProps) {
                 testResult={testResult}
                 inOrder={orderedProviders.includes(p.name)}
                 showPreferred={showPreferredFor(p.name)}
+                isLast={idx === renderedProviders.length - 1}
                 onClick={() => setDetailFor(p.name)}
               />
             );

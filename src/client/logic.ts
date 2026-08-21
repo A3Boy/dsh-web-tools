@@ -161,11 +161,11 @@ export function quotaFraction(q: QuotaView | undefined): number | undefined {
   return Math.min(1, Math.max(0, remaining / limit));
 }
 
-/** Bar color tier: ok (≥30%), warn (10–30%), danger (<10%). */
+/** Bar color tier: ok (neutral, ≥20%), warn (5–20%), danger (<5%). */
 export function quotaTier(fraction: number | undefined): "ok" | "warn" | "danger" {
   if (fraction === undefined) return "ok";
-  if (fraction < 0.1) return "danger";
-  if (fraction < 0.3) return "warn";
+  if (fraction < 0.05) return "danger";
+  if (fraction < 0.2) return "warn";
   return "ok";
 }
 

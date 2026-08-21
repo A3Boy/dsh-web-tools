@@ -58,7 +58,7 @@ export declare function quotaSummary(t: TFunc, quota?: QuotaView): string;
  * @returns fraction 0..1, or undefined when no bar should be drawn.
  */
 export declare function quotaFraction(q: QuotaView | undefined): number | undefined;
-/** Bar color tier: ok (≥30%), warn (10–30%), danger (<10%). */
+/** Bar color tier: ok (neutral, ≥20%), warn (5–20%), danger (<5%). */
 export declare function quotaTier(fraction: number | undefined): "ok" | "warn" | "danger";
 /** Human "remaining" label, e.g. "823 / 1,000 credits". */
 export declare function quotaRemainingLabel(t: TFunc, q: QuotaView | undefined): string;

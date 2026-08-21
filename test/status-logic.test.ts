@@ -203,12 +203,12 @@ test("quotaDisplayKind classifies the honest display kinds", () => {
   assert.equal(quotaDisplayKind(undefined), "unavailable");
 });
 
-test("quotaTier thresholds: ok ≥30%, warn 10–30%, danger <10%", () => {
+test("quotaTier thresholds: ok ≥20%, warn 5–20%, danger <5%", () => {
   assert.equal(quotaTier(0.9), "ok");
-  assert.equal(quotaTier(0.3), "ok");
-  assert.equal(quotaTier(0.29), "warn");
-  assert.equal(quotaTier(0.1), "warn");
-  assert.equal(quotaTier(0.09), "danger");
+  assert.equal(quotaTier(0.2), "ok");
+  assert.equal(quotaTier(0.19), "warn");
+  assert.equal(quotaTier(0.05), "warn");
+  assert.equal(quotaTier(0.04), "danger");
   assert.equal(quotaTier(0), "danger");
   assert.equal(quotaTier(undefined), "ok");
 });
