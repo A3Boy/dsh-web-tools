@@ -75,10 +75,11 @@ export function QuotaInline(props: { quota?: QuotaView }) {
 
 export function QuotaCard(props: {
   quota: QuotaView;
+  providerName?: string;
   t: TFunc;
   onRefresh: () => void;
 }) {
-  const { quota, t, onRefresh } = props;
+  const { quota, providerName, t, onRefresh } = props;
   const [refreshing, setRefreshing] = useState(false);
   const kind = quotaDisplayKind(quota);
   if (kind === "unavailable" || kind === "self_hosted") return null;
@@ -92,7 +93,7 @@ export function QuotaCard(props: {
     response_header: "按请求计费 · 已同步",
     api: "按量配额 · 官方同步",
     dashboard: "控制台同步",
-    local_estimate: "本地估算",
+    local_estimate: "本地使用累计",
     self_hosted: "自建部署",
   };
   const sourceName = sourceMap[quota.source] ?? quota.source;
@@ -110,10 +111,26 @@ export function QuotaCard(props: {
     }
   };
 
+  const dashboardUrls: Record<string, { label: string; url: string }> = {
+    exa: { label: "前往 Exa 控制台", url: "https://dashboard.exa.ai/billing" },
+    parallel: { label: "前往 Parallel 控制台", url: "https://platform.parallel.ai" },
+    brave: { label: "前往 Brave 控制台", url: "https://api.search.brave.com/app/keys" },
+    tavily: { label: "前往 Tavily 控制台", url: "https://app.tavily.com/home" },
+    firecrawl: { label: "前往 Firecrawl 控制台", url: "https://www.firecrawl.dev/app" },
+    jina: { label: "前往 Jina AI 控制台", url: "https://jina.ai" },
+    you: { label: "前往 You.com 控制台", url: "https://you.com/platform" },
+  };
+  const dash = providerName ? dashboardUrls[providerName] : undefined;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>额度</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
+            {quota.source === "local_estimate" ? "使用统计" : "额度"}
+          </span>
+          <span style={{ fontSize: 11, color: text.tertiary }}>· {sourceName}</span>
+        </div>
         <button
           type="button"
           onClick={() => void refresh()}
@@ -156,11 +173,23 @@ export function QuotaCard(props: {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: text.tertiary }}>
-        <span>{sourceName}</span>
-        {ago && <span>· {ago}</span>}
-        {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
-          <span>· 消耗: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" ")}</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {ago && <span>{ago}</span>}
+          {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
+            <span>· 消耗: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" ")}</span>
+          )}
+        </div>
+        {dash && (
+          <a
+            href={dash.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}
+          >
+            <span>{dash.label}</span>
+            <span style={{ fontSize: 12 }}>↗</span>
+          </a>
         )}
       </div>
     </div>

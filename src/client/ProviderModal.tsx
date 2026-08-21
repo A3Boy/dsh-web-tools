@@ -469,7 +469,7 @@ export function ProviderModal(props: Props) {
           </SettingsGroup>
 
           {/* Quota */}
-          {quota && <QuotaCard quota={quota} t={t} onRefresh={onRefreshQuota} />}
+          {quota && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} />}
 
           {/* Search Preferences: default uncollapsed flat display */}
           {p.options && p.name !== "searxng" && (
