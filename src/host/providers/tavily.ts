@@ -9,6 +9,15 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
+/**
+ * Build the POST body for Tavily's /extract endpoint.
+ * The `api_key` field is required by Tavily — without it the request returns
+ * HTTP 401 even when the key is correctly configured.
+ */
+export function buildTavilyExtractBody(url: string, apiKey: string): Record<string, unknown> {
+  return { urls: [url], api_key: apiKey };
+}
+
 export const TAVILY_META = {
   name: "tavily",
   label: "Tavily",
@@ -53,7 +62,7 @@ export const TavilyProvider: ProviderAdapter = {
     const res = await fetchWithProxy(TAVILY_EXTRACT_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ urls: [url] }),
+      body: JSON.stringify(buildTavilyExtractBody(url, apiKey)),
       signal,
     });
     throwIfHttp("Tavily", res);
