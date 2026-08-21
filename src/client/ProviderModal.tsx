@@ -412,13 +412,8 @@ export function ProviderModal(props: Props) {
         description={t(`capability.${p.name}`) || ""}
         className="wt-modal-dialog"
         contentClassName="wt-modal-content"
-        footer={
-          <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
-            <Button variant="ghost" onClick={onClose}>{t("close")}</Button>
-          </div>
-        }
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 8 }}>
           {/* Top row: enabled switch on right, abnormal warning if any */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

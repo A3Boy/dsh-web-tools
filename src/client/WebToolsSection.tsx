@@ -104,9 +104,10 @@ function ProviderRow(props: {
   /** Show the "首选" text — only for the first entry in ordered policy. */
   showPreferred: boolean;
   isLast: boolean;
+  onToggle: (enabled: boolean) => void;
   onClick: () => void;
 }) {
-  const { t, p, quota, testResult, inOrder, showPreferred, isLast, onClick } = props;
+  const { t, p, quota, testResult, inOrder, showPreferred, isLast, onToggle, onClick } = props;
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -127,7 +128,7 @@ function ProviderRow(props: {
   ) : undefined;
 
   const trailing = (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
       {status !== "ready" ? (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
           {dotState === "hollow" ? (
@@ -142,6 +143,9 @@ function ProviderRow(props: {
       ) : (
         <QuotaInline quota={quota} />
       )}
+      <div onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center" }}>
+        <Switch checked={p.enabled} onChange={(next) => onToggle(next)} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
+      </div>
     </div>
   );
 
@@ -516,6 +520,7 @@ export function WebToolsSection(props: SectionProps) {
                 inOrder={orderedProviders.includes(p.name)}
                 showPreferred={showPreferredFor(p.name)}
                 isLast={idx === renderedProviders.length - 1}
+                onToggle={(enabled) => toggleProvider(p.name, enabled)}
                 onClick={() => setDetailFor(p.name)}
               />
             );

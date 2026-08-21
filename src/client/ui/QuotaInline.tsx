@@ -89,9 +89,9 @@ export function QuotaCard(props: {
   const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : "var(--dsw-alias-brand-primary)";
 
   const sourceMap: Record<string, string> = {
-    response_header: "响应头",
-    api: "官方 API",
-    dashboard: "控制台",
+    response_header: "按请求计费 · 已同步",
+    api: "按量配额 · 官方同步",
+    dashboard: "控制台同步",
     local_estimate: "本地估算",
     self_hosted: "自建部署",
   };
