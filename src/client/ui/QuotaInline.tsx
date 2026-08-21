@@ -1,5 +1,6 @@
 /**
- * dsh-web-tools — QuotaInline & QuotaCard: unified quota display primitives with tabular numbers.
+ * dsh-web-tools — QuotaInline & QuotaCard: unified quota display primitives
+ * with tabular numbers, i18n, and per-provider dashboard quicklinks.
  * @module
  */
 import { text, surface, state as stateColor } from "../theme.ts";
@@ -7,49 +8,49 @@ import { type QuotaView } from "../api.ts";
 import { quotaFraction, quotaTier, quotaDisplayKind, type TFunc } from "../logic.ts";
 import { Button, IconRefreshOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useState } from "react";
+import { dashboardOf, ExternalLinkIcon } from "../provider-ui-meta.tsx";
 
-export function formatQuotaNumbers(q?: QuotaView): { main: string; unit?: string } {
+export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; unit?: string } {
+  const fmt = (n: number) => n.toLocaleString();
   if (!q || !q.supported) return { main: "" };
   if (q.limit !== undefined && q.limit === 0 && q.remaining === undefined) {
-    return { main: "按量计费" };
+    return { main: t ? t("quotaUnlimited") : "Pay-as-you-go" };
+  }
+  // Local-usage (metered) — Exa / Parallel with request count
+  if (q.source === "local_estimate" && q.unit === "requests" && q.used !== undefined) {
+    const label = t ? t("quotaMetered", { n: q.used }) : `${q.used} local requests`;
+    return { main: label };
   }
   if (q.unit === "usd_cents") {
-    if (q.remaining !== undefined) {
-      return { main: `$${(q.remaining / 100).toFixed(2)}`, unit: "余额" };
-    }
-    if (q.used !== undefined) {
-      return { main: `$${(q.used / 100).toFixed(2)}`, unit: "已消耗" };
-    }
+    const amount = ((q.remaining ?? q.used ?? 0) / 100).toFixed(2);
+    if (q.remaining !== undefined) return { main: `$${amount}` };
+    if (q.used !== undefined) return { main: `$${amount}`, unit: t ? t("quotaUsedLabel") : "used" };
   }
   if (q.unit === "tokens" && q.remaining !== undefined) {
-    if (q.remaining >= 1_000_000) {
-      return { main: `${(q.remaining / 1_000_000).toFixed(2)}M`, unit: "tokens" };
-    }
-    if (q.remaining >= 1_000) {
-      return { main: `${(q.remaining / 1_000).toFixed(1)}k`, unit: "tokens" };
-    }
-    return { main: q.remaining.toLocaleString(), unit: "tokens" };
+    if (q.remaining >= 1_000_000) return { main: `${(q.remaining / 1_000_000).toFixed(2)}M`, unit: "tokens" };
+    if (q.remaining >= 1_000) return { main: `${(q.remaining / 1_000).toFixed(1)}k`, unit: "tokens" };
+    return { main: fmt(q.remaining), unit: "tokens" };
   }
   if (q.unit === "credits" && q.remaining !== undefined) {
-    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${q.limit.toLocaleString()}` : "";
-    return { main: `${q.remaining.toLocaleString()}${lim}`, unit: "积分" };
+    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
+    return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaCreditsUnit") : "credits" };
   }
   if (q.unit === "requests" && q.remaining !== undefined) {
-    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${q.limit.toLocaleString()}` : "";
-    return { main: `${q.remaining.toLocaleString()}${lim}`, unit: "次" };
+    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
+    return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaRequestsUnit") : "" };
   }
   if (q.remaining !== undefined) {
-    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${q.limit.toLocaleString()}` : "";
-    return { main: `${q.remaining.toLocaleString()}${lim}` };
+    const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
+    return { main: `${fmt(q.remaining)}${lim}` };
   }
   return { main: "" };
 }
 
-export function QuotaInline(props: { quota?: QuotaView }) {
-  const { quota } = props;
+export function QuotaInline(props: { quota?: QuotaView; t?: TFunc }) {
+  const { quota, t } = props;
   if (!quota || !quota.supported) return null;
 
-  const { main, unit } = formatQuotaNumbers(quota);
+  const { main, unit } = formatQuotaNumbers(quota, t);
   if (!main) return null;
 
   const fraction = quotaFraction(quota);
@@ -81,17 +82,7 @@ export function QuotaCard(props: {
 }) {
   const { quota, providerName, t, onRefresh } = props;
   const [refreshing, setRefreshing] = useState(false);
-
-  const dashboardUrls: Record<string, { label: string; url: string }> = {
-    exa: { label: "前往 Exa 控制台", url: "https://dashboard.exa.ai/billing" },
-    parallel: { label: "前往 Parallel 控制台", url: "https://platform.parallel.ai" },
-    brave: { label: "前往 Brave 控制台", url: "https://api.search.brave.com/app/keys" },
-    tavily: { label: "前往 Tavily 控制台", url: "https://app.tavily.com/home" },
-    firecrawl: { label: "前往 Firecrawl 控制台", url: "https://www.firecrawl.dev/app" },
-    jina: { label: "前往 Jina AI 控制台", url: "https://jina.ai" },
-    you: { label: "前往 You.com 控制台", url: "https://you.com/platform" },
-  };
-  const dash = providerName ? dashboardUrls[providerName] : undefined;
+  const dash = dashboardOf(providerName);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -102,26 +93,21 @@ export function QuotaCard(props: {
     }
   };
 
-  // Fallback card when no quota snapshot exists or for dashboard-only/unsupported providers
+  // Fallback card when no quota snapshot or for dashboard-only providers
   if (!quota || !quota.supported || quota.source === "dashboard") {
+    const isLocalMetered = providerName === "parallel" || providerName === "exa";
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>使用统计与额度</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>{t("quotaTitle")}</span>
           <button
             type="button"
             onClick={() => void refresh()}
             disabled={refreshing}
-            title="刷新状态"
+            title={t("refreshQuota")}
             style={{
-              background: "transparent",
-              border: "none",
-              cursor: refreshing ? "not-allowed" : "pointer",
-              padding: 2,
-              borderRadius: 4,
-              color: text.tertiary,
-              display: "inline-flex",
-              alignItems: "center",
+              background: "transparent", border: "none", cursor: refreshing ? "not-allowed" : "pointer",
+              padding: 2, borderRadius: 4, color: text.tertiary, display: "inline-flex", alignItems: "center",
             }}
           >
             <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
@@ -131,17 +117,17 @@ export function QuotaCard(props: {
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, color: text.secondary }}>
-            {providerName === "parallel" || providerName === "exa" ? "按量计费 · 本地累计消耗 $0.00" : "控制台查询"}
+            {isLocalMetered ? t("quotaSourceLocalEstimate") : t("quotaSourceDashboard")}
           </span>
           {dash && (
             <a
               href={dash.url}
               target="_blank"
               rel="noreferrer"
-              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 2 }}
+              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}
             >
-              <span>{dash.label}</span>
-              <span>↗</span>
+              <span>{t(dash.labelKey)}</span>
+              <ExternalLinkIcon size={12} />
             </a>
           )}
         </div>
@@ -149,47 +135,38 @@ export function QuotaCard(props: {
     );
   }
 
-  const { main, unit } = formatQuotaNumbers(quota);
+  const { main, unit } = formatQuotaNumbers(quota, t);
   const fraction = quotaFraction(quota);
   const tier = quotaTier(fraction);
   const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : "var(--dsw-alias-brand-primary)";
 
-  const sourceMap: Record<string, string> = {
-    response_header: "按请求计费 · 已同步",
-    api: "按量配额 · 官方同步",
-    dashboard: "控制台同步",
-    local_estimate: "本地使用累计",
-    self_hosted: "自建部署",
-  };
-  const sourceName = sourceMap[quota.source] ?? quota.source;
+  const sourceKey = `quotaSource${quota.source[0].toUpperCase()}${quota.source.slice(1)}` as const;
+  const sourceName = t(sourceKey);
 
   const ago = quota.fetchedAt !== undefined
-    ? (quota.fetchedAt > Date.now() - 60_000 ? "刚刚更新" : `${Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000))} 分钟前`)
+    ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
     : undefined;
+
+  // Local metered snapshot (Exa/Parallel): show count + dashboard link
+  const isLocalMetered = quota.source === "local_estimate" && quota.unit === "requests" && quota.used !== undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {quota.source === "local_estimate" ? "使用统计" : "额度"}
+            {isLocalMetered ? t("quotaLocalTitle") : t("quotaTitle")}
           </span>
-          <span style={{ fontSize: 11, color: text.tertiary }}>· {sourceName}</span>
+          {!isLocalMetered && <span style={{ fontSize: 11, color: text.tertiary }}>· {sourceName}</span>}
         </div>
         <button
           type="button"
           onClick={() => void refresh()}
           disabled={refreshing}
-          title="刷新额度"
+          title={t("refreshQuota")}
           style={{
-            background: "transparent",
-            border: "none",
-            cursor: refreshing ? "not-allowed" : "pointer",
-            padding: 2,
-            borderRadius: 4,
-            color: text.tertiary,
-            display: "inline-flex",
-            alignItems: "center",
+            background: "transparent", border: "none", cursor: refreshing ? "not-allowed" : "pointer",
+            padding: 2, borderRadius: 4, color: text.tertiary, display: "inline-flex", alignItems: "center",
           }}
         >
           <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
@@ -221,8 +198,9 @@ export function QuotaCard(props: {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {ago && <span>{ago}</span>}
+          {isLocalMetered && <span>· {t("quotaSourceLocalEstimate")}</span>}
           {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
-            <span>· 消耗: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" ")}</span>
+            <span>· {t("usage")}: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" ")}</span>
           )}
         </div>
         {dash && (
@@ -230,10 +208,10 @@ export function QuotaCard(props: {
             href={dash.url}
             target="_blank"
             rel="noreferrer"
-            style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}
+            style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
           >
-            <span>{dash.label}</span>
-            <span style={{ fontSize: 12 }}>↗</span>
+            <span>{t(dash.labelKey)}</span>
+            <ExternalLinkIcon size={12} />
           </a>
         )}
       </div>

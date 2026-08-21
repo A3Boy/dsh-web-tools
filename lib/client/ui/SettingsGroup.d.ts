@@ -3,6 +3,7 @@ export declare function SettingsGroup(props: {
     action?: React.ReactNode;
     children: React.ReactNode;
     style?: React.CSSProperties;
+    dividers?: "none" | "inset" | "full";
 }): import("react").JSX.Element;
 export declare function SettingsRow(props: {
     icon?: React.ReactNode;

@@ -55,6 +55,13 @@ export declare function dashboardOnlyQuota(note: string): QuotaSnapshot;
  *  balance — it must ride `used`, never `remaining`, so the UI renders
  *  "已用 / used" and never fabricates a fake "剩余 / remaining" balance. */
 export declare function localEstimateQuota(estimatedUsdCents: number, note: string): QuotaSnapshot;
+/**
+ * A local-usage REQUEST-COUNT snapshot for providers whose actual balance
+ * is only available in their dashboard (Exa, Parallel). Shows the number
+ * of locally-observed searches, not a dollar amount — the audit concluded
+ * that dollar estimates without mode/result-count tracking are misleading.
+ */
+export declare function localUsageQuota(count: number, note: string): QuotaSnapshot;
 /** True when a snapshot says the provider is effectively exhausted. */
 export declare function isExhausted(snapshot: QuotaSnapshot | undefined): boolean;
 /** True when a snapshot is below the given fraction of its limit (router hint). */

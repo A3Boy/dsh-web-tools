@@ -137,6 +137,7 @@ export function quotaSummary(t: TFunc, quota?: QuotaView): string {
   if (q.limit !== undefined && q.limit === 0 && q.remaining === undefined) return t("quotaUnlimited");
   if (q.unit === "credits" && q.remaining !== undefined) return t("quotaCredits", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? q.limit : "?" });
   if (q.unit === "requests" && q.remaining !== undefined) return t("quotaRequests", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? ` / ${q.limit}` : "" });
+  if (q.source === "local_estimate" && q.unit === "requests" && q.used !== undefined) return t("quotaMetered", { n: q.used.toLocaleString() });
   if (q.unit === "usd_cents" && q.used !== undefined) return t("quotaUsd", { amount: (q.used / 100).toFixed(2) });
   if (q.unit === "usd_cents" && q.remaining !== undefined) return t("quotaUsdRemaining", { amount: (q.remaining / 100).toFixed(2) });
   if (q.unit === "tokens" && q.remaining !== undefined) return t("quotaTokens", { n: q.remaining.toLocaleString() });
@@ -185,6 +186,8 @@ export function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string {
     return t("quotaOverPlan", { r: q.remaining.toLocaleString(), l: q.limit.toLocaleString() });
   }
   if (kind === "observed_usage" && q.used !== undefined) {
+    // Local metered usage (Exa/Parallel): count, not a dollar estimate.
+    if (q.unit === "requests") return t("quotaSinceRequests", { n: q.used.toLocaleString() });
     return t("quotaSince", { amount: (q.used / 100).toFixed(2) });
   }
   // rate_limit / balance: the kind already says it; keep the line clean.

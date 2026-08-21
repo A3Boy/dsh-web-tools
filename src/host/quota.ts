@@ -97,6 +97,24 @@ export function localEstimateQuota(estimatedUsdCents: number, note: string): Quo
   };
 }
 
+/**
+ * A local-usage REQUEST-COUNT snapshot for providers whose actual balance
+ * is only available in their dashboard (Exa, Parallel). Shows the number
+ * of locally-observed searches, not a dollar amount — the audit concluded
+ * that dollar estimates without mode/result-count tracking are misleading.
+ */
+export function localUsageQuota(count: number, note: string): QuotaSnapshot {
+  return {
+    supported: true,
+    authoritative: false,
+    unit: "requests",
+    used: count,
+    source: "local_estimate",
+    fetchedAt: Date.now(),
+    note,
+  };
+}
+
 /** True when a snapshot says the provider is effectively exhausted. */
 export function isExhausted(snapshot: QuotaSnapshot | undefined): boolean {
   if (!snapshot?.authoritative) return false;

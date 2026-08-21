@@ -3,10 +3,10 @@
  *
  * Information architecture: a one-level Settings page.
  *   - header row: title + enabled switch
- *   - search order summary + edit entry (RoutingModal)
+ *   - search order summary + "编辑" entry (in-place edit mode: drag to reorder,
+ *     pick the routing policy, add/remove providers — no separate dialog)
  *   - Providers: one unified list surface (row per provider → ProviderModal)
- *   - Test Search (real run through the Host chain, human-readable timeline)
- *   - Advanced: collapsible low-frequency knobs (timeout)
+ *   - More settings: collapsible low-frequency knobs (timeout, test search)
  *
  * Credentials are NEVER shown as plaintext: the page shows masked hints and
  * manages keys one at a time through Host add/remove endpoints; the Host
@@ -17,7 +17,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   IconChevronRightOutline14,
-  IconEditOutline16,
   IconSearchOutline16,
   Input,
   StateDot,
@@ -25,15 +24,12 @@ import {
 import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy } from "./api.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
-import { RoutingModal } from "./RoutingModal.tsx";
 import type { UiFace } from "./registration.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
 import {
   providerStatusOf,
   testOutcomeStatus,
   quotaSummary,
-  quotaFraction,
-  quotaTier,
   outcomeLabel,
   resolveUiLanguage,
   translateDict,
@@ -42,21 +38,22 @@ import {
   type ProviderStatus,
 } from "./logic.ts";
 import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
-import { SoftChip } from "./ui/SoftChip.tsx";
 import { QuotaInline } from "./ui/QuotaInline.tsx";
+import { SegmentedControl } from "./ui/SegmentedControl.tsx";
 
 export type { TFunc, ProviderStatus };
 export { providerStatusOf, quotaSummary, outcomeLabel };
 
 /** Local switch (DSH primitives ship no toggle; role=switch keeps it accessible). */
-export function Switch(props: { checked: boolean; onChange: (next: boolean) => void; label: string }) {
-  const { checked, onChange, label } = props;
+export function Switch(props: { checked: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean }) {
+  const { checked, onChange, label, disabled } = props;
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       style={{
         position: "relative",
@@ -65,9 +62,10 @@ export function Switch(props: { checked: boolean; onChange: (next: boolean) => v
         borderRadius: 10,
         border: "1px solid " + (checked ? "transparent" : surface.border),
         background: checked ? buttonColor.primaryFill : surface.layer2,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         flex: "none",
         padding: 0,
+        opacity: disabled ? 0.6 : 1,
         transition: "background .15s ease",
       }}
     >
@@ -118,6 +116,8 @@ function ProviderRow(props: {
   /** Show the "首选" text — only for the first entry in ordered policy. */
   showPreferred: boolean;
   isLast: boolean;
+  /** In-place ordering edit mode (grip + remove), replacing the drag handle. */
+  editMode?: boolean;
   isDragging?: boolean;
   isOver?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
@@ -125,19 +125,20 @@ function ProviderRow(props: {
   onDragLeave?: () => void;
   onDrop?: (e: React.DragEvent) => void;
   onDragEnd?: () => void;
-  onToggle: (enabled: boolean) => void;
+  onRemove?: () => void;
+  onAdd?: () => void;
   onClick: () => void;
 }) {
   const {
     t, p, quota, testResult, inOrder, showPreferred, isLast,
-    isDragging, isOver,
-    onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
-    onToggle, onClick,
+    editMode, isDragging, isOver,
+    onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onRemove, onAdd,
+    onClick,
   } = props;
+  // Status: "ready" is the quiet default — only anomalies get a label.
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
-    ready: t("ready"),
     "rate-limited": t("rateLimited"),
     "auth-error": t("authError"),
     "unreachable": t("unreachable"),
@@ -145,21 +146,23 @@ function ProviderRow(props: {
     "disabled": t("disabled"),
     "not-in-order": t("notInOrder"),
   }[status];
-  const dotState: "done" | "warning" | "error" | "ongoing" | "hollow" =
-    status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
-  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
+  const dotState: "warning" | "error" | "hollow" =
+    status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
+  const statusColor = status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
 
   const brandIcon = (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span
-        draggable
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        title="拖动调整顺序"
-        style={{ display: "inline-flex", alignItems: "center", padding: "2px 0", cursor: "grab" }}
-      >
-        <GripIcon />
-      </span>
+      {editMode && (
+        <span
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          title={t("editOrder")}
+          style={{ display: "inline-flex", alignItems: "center", padding: "2px 0", cursor: "grab" }}
+        >
+          <GripIcon />
+        </span>
+      )}
       {PROVIDER_BRAND[p.name] && (
         <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
       )}
@@ -180,11 +183,18 @@ function ProviderRow(props: {
           </span>
         </span>
       ) : (
-        <QuotaInline quota={quota} />
+        <QuotaInline quota={quota} t={t} />
       )}
-      <div onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center" }}>
-        <Switch checked={p.enabled} onChange={(next) => onToggle(next)} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
-      </div>
+      {editMode && inOrder && (
+        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-label={t("removeFromChain")} style={{ padding: "0 6px", height: 24, color: stateColor.danger }}>
+          {t("removeFromChain")}
+        </Button>
+      )}
+      {editMode && !inOrder && (
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onAdd?.(); }} style={{ padding: "0 8px", height: 24 }}>
+          {t("addToChain")}
+        </Button>
+      )}
     </div>
   );
 
@@ -202,12 +212,12 @@ function ProviderRow(props: {
       <SettingsRow
         icon={brandIcon}
         title={p.label}
-        subtitle={showPreferred ? <SoftChip>{t("preferredProviderLabel")}</SoftChip> : undefined}
+        subtitle={showPreferred ? <span style={{ color: text.tertiary, fontSize: 12 }}>{t("preferredProviderLabel")}</span> : undefined}
         trailing={trailing}
-        chevron
+        chevron={!editMode}
         isLast={isLast}
         insetDivider
-        onClick={onClick}
+        onClick={!editMode ? onClick : undefined}
       />
     </div>
   );
@@ -353,7 +363,7 @@ export function WebToolsSection(props: SectionProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [detailFor, setDetailFor] = useState<string | null>(null);
-  const [routingOpen, setRoutingOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
   const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
@@ -451,7 +461,6 @@ export function WebToolsSection(props: SectionProps) {
     ...config.fallbackOrder.filter((n) => n !== config.defaultProvider),
   ];
   const providerOf = (name: string) => config.providers.find((p) => p.name === name);
-  const enabledNames = new Set(config.providers.filter((p) => p.enabled).map((p) => p.name));
   const saveOrder = (ordered: string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
     void api.routingSet(policy, next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
@@ -502,9 +511,7 @@ export function WebToolsSection(props: SectionProps) {
           <p style={{ margin: "2px 0 0", fontSize: 14, lineHeight: "22px", color: text.tertiary }}>{t("tagline")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Switch checked={config.enabled} onChange={setEnabled} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
-          {saving && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
-          {saved && !saving && <span style={{ color: stateColor.success, fontSize: 12 }}>{t("saved")}</span>}
+          <Switch checked={config.enabled} onChange={setEnabled} disabled={saving} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
         </div>
       </div>
 
@@ -531,7 +538,7 @@ export function WebToolsSection(props: SectionProps) {
         </div>
       )}
 
-      {/* 搜索顺序 (clickable SettingsRow) */}
+      {/* 搜索顺序 summary + Edit (in-place ordering edit mode) */}
       <section>
         <SettingsGroup>
           <SettingsRow
@@ -550,20 +557,46 @@ export function WebToolsSection(props: SectionProps) {
                 })()}
               </span>
             }
-            chevron
+            trailing={
+              <Button size="sm" variant={editingOrder ? "primary" : "outline"} onClick={() => setEditingOrder(!editingOrder)}>
+                {editingOrder ? t("done") : t("editOrder")}
+              </Button>
+            }
             isLast
-            onClick={() => setRoutingOpen(true)}
           />
         </SettingsGroup>
       </section>
 
+      {/* Ordering edit mode: policy + in-place drag/reorder + add/remove */}
+      {editingOrder && (
+        <section>
+          <SettingsGroup title={t("routingPolicySection")}>
+            <div style={{ padding: "10px 14px" }}>
+              <SegmentedControl
+                style={{ display: "flex", width: "100%" }}
+                options={[
+                  { value: "ordered", label: t("routingPolicy.ordered") },
+                  { value: "round-robin", label: t("routingPolicy.round-robin") },
+                  { value: "random", label: t("routingPolicy.random") },
+                ]}
+                value={config.searchRoutingPolicy ?? "ordered"}
+                onChange={(v) => saveOrder(orderedProviders, v as SearchRoutingPolicy)}
+              />
+              <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
+                {t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}
+              </div>
+            </div>
+          </SettingsGroup>
+        </section>
+      )}
+
       {/* Providers: unified group container */}
       <section>
-        <SettingsGroup title={t("providersLabel")}>
+        <SettingsGroup title={t("providersLabel")} dividers="inset">
           {renderedProviders.map((p, idx) => {
             const testResult = providerTestResults[p.name];
-            const isDragging = dragProvider.current === p.name;
-            const isOver = overProvider === p.name && dragProvider.current !== null && dragProvider.current !== p.name;
+            const isDragging = editingOrder && dragProvider.current === p.name;
+            const isOver = editingOrder && overProvider === p.name && dragProvider.current !== null && dragProvider.current !== p.name;
             return (
               <ProviderRow
                 key={p.name}
@@ -574,6 +607,7 @@ export function WebToolsSection(props: SectionProps) {
                 inOrder={orderedProviders.includes(p.name)}
                 showPreferred={showPreferredFor(p.name)}
                 isLast={idx === renderedProviders.length - 1}
+                editMode={editingOrder}
                 isDragging={isDragging}
                 isOver={isOver}
                 onDragStart={(e) => {
@@ -614,7 +648,13 @@ export function WebToolsSection(props: SectionProps) {
                   dragProvider.current = null;
                   setOverProvider(null);
                 }}
-                onToggle={(enabled) => toggleProvider(p.name, enabled)}
+                onRemove={() => {
+                  const next = orderedProviders.filter((n) => n !== p.name);
+                  if (next.length > 0) saveOrder(next);
+                }}
+                onAdd={() => {
+                  if (!orderedProviders.includes(p.name)) saveOrder([...orderedProviders, p.name]);
+                }}
                 onClick={() => setDetailFor(p.name)}
               />
             );
@@ -700,18 +740,6 @@ export function WebToolsSection(props: SectionProps) {
             setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; });
             await load();
           }}
-        />
-      )}
-
-      {/* Routing dialog */}
-      {routingOpen && (
-        <RoutingModal
-          t={t}
-          providers={config.providers}
-          ordered={orderedProviders}
-          currentPolicy={config.searchRoutingPolicy ?? "ordered"}
-          onClose={() => setRoutingOpen(false)}
-          onSave={saveOrder}
         />
       )}
     </div>

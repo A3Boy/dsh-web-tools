@@ -11,7 +11,7 @@ import { SearxngProvider } from "./searxng.ts";
 import { TavilyProvider } from "./tavily.ts";
 import { YouProvider, youQuota } from "./you.ts";
 import type { QuotaProvider, QuotaSnapshot } from "../quota.ts";
-import { dashboardOnlyQuota, localEstimateQuota, selfHostedQuota } from "../quota.ts";
+import { dashboardOnlyQuota, localUsageQuota, selfHostedQuota } from "../quota.ts";
 import { tavilyQuota } from "./tavily-quota.ts";
 import { firecrawlQuota } from "./firecrawl-quota.ts";
 import type { ProviderAdapter, ProviderError } from "./types.ts";
@@ -61,7 +61,7 @@ export async function quotaOf(
   providerName: string,
   apiKey: string,
   baseUrl: string | undefined,
-  localUsdCents?: number,
+  localCount?: number,
   signal?: AbortSignal,
 ): Promise<QuotaSnapshot> {
   const p = getProvider(providerName);
@@ -70,8 +70,8 @@ export async function quotaOf(
     return p.quota(apiKey, baseUrl, signal);
   }
   if (p.needsBaseUrl) return selfHostedQuota("Self-hosted — no platform quota");
-  if (localUsdCents !== undefined) {
-    return localEstimateQuota(localUsdCents, "Estimated local usage — official balance lives in the provider dashboard");
+  if (localCount !== undefined && localCount > 0) {
+    return localUsageQuota(localCount, "Estimated local usage — official balance lives in the provider dashboard");
   }
   return dashboardOnlyQuota("Balance is available in the provider dashboard only");
 }

@@ -9,6 +9,8 @@ interface Props<T extends string = string> {
     onChange: (value: T) => void;
     disabled?: boolean;
     size?: "sm" | "md";
+    /** Optional inline style override (e.g. width: "100%"). */
+    style?: React.CSSProperties;
 }
 export declare function SegmentedControl<T extends string = string>(props: Props<T>): import("react").JSX.Element;
 export {};

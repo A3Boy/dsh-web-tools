@@ -16,10 +16,12 @@ interface Props<T extends string = string> {
   onChange: (value: T) => void;
   disabled?: boolean;
   size?: "sm" | "md";
+  /** Optional inline style override (e.g. width: "100%"). */
+  style?: React.CSSProperties;
 }
 
 export function SegmentedControl<T extends string = string>(props: Props<T>) {
-  const { options, value, onChange, disabled, size = "md" } = props;
+  const { options, value, onChange, disabled, size = "md", style } = props;
   const isSm = size === "sm";
 
   return (
@@ -34,6 +36,7 @@ export function SegmentedControl<T extends string = string>(props: Props<T>) {
         boxSizing: "border-box",
         maxWidth: "100%",
         overflowX: "auto",
+        ...style,
       }}
     >
       {options.map((opt) => {

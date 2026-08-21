@@ -14,6 +14,8 @@ import { text, surface, state as stateColor } from "../theme.ts";
 import { ChoiceCard } from "./ChoiceCard.tsx";
 import { formatProviderOptionsSummary } from "../logic.ts";
 import { Switch } from "../WebToolsSection.tsx";
+import { SegmentedControl } from "../ui/SegmentedControl.tsx";
+import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES } from "./contracts.ts";
 
 type TFunc = (key: string, ...args: unknown[]) => string;
 
@@ -57,48 +59,6 @@ function Pill(props: { t: TFunc; kind: "default" | "adjusted" | "unsaved" | "non
     >
       {label}
     </span>
-  );
-}
-
-function Segmented(props: {
-  options: Array<{ value: string; label: string; title?: string }>;
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const { options, value, onChange, disabled } = props;
-  return (
-    <div role="radiogroup" style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-      {options.map((o) => {
-        const selected = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            disabled={disabled}
-            title={o.title}
-            onClick={() => onChange(o.value)}
-            style={{
-              padding: "5px 12px",
-              fontSize: 12,
-              fontWeight: selected ? 600 : 500,
-              borderRadius: 8,
-              cursor: disabled ? "not-allowed" : "pointer",
-              border: `1px solid ${selected ? "var(--dsw-alias-brand-primary)" : surface.border}`,
-              background: selected ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent)" : surface.layer2,
-              color: selected ? "var(--dsw-alias-label-primary)" : text.secondary,
-              fontFamily: "inherit",
-              outline: "none",
-              transition: "all .12s ease",
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -188,20 +148,13 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
   };
 
   const handleCancel = () => { setDraft({ ...savedOverrides }); setMsg(null); };
-  const handleResetToDefaults = async () => {
-    setSaving(true);
+  // Transactional restore: "恢复默认" only clears the DRAFT — nothing is
+  // written to the Host until the user presses 保存. This keeps the restore
+  // and the regular edit on the same interaction model (draft → save) and
+  // makes the action undoable by pressing 取消.
+  const handleResetToDefaults = () => {
+    setDraft({});
     setMsg(null);
-    try {
-      const res = await api.providerOptionsReset(p.name);
-      setDraft({});
-      await onConfigChanged();
-      setMsg({ text: t("prefsRestored"), tone: "success" });
-      window.setTimeout(() => setMsg(null), 2000);
-    } catch {
-      setMsg({ text: t("prefsRestoreFailed"), tone: "error" });
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -252,7 +205,7 @@ function ProviderControls(props: {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsExaModeLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsExaAuto") },
                 { value: "fast", label: t("prefsFast") },
@@ -268,7 +221,7 @@ function ProviderControls(props: {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsExaFreshnessLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsFreshnessAuto") },
                 { value: "live", label: t("prefsFreshnessLive") },
@@ -308,7 +261,7 @@ function ProviderControls(props: {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsTavilyDepthLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               disabled={autoParams}
               options={[
                 { value: "basic", label: t("prefsTavilyBasic") },
@@ -334,17 +287,19 @@ function ProviderControls(props: {
             </span>
           </label>
           <AdvancedDelay t={t}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <SectionLabel>{t("prefsTavilyChunksPerSource")}</SectionLabel>
-              <Segmented
-                options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }]}
-                value={typeof draft.chunksPerSource === "number" ? String(draft.chunksPerSource) : "auto"}
-                onChange={(v) => { if (v === "auto") setValue("chunksPerSource", undefined, undefined); else setValue("chunksPerSource", Number(v), undefined); }}
-              />
-            </div>
+            {tavilyChunksVisible(depth, autoParams) && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <SectionLabel>{t("prefsTavilyChunksPerSource")}</SectionLabel>
+                <SegmentedControl
+                  options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }]}
+                  value={typeof draft.chunksPerSource === "number" ? String(draft.chunksPerSource) : "auto"}
+                  onChange={(v) => { if (v === "auto") setValue("chunksPerSource", undefined, undefined); else setValue("chunksPerSource", Number(v), undefined); }}
+                />
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsTavilyExtractDepth")}</SectionLabel>
-              <Segmented
+              <SegmentedControl
                 options={[{ value: "basic", label: t("prefsExtractBasic") }, { value: "advanced", label: t("prefsExtractAdvanced") }]}
                 value={String(raw("fetchExtractDepth", "basic"))}
                 onChange={(v) => setValue("fetchExtractDepth", v, "basic")}
@@ -364,7 +319,7 @@ function ProviderControls(props: {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsBraveModeLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsBraveAuto") },
                 { value: "llm-context", label: t("prefsBraveLlmContext") },
@@ -381,12 +336,12 @@ function ProviderControls(props: {
           <AdvancedDelay t={t}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsBraveThreshold")}</SectionLabel>
-              <Segmented
+              <SegmentedControl
                 options={[
                   { value: "balanced", label: t("prefsBraveThresholdBalanced") },
                   { value: "strict", label: t("prefsBraveThresholdStrict") },
                   { value: "lenient", label: t("prefsBraveThresholdLenient") },
-                  { value: "off", label: t("prefsBraveThresholdOff") },
+                  { value: "disabled", label: t("prefsBraveThresholdOff") },
                 ]}
                 value={String(raw("contextThresholdMode", "balanced"))}
                 onChange={(v) => setValue("contextThresholdMode", v, "balanced")}
@@ -394,8 +349,8 @@ function ProviderControls(props: {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsBraveTokenBudget")}</SectionLabel>
-              <Segmented
-                options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "4000", label: "4K" }, { value: "8000", label: "8K" }, { value: "16000", label: "16K" }]}
+              <SegmentedControl
+                options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "4000", label: "4K" }, { value: "8000", label: "8K" }, { value: "16000", label: "16K" }, { value: "32000", label: "32K" }]}
                 value={typeof draft.contextTokenBudget === "number" ? String(draft.contextTokenBudget) : "auto"}
                 onChange={(v) => { if (v === "auto") setValue("contextTokenBudget", undefined, undefined); else setValue("contextTokenBudget", Number(v), undefined); }}
               />
@@ -414,7 +369,7 @@ function ProviderControls(props: {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsYouResultsLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "highlights", label: t("prefsYouHighlights") },
                 { value: "none", label: t("prefsYouSummary") },
@@ -461,7 +416,7 @@ function ProviderControls(props: {
           </label>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsPageCache")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsFreshnessAuto") },
                 { value: "live", label: t("prefsFreshnessLive") },
@@ -484,31 +439,48 @@ function ProviderControls(props: {
     // -------------------------------------------------------------- Parallel
     case "parallel": {
       const mode = String(raw("mode", "advanced"));
-      const isCustomMode = mode !== "advanced";
-      const desc = mode === "basic" ? t("prefsParallelBasicDesc") : mode === "fast" ? t("prefsParallelFastDesc") : mode === "turbo" ? t("prefsParallelTurboDesc") : t("prefsParallelAdvancedDesc");
+      const isExperimental = PARALLEL_EXPERIMENTAL_MODES.includes(mode as (typeof PARALLEL_EXPERIMENTAL_MODES)[number]);
+      const primaryMode = isExperimental ? "advanced" : mode;
+      const expMode: string = isExperimental ? mode : "off";
+      const desc = mode === "basic"
+        ? t("prefsParallelBasicDesc")
+        : isExperimental
+          ? t("prefsParallelExperimentalDesc")
+          : t("prefsParallelAdvancedDesc");
       return (
         <>
+          {isExperimental && (
+            <div style={{ fontSize: 12, color: stateColor.warning, padding: "6px 10px", borderRadius: 8, background: surface.layer2, border: `1px solid ${stateColor.warning}55` }}>
+              {t("prefsParallelExperimentalNote")}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsParallelQualityLabel")}</SectionLabel>
-            <Segmented
-              options={[
-                { value: "advanced", label: t("prefsParallelAdvanced") },
-                { value: "basic", label: t("prefsParallelBasic") },
-                { value: "fast", label: t("prefsParallelFast") },
-                { value: "turbo", label: t("prefsParallelTurbo") },
-              ]}
-              value={mode}
+            <SegmentedControl
+              options={PARALLEL_PRIMARY_MODES.map((m) => ({ value: m, label: m === "advanced" ? t("prefsParallelAdvanced") : t("prefsParallelBasic") }))}
+              value={primaryMode}
               onChange={(v) => setValue("mode", v, "advanced")}
             />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {isCustomMode && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsParallelAdvanced") })}</span>}
+              {mode !== "advanced" && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsParallelAdvanced") })}</span>}
             </div>
           </div>
           <AdvancedDelay t={t}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <SectionLabel>{t("prefsParallelExperimental")}</SectionLabel>
+              <SegmentedControl
+                options={[
+                  { value: "off", label: t("prefsParallelExperimentalOff") },
+                  ...PARALLEL_EXPERIMENTAL_MODES.map((m) => ({ value: m, label: m === "fast" ? t("prefsParallelFast") : t("prefsParallelTurbo") })),
+                ]}
+                value={expMode}
+                onChange={(v) => setValue("mode", v === "off" ? "advanced" : v, "advanced")}
+              />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsParallelCharsLabel")}</SectionLabel>
-              <Segmented
+              <SegmentedControl
                 options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "10000", label: t("prefsParallelCharsCompact") }, { value: "25000", label: t("prefsParallelCharsStandard") }, { value: "50000", label: t("prefsParallelCharsMore") }]}
                 value={typeof draft.maxCharsTotal === "number" ? String(draft.maxCharsTotal) : "auto"}
                 onChange={(v) => { if (v === "auto") setValue("maxCharsTotal", undefined, undefined); else setValue("maxCharsTotal", Number(v), undefined); }}
@@ -531,7 +503,7 @@ function ProviderControls(props: {
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsJinaModeLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsJinaModeAuto") },
                 { value: "curl", label: t("prefsJinaModeDirect") },
@@ -554,7 +526,7 @@ function ProviderControls(props: {
           </label>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsJinaCacheLabel")}</SectionLabel>
-            <Segmented
+            <SegmentedControl
               options={[
                 { value: "auto", label: t("prefsJinaCacheAuto") },
                 { value: "live", label: t("prefsJinaCacheLive") },

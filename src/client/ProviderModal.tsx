@@ -47,7 +47,6 @@ function quotaSourceLabel(t: TFunc, source?: string): string {
  *  Host's sanitize gate). */
 function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: () => void }) {
   const { t, p, onConfigChanged } = props;
-  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [parseError, setParseError] = useState("");
@@ -108,62 +107,51 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
 
   return (
     <div style={{ padding: "10px 14px" }}>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none" }}
-      >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
+          <span style={{ fontSize: 11, color: text.tertiary }}>{t("developerOptionsHint")}</span>
         </div>
-        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
-          <IconChevronRightOutline14 size={14} />
-        </span>
       </div>
-      {open && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEffective")}</div>
-          <pre style={jsonBox}>{JSON.stringify(effective, null, 2)}</pre>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-            <span style={{ fontSize: 11, color: text.tertiary }}>{t("developerOverrides")}</span>
-            <span style={{ marginLeft: "auto" }}>
-              {editing ? (
-                <>
-                  <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>{t("developerEditCancel")}</Button>
-                  <Button size="sm" variant="primary" onClick={() => void saveEdit()} disabled={saving}>{t("developerEditSave")}</Button>
-                </>
-              ) : (
-                <Button size="sm" variant="outline" onClick={startEdit}>{t("developerEdit")}</Button>
-              )}
-            </span>
-          </div>
-          {editing ? (
-            <>
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                rows={6}
-                spellCheck={false}
-                style={{
-                  ...jsonBox,
-                  resize: "vertical",
-                  outline: "none",
-                  color: text.primary,
-                }}
-              />
-              <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEditHint")}</div>
-            </>
-          ) : hasOverrides ? (
-            <pre style={jsonBox}>{JSON.stringify(overrides, null, 2)}</pre>
-          ) : (
-            <div style={{ fontSize: 12, color: text.tertiary, marginTop: 6 }}>{t("developerNoOverrides")}</div>
-          )}
-          {parseError && <div style={{ fontSize: 12, color: stateColor.danger, marginTop: 6 }}>{parseError}</div>}
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEffective")}</div>
+        <pre style={jsonBox}>{JSON.stringify(effective, null, 2)}</pre>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+          <span style={{ fontSize: 11, color: text.tertiary }}>{t("developerOverrides")}</span>
+          <span style={{ marginLeft: "auto" }}>
+            {editing ? (
+              <>
+                <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>{t("developerEditCancel")}</Button>
+                <Button size="sm" variant="primary" onClick={() => void saveEdit()} disabled={saving}>{t("developerEditSave")}</Button>
+              </>
+            ) : (
+              <Button size="sm" variant="outline" onClick={startEdit}>{t("developerEdit")}</Button>
+            )}
+          </span>
         </div>
-      )}
+        {editing ? (
+          <>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={6}
+              spellCheck={false}
+              style={{
+                ...jsonBox,
+                resize: "vertical",
+                outline: "none",
+                color: text.primary,
+              }}
+            />
+            <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEditHint")}</div>
+          </>
+        ) : hasOverrides ? (
+          <pre style={jsonBox}>{JSON.stringify(overrides, null, 2)}</pre>
+        ) : (
+          <div style={{ fontSize: 12, color: text.tertiary, marginTop: 6 }}>{t("developerNoOverrides")}</div>
+        )}
+        {parseError && <div style={{ fontSize: 12, color: stateColor.danger, marginTop: 6 }}>{parseError}</div>}
+      </div>
     </div>
   );
 }
@@ -255,19 +243,21 @@ function CredentialList(props: {
           <span style={{ fontFamily: "var(--ds-font-family-code, ui-monospace, Menlo, Consolas, monospace)", color: text.primary, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {k.hint}
           </span>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: k.healthy ? stateColor.success : stateColor.danger, whiteSpace: "nowrap" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: k.healthy ? stateColor.success : stateColor.danger }} />
-            {k.healthy ? t("keyReady") : t("keyAuthError")}
-          </span>
+          {!k.healthy && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: stateColor.danger, whiteSpace: "nowrap" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: stateColor.danger }} />
+              {t("keyAuthError")}
+            </span>
+          )}
           <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
             {confirmKeyId === k.id ? (
               <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: surface.layer2, padding: "2px 6px", borderRadius: 6, border: `1px solid ${surface.border}` }}>
-                <span style={{ fontSize: 11, color: text.secondary }}>确认删除?</span>
+                <span style={{ fontSize: 11, color: text.secondary }}>{t("confirmDelete")}</span>
                 <Button size="sm" variant="ghost" onClick={() => void removeKey(k.id)} disabled={busyKey === k.id} style={{ color: stateColor.danger, padding: "0 4px", height: 20 }}>
-                  删除
+                  {t("deleteLabel")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setConfirmKeyId(null)} style={{ padding: "0 4px", height: 20 }}>
-                  取消
+                  {t("cancel")}
                 </Button>
               </div>
             ) : (
@@ -297,7 +287,7 @@ function CredentialList(props: {
         <div style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
           <StateDot state={testResult.ok ? "done" : "error"} size={8} />
           {testResult.ok
-            ? `${t("testOk")} · 延迟 ${(testResult.latencyMs).toFixed(0)}ms · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
+            ? `${t("testOk")} · ${t("testLatencySec", { s: (testResult.latencyMs / 1000).toFixed(2) })} · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
             : `${t("testFail")}: ${testResult.error?.message ?? ""}`}
         </div>
       )}
@@ -384,6 +374,7 @@ export function ProviderModal(props: Props) {
   const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
   const selfHosted = p.name === "searxng";
   const [refreshing, setRefreshing] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const brand = PROVIDER_BRAND[p.name];
 
@@ -414,7 +405,7 @@ export function ProviderModal(props: Props) {
         contentClassName="wt-modal-content"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 8 }}>
-          {/* Header row: Brand logo + Capability tag + Switch */}
+          {/* Header row: Brand logo + Capability tag (+ preferred) + Switch */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 0 2px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {brand && (
@@ -427,7 +418,7 @@ export function ProviderModal(props: Props) {
                 />
               )}
               <span style={{ fontSize: 13, color: text.secondary }}>{t(`capability.${p.name}`) || ""}</span>
-              {showPreferred && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)", color: "var(--dsw-alias-brand-primary)", fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
+              {showPreferred && <span style={{ fontSize: 11, color: text.tertiary, fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {status !== "ready" && (
@@ -444,8 +435,8 @@ export function ProviderModal(props: Props) {
             </div>
           </div>
 
-          {/* Credentials / Service URL */}
-          <SettingsGroup>
+          {/* 账户与状态: credentials + quota (rich panel) + connection settings */}
+          <SettingsGroup title={t("accountTitle")} dividers="none">
             {!selfHosted && (
               <CredentialDisclosure
                 t={t}
@@ -457,6 +448,7 @@ export function ProviderModal(props: Props) {
                 testResult={testResult}
               />
             )}
+            {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} />}
             {(selfHosted || p.baseUrl !== undefined) && (
               <ConnectionSettingsDisclosure
                 t={t}
@@ -468,21 +460,26 @@ export function ProviderModal(props: Props) {
             )}
           </SettingsGroup>
 
-          {/* Quota */}
-          {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} />}
-
-          {/* Search Preferences: default uncollapsed flat display */}
+          {/* 搜索与读取: provider-native preferences (flat, no nested collapses) */}
           {p.options && p.name !== "searxng" && (
-            <SettingsGroup title={t("prefsTitle")}>
+            <SettingsGroup title={t("searchReadTitle")} dividers="none">
               <div style={{ padding: "12px 14px" }}>
                 <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
               </div>
             </SettingsGroup>
           )}
 
-          {/* Developer / Diagnostics options */}
-          <SettingsGroup>
-            <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
+          {/* 高级设置: developer-facing diagnostics, explicit collapse */}
+          <SettingsGroup dividers="none">
+            <SettingsRow
+              title={t("advanced")}
+              chevron
+              isLast
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+            />
+            {advancedOpen && (
+              <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
+            )}
           </SettingsGroup>
 
           {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
