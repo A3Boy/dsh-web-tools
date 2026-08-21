@@ -69,5 +69,6 @@ export declare function outcomeLabel(t: TFunc, outcome: string): string;
 /**
  * Format a human-friendly summary of the currently resolved provider execution
  * options for the collapsed Search Experience section.
+ * Accepts optional t() for i18n; falls back to Chinese when no t is provided.
  */
-export declare function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined): string;
+export declare function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined, t?: (key: string) => string): string;

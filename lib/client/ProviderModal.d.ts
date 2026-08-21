@@ -6,7 +6,8 @@ interface Props {
     quota?: QuotaView;
     testResult?: TestProviderView;
     busy: boolean;
-    isDefault: boolean;
+    /** Show the "首选" badge — only when the routing policy is "ordered". */
+    showPreferred: boolean;
     inChain: boolean;
     onClose: () => void;
     onToggle: (enabled: boolean) => void;

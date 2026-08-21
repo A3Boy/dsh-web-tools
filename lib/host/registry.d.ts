@@ -1,3 +1,4 @@
+import { type SearchRoutingPolicy } from "./routing-policy.ts";
 import { type PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
@@ -53,6 +54,8 @@ export interface WebToolsRuntimeConfig {
     /** Per-attempt budget for ONE provider call (the DSH tool owns the overall timeout). */
     providerAttemptTimeoutMs: number;
     fallbackOrder: string[];
+    /** Search routing policy — how the runtime picks the starting provider per query. */
+    searchRoutingPolicy?: SearchRoutingPolicy;
     providerBaseUrls: Record<string, string>;
     enabledProviders: Record<string, boolean>;
     providerOptions?: StoredProviderOptions;

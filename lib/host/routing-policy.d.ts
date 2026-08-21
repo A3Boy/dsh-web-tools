@@ -21,4 +21,4 @@ export interface SearchRoutingState {
  * Rotate the base chain according to the current policy.
  * Returns a new array — the original is never mutated.
  */
-export declare function resolveSearchChain(baseChain: string[], policy: SearchRoutingPolicy, state: SearchRoutingState, random?: () => number): string[];
+export declare function resolveSearchChain(baseChain: string[], policy: SearchRoutingPolicy, state?: SearchRoutingState, random?: () => number): string[];
