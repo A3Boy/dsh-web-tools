@@ -241,6 +241,8 @@ function CredentialList(props: {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const keys = p.keys ?? [];
 
+  const [confirmKeyId, setConfirmKeyId] = useState<string | null>(null);
+
   const addKey = async () => {
     const value = draft.trim();
     if (!value) return;
@@ -257,6 +259,7 @@ function CredentialList(props: {
     setBusyKey(keyId);
     try {
       await api.credentialsRemoveKey(p.name, keyId);
+      setConfirmKeyId(null);
       onChanged();
     } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
     finally { setBusyKey(null); }
@@ -265,16 +268,29 @@ function CredentialList(props: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {keys.map((k) => (
-        <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+        <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, minHeight: 28 }}>
           <span style={{ fontFamily: "var(--ds-font-family-code, ui-monospace, Menlo, Consolas, monospace)", color: text.primary, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {k.hint}
           </span>
-          <span style={{ color: k.healthy ? stateColor.success : stateColor.danger, fontSize: 12, whiteSpace: "nowrap" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: k.healthy ? stateColor.success : stateColor.danger, whiteSpace: "nowrap" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: k.healthy ? stateColor.success : stateColor.danger }} />
             {k.healthy ? t("keyReady") : t("keyAuthError")}
           </span>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={14} />} onClick={() => void removeKey(k.id)} disabled={busyKey === k.id} aria-label={t("removeKey")} />
-          </span>
+          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {confirmKeyId === k.id ? (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: surface.layer2, padding: "2px 6px", borderRadius: 6, border: `1px solid ${surface.border}` }}>
+                <span style={{ fontSize: 11, color: text.secondary }}>确认删除?</span>
+                <Button size="sm" variant="ghost" onClick={() => void removeKey(k.id)} disabled={busyKey === k.id} style={{ color: stateColor.danger, padding: "0 4px", height: 20 }}>
+                  删除
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirmKeyId(null)} style={{ padding: "0 4px", height: 20 }}>
+                  取消
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" variant="ghost" icon={<IconTrashOutline16 size={14} />} onClick={() => setConfirmKeyId(k.id)} disabled={busyKey === k.id} aria-label={t("removeKey")} />
+            )}
+          </div>
         </div>
       ))}
       {adding ? (
@@ -298,7 +314,7 @@ function CredentialList(props: {
         <div style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
           <StateDot state={testResult.ok ? "done" : "error"} size={8} />
           {testResult.ok
-            ? `${t("testOk")} · ${(testResult.latencyMs / 1000).toFixed(2)} ${t("secondsUnit")} · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
+            ? `${t("testOk")} · 延迟 ${(testResult.latencyMs).toFixed(0)}ms · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
             : `${t("testFail")}: ${testResult.error?.message ?? ""}`}
         </div>
       )}
