@@ -39,20 +39,13 @@ export interface TurnState {
 /** Whether the turn has completed ANY web research (search OR fetch). */
 export declare function webResearchCompleted(state: TurnState): boolean;
 /** The injected "you must research" instruction the model sees on step 1.
- * A COMPACT web-research policy: one hard requirement (complete an appropriate
- * web tool), concrete routing (URL → web_fetch, otherwise web_search), one
- * uncertainty at a time, official sources, and honest disclosure when the web
- * cannot answer. */
+ * Compact: one hard requirement (complete an appropriate web tool), concrete
+ * routing (URL → web_fetch, otherwise web_search), honest disclosure on
+ * failure. General query-quality guidance belongs to DSH's own tool-web
+ * prompt, not this per-turn policy. */
 export declare const REQUIRED_SEARCH_TEXT: string;
-/** Short re-injection for later steps BEFORE the research has completed. */
-export declare const REQUIRED_SEARCH_REMINDER = "WEB RESEARCH MODE is active. Complete a web_search or web_fetch call before finalizing.";
-/** Re-injection for later steps AFTER research completed (keep using the
- * fresh results as grounding instead of drifting into memory). */
-export declare const REQUIRED_SEARCH_GROUNDING = "WEB RESEARCH MODE remains active. Use the fresh web results as evidence; fetch or refine the search if needed. For coding decisions, keep official sources and relevant OSS/community evidence in view.";
-/** Re-injection for later steps when research was attempted but FAILED to retrieve live data. */
-export declare const REQUIRED_SEARCH_FAILED_NOTICE = "WEB RESEARCH WAS ATTEMPTED BUT UNAVAILABLE. Acknowledge that web research was attempted but failed/returned no results, and state what cannot be verified.";
 /** One-shot steer used when the model tries to end without researching. */
-export declare const REQUIRED_SEARCH_CORRECTION_TEXT: string;
+export declare const REQUIRED_SEARCH_CORRECTION_TEXT = "Web Search is required for this turn. Call web_search or web_fetch before finalizing.";
 /**
  * Pure per-session state machine: one mode per session, one frozen flag per
  * turn. `auto` is the absence of an entry — clearing keeps the map tidy.
@@ -96,19 +89,15 @@ export interface SearchModeRuntimeDeps {
 /**
  * The UserMessages the runtime injects. Constructed with the OFFICIAL
  * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
- * ad-hoc shape. All three pre-step messages are `form: "snapshot"` plugin
- * sources; only `correction()` (the agent/turn-stopping steer) is a one-shot
- * `form: "notice"`.
+ * ad-hoc shape. Only TWO messages exist:
+ *  - required(): the one-shot step-1 policy snapshot.
+ *  - correction(): the one-shot turn-stopping steer (form: "notice").
+ * Later-step reminder/grounding/failure re-injection is intentionally gone:
+ * tool results already become the freshest context of the next model request.
  */
 export interface SearchModeMessages {
-    /** Step 1: the compact research policy. */
+    /** Step 1 (once per turn): the compact research policy. */
     required(): unknown;
-    /** Later steps before the search completed: short reminder. */
-    reminder(): unknown;
-    /** Later steps after the search completed: keep using the results. */
-    grounding(): unknown;
-    /** Later steps after research was attempted but all calls FAILED. */
-    failedNotice(): unknown;
     /** turn-stopping steer (one-shot notice). */
     correction(): unknown;
 }
@@ -120,13 +109,12 @@ export interface SearchModeMessages {
  */
 export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown): SearchModeMessages;
 /**
- * Decide which pre-step Search Mode message (if any) to append for one step.
- * Pure so the three-phase policy is unit-testable:
- *  - step 1                        -> required() (compact research policy)
- *  - step > 1, not yet researched   -> reminder()
- *  - step > 1, research completed   -> grounding() (if succeeded) or failedNotice() (if all failed)
- * Returns undefined (no injection) when the turn is not in required mode.
- * "Researched" = web_search OR web_fetch completed (attempted).
+ * Decide which pre-step Search Mode message (if any) to inject for one step.
+ * Pure and one-shot: ONLY step 1 in a required turn injects the policy
+ * snapshot. Later steps inject NOTHING — the web tool result(s) are already
+ * the freshest context, and enforcement happens in turn-stopping, not by
+ * re-reminding the model every step.
+ * @returns undefined (no injection) unless `state.required && step === 1`.
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
 /**

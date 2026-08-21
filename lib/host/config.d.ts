@@ -11,9 +11,9 @@ import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
-import type { SearchStrategy } from "../shared/api-types.ts";
-/** Persistent search strategy id (shared with the client card). */
-export type ToolSearchStrategy = SearchStrategy;
+import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+/** Persistent search routing policy id (shared with the client card). */
+export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
 /** Settings namespace for this plugin. */
 export declare const SETTINGS_NS = "dsh-web-tools";
 /** Default provider when nothing is configured. Changed from tavily to exa
@@ -37,7 +37,7 @@ export declare const DEFAULT_SETTINGS: {
     providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
     uiLanguage: "auto" | "zh" | "en";
-    searchStrategy: ToolSearchStrategy;
+    searchRoutingPolicy: ToolSearchRoutingPolicy;
 };
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
@@ -52,8 +52,8 @@ export interface WebToolsSettings {
     braveQuotaCache: Record<string, QuotaSnapshot>;
     /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
     uiLanguage: "auto" | "zh" | "en";
-    /** Global search strategy (see client provider-presets.ts). */
-    searchStrategy: ToolSearchStrategy;
+    /** Search routing policy (see shared api-types). */
+    searchRoutingPolicy: ToolSearchRoutingPolicy;
 }
 /** The schema object for settings registration (official z<T> annotation). */
 export declare const Config: z<WebToolsSettings>;

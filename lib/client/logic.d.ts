@@ -22,7 +22,7 @@ export declare function resolveUiLanguage(pref: UiLangPref | undefined, dshActiv
  */
 export declare function translateDict(dict: Record<string, string>, fallback: Record<string, string>, key: string, params?: Record<string, unknown>): string | undefined;
 /** Provider page status model (drives the row dot + detail Status block). */
-export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
+export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "unreachable" | "not-configured" | "disabled" | "not-in-order";
 /**
  * Status override from a connection-test result. A test that failed is NOT
  * automatically an auth error — `fetch failed` is usually a network problem.
@@ -35,7 +35,7 @@ export declare function testOutcomeStatus(testResult?: {
         code?: string;
     };
 }): ProviderStatus | undefined;
-export declare function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain?: boolean): ProviderStatus;
+export declare function providerStatusOf(p: ProviderView, quota?: QuotaView, inOrder?: boolean): ProviderStatus;
 /**
  * Quota display model — five kinds, each rendered honestly:
  *  - remaining_of_limit : countable remaining+limit (credits/requests/tokens)
