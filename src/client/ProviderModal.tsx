@@ -7,13 +7,15 @@
  * @module
  */
 import { useState, type CSSProperties } from "react";
-import { Button, IconChevronRightOutline14, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, quotaSummary, quotaFraction, quotaTier, quotaRemainingLabel, quotaDisplayKind } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, type ProviderStatus } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
 import { PROVIDER_BRAND } from "./brand.ts";
+import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
+import { QuotaCard } from "./ui/QuotaInline.tsx";
 
 interface Props {
   t: TFunc;
@@ -38,65 +40,6 @@ function quotaSourceLabel(t: TFunc, source?: string): string {
   const key = `quotaSource${source[0].toUpperCase()}${source.slice(1)}` as const;
   const value = t(key);
   return value !== key ? value : t("quotaSource", { s: source });
-}
-
-/** Full rich quota display: progress bar, percentage, source, updated-ago, breakdown. */
-function QuotaSection(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) {
-  const { quota, t, onRefresh } = props;
-  const [refreshing, setRefreshing] = useState(false);
-  const kind = quotaDisplayKind(quota);
-  if (kind === "unavailable" || kind === "self_hosted") return null;
-
-  const fraction = quotaFraction(quota);
-  const tier = quotaTier(fraction);
-  const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : text.tertiary;
-  const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || "";
-  const ago = quota.fetchedAt !== undefined
-    ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
-    : undefined;
-  const overPlan = quota.remaining !== undefined && quota.limit !== undefined && quota.remaining > quota.limit
-    ? t("quotaOverPlan", { r: quota.remaining.toLocaleString(), l: quota.limit.toLocaleString() })
-    : undefined;
-  const meta = [overPlan, quotaSourceLabel(t, quota.source), ago]
-    .filter((x): x is string => typeof x === "string" && x.length > 0)
-    .join(" · ");
-
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      onRefresh();
-    } finally {
-      setTimeout(() => setRefreshing(false), 600);
-    }
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("quotaTitle")}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 13, color: text.secondary, fontWeight: 500 }}>{label}</span>
-          <Button size="sm" variant="ghost" icon={<IconRefreshOutline16 size={12} />} onClick={() => void refresh()} disabled={refreshing} style={{ padding: "2px 4px" }}>
-            {t("refreshQuota")}
-          </Button>
-        </div>
-      </div>
-      {fraction !== undefined && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ flex: 1, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden" }}>
-            <div style={{ width: `${fraction * 100}%`, height: "100%", background: barColor, transition: "width .3s ease" }} />
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 600, color: text.tertiary }}>{Math.round(fraction * 100)}%</span>
-        </div>
-      )}
-      {meta && <span style={{ color: text.tertiary, fontSize: 11 }}>{meta}</span>}
-      {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
-        <span style={{ color: text.tertiary, fontSize: 11 }}>
-          {t("usage")}: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" · ")}
-        </span>
-      )}
-    </div>
-  );
 }
 
 /** Developer layer: raw provider-native parameters. Effective values are
@@ -164,25 +107,24 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
   };
 
   return (
-    <div style={{ paddingTop: 4 }}>
+    <div style={{ padding: "10px 14px" }}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none", padding: "4px 0" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("developerOptionsHint")}</span>
+          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
         </div>
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
           <IconChevronRightOutline14 size={14} />
         </span>
       </div>
       {open && (
-        <div style={{ marginTop: 6 }}>
+        <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEffective")}</div>
           <pre style={jsonBox}>{JSON.stringify(effective, null, 2)}</pre>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
@@ -255,17 +197,17 @@ function CredentialDisclosure(props: {
   const canOpen = p.keyWritable;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => canOpen && setOpen(!open)}
+        onClick={() => setOpen(!open)}
         onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && canOpen) { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: canOpen ? "pointer" : "default", outline: "none", padding: "4px 0" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: canOpen ? "pointer" : "default", outline: "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
@@ -378,17 +320,17 @@ function ConnectionSettingsDisclosure(props: {
   const isConfigured = !!p.baseUrl;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none", padding: "4px 0" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("connectionSettings")}</span>
+          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("connectionSettings")}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12, color: isConfigured ? "var(--dsw-alias-brand-primary)" : text.tertiary }}>
@@ -496,38 +438,44 @@ export function ProviderModal(props: Props) {
             </div>
           </div>
 
+          {/* Base settings grouped card */}
+          <SettingsGroup>
+            {!selfHosted && (
+              <CredentialDisclosure
+                t={t}
+                p={p}
+                onChanged={onConfigChanged}
+                onError={setLocalError}
+                onTest={onTest}
+                busy={busy}
+                testResult={testResult}
+              />
+            )}
+            {(selfHosted || p.baseUrl !== undefined) && (
+              <ConnectionSettingsDisclosure
+                t={t}
+                p={p}
+                draftBaseUrl={draftBaseUrl}
+                setDraftBaseUrl={setDraftBaseUrl}
+                onBaseUrl={onBaseUrl}
+              />
+            )}
+          </SettingsGroup>
+
           {/* Quota: rich statistical section with progress + breakdown + refresh */}
-          {quota && <QuotaSection quota={quota} t={t} onRefresh={onRefreshQuota} />}
-
-          {/* Credentials: collapsed by default; quiet '2 个 >' with inline test button */}
-          {!selfHosted && (
-            <CredentialDisclosure
-              t={t}
-              p={p}
-              onChanged={onConfigChanged}
-              onError={setLocalError}
-              onTest={onTest}
-              busy={busy}
-              testResult={testResult}
-            />
-          )}
-
-          {/* Connection settings (Base URL / custom endpoints) */}
-          {(selfHosted || p.baseUrl !== undefined) && (
-            <ConnectionSettingsDisclosure
-              t={t}
-              p={p}
-              draftBaseUrl={draftBaseUrl}
-              setDraftBaseUrl={setDraftBaseUrl}
-              onBaseUrl={onBaseUrl}
-            />
-          )}
+          {quota && <QuotaCard quota={quota} t={t} onRefresh={onRefreshQuota} />}
 
           {/* Search Experience / Provider-native settings (P4) */}
-          <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+          <SettingsGroup title={t("prefsTitle")}>
+            <div style={{ padding: "10px 14px" }}>
+              <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+            </div>
+          </SettingsGroup>
 
-          {/* Developer layer: raw provider-native parameters */}
-          <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
+          {/* Developer options: raw provider-native parameters */}
+          <SettingsGroup>
+            <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
+          </SettingsGroup>
 
           {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
         </div>
