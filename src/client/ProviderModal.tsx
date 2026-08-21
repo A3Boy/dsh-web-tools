@@ -168,6 +168,8 @@ function CredentialDisclosure(props: {
   const keys = p.keys ?? [];
   const invalidCount = keys.filter((k) => !k.healthy).length;
   const allHealthy = keys.length > 0 && invalidCount === 0;
+  // Default expand when no keys are configured yet (first-time setup).
+  const [open, setOpen] = useState(keys.length === 0);
 
   const summaryText = keys.length === 0
     ? t("notConfigured")
@@ -183,11 +185,22 @@ function CredentialDisclosure(props: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
-            <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
-          </div>
-      {p.keyWritable && (
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0, fontFamily: "inherit", color: "inherit", outline: "none" }}
+        onFocus={(e) => e.currentTarget.style.outline = "2px solid var(--dsw-alias-brand-primary, #4f8cff)"}
+        onBlur={(e) => e.currentTarget.style.outline = "none"}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
+          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+            <IconChevronRightOutline14 size={14} />
+          </span>
+        </div>
+      </button>
+      {open && p.keyWritable && (
         <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 8 }}>
           <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} onTest={onTest} busy={busy} testResult={testResult} />
         </div>
@@ -448,7 +461,7 @@ export function ProviderModal(props: Props) {
                 testResult={testResult}
               />
             )}
-            {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} />}
+            {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} embedded />}
             {(selfHosted || p.baseUrl !== undefined) && (
               <ConnectionSettingsDisclosure
                 t={t}

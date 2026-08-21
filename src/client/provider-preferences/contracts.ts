@@ -39,6 +39,23 @@ export function tavilyChunksVisible(depth: string, autoParams: boolean): boolean
 /** Exa search type options. */
 export const EXA_SEARCH_TYPE_OPTIONS = ["auto", "fast", "instant", "deep-lite", "deep", "deep-reasoning"] as const;
 
+/** Map an Exa mode to its SIMPLE (primary) UI bucket. */
+export function exaPrimaryMode(mode: string): "auto" | "fast" | "deep" {
+  if (mode === "auto") return "auto";
+  if (mode === "fast" || mode === "instant") return "fast";
+  return "deep";
+}
+
+/**
+ * Lossless primary-mode guard: clicking "深入" must never overwrite an
+ * existing precise deep variant (deep-lite / deep / deep-reasoning) with
+ * plain "deep". The precise value is only changeable in the native picker.
+ */
+export function exaPrimaryApplyable(v: string, currentMode: string): boolean {
+  if (v === "deep" && currentMode.startsWith("deep")) return false;
+  return true;
+}
+
 /** You.com extraction mode options. */
 export const YOU_EXTRACTION_MODE_OPTIONS = ["highlights", "none"] as const;
 

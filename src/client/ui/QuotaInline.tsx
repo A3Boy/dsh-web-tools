@@ -1,12 +1,13 @@
 /**
  * dsh-web-tools — QuotaInline & QuotaCard: unified quota display primitives
- * with tabular numbers, i18n, and per-provider dashboard quicklinks.
+ * with tabular numbers, i18n, per-provider dashboard quicklinks, and an
+ * `embedded` mode for use inside a SettingsGroup (no card-in-card).
  * @module
  */
 import { text, surface, state as stateColor } from "../theme.ts";
 import { type QuotaView } from "../api.ts";
-import { quotaFraction, quotaTier, quotaDisplayKind, type TFunc } from "../logic.ts";
-import { Button, IconRefreshOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { quotaFraction, quotaTier, type TFunc } from "../logic.ts";
+import { IconRefreshOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useState } from "react";
 import { dashboardOf, ExternalLinkIcon } from "../provider-ui-meta.tsx";
 
@@ -46,8 +47,48 @@ export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; un
   return { main: "" };
 }
 
-export function QuotaInline(props: { quota?: QuotaView; t?: TFunc }) {
-  const { quota, t } = props;
+/** Shared refresh button for QuotaCard (rotates while refreshing). */
+function RefreshButton(props: { refreshing: boolean; onRefresh: () => void; title: string }) {
+  const { refreshing, onRefresh, title } = props;
+  return (
+    <button
+      type="button"
+      onClick={onRefresh}
+      disabled={refreshing}
+      title={title}
+      style={{
+        background: "transparent", border: "none", cursor: refreshing ? "not-allowed" : "pointer",
+        padding: 2, borderRadius: 4, color: text.tertiary, display: "inline-flex", alignItems: "center",
+      }}
+    >
+      <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
+        <IconRefreshOutline16 size={13} />
+      </span>
+    </button>
+  );
+}
+
+/** Outermost wrapper style: standalone card vs embedded (no card-in-card). */
+function cardShell(embedded: boolean): React.CSSProperties {
+  return embedded
+    ? { display: "flex", flexDirection: "column", gap: 10, padding: "10px 14px" }
+    : { display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` };
+}
+
+export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t?: TFunc }) {
+  const { quota, providerName, t } = props;
+
+  // Brave has no quota endpoint: without a captured header snapshot the
+  // honest state is "请求配额 · 首次搜索后同步" — never a fake number.
+  const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
+  if (bravePendingSync) {
+    return (
+      <span style={{ fontSize: 12, color: text.tertiary, whiteSpace: "nowrap", flex: "none" }}>
+        {t ? `${t("quotaRequestsTitle")} · ${t("quotaBraveFirstSync")}` : `Request quota · ${quota.note ?? ""}`}
+      </span>
+    );
+  }
+
   if (!quota || !quota.supported) return null;
 
   const { main, unit } = formatQuotaNumbers(quota, t);
@@ -79,8 +120,10 @@ export function QuotaCard(props: {
   providerName?: string;
   t: TFunc;
   onRefresh: () => void;
+  /** Render inside a host SettingsGroup: drop the card chrome (border/radius/bg). */
+  embedded?: boolean;
 }) {
-  const { quota, providerName, t, onRefresh } = props;
+  const { quota, providerName, t, onRefresh, embedded = false } = props;
   const [refreshing, setRefreshing] = useState(false);
   const dash = dashboardOf(providerName);
 
@@ -93,31 +136,28 @@ export function QuotaCard(props: {
     }
   };
 
+  // Brave pending-sync: no captured header snapshot yet → explicit prompt.
+  const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
+
   // Fallback card when no quota snapshot or for dashboard-only providers
   if (!quota || !quota.supported || quota.source === "dashboard") {
     const isLocalMetered = providerName === "parallel" || providerName === "exa";
+    const isBrave = bravePendingSync;
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
+      <div style={cardShell(embedded)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>{t("quotaTitle")}</span>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-            title={t("refreshQuota")}
-            style={{
-              background: "transparent", border: "none", cursor: refreshing ? "not-allowed" : "pointer",
-              padding: 2, borderRadius: 4, color: text.tertiary, display: "inline-flex", alignItems: "center",
-            }}
-          >
-            <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
-              <IconRefreshOutline16 size={13} />
-            </span>
-          </button>
+          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
+            {isBrave ? t("quotaRequestsTitle") : t("quotaTitle")}
+          </span>
+          <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, color: text.secondary }}>
-            {isLocalMetered ? t("quotaSourceLocalEstimate") : t("quotaSourceDashboard")}
+            {isBrave
+              ? t("quotaBraveFirstSync")
+              : isLocalMetered
+                ? t("quotaSourceLocalEstimate")
+                : t("quotaSourceDashboard")}
           </span>
           {dash && (
             <a
@@ -147,11 +187,10 @@ export function QuotaCard(props: {
     ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
     : undefined;
 
-  // Local metered snapshot (Exa/Parallel): show count + dashboard link
   const isLocalMetered = quota.source === "local_estimate" && quota.unit === "requests" && quota.used !== undefined;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` }}>
+    <div style={cardShell(embedded)}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
@@ -159,20 +198,7 @@ export function QuotaCard(props: {
           </span>
           {!isLocalMetered && <span style={{ fontSize: 11, color: text.tertiary }}>· {sourceName}</span>}
         </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={refreshing}
-          title={t("refreshQuota")}
-          style={{
-            background: "transparent", border: "none", cursor: refreshing ? "not-allowed" : "pointer",
-            padding: 2, borderRadius: 4, color: text.tertiary, display: "inline-flex", alignItems: "center",
-          }}
-        >
-          <span style={{ display: "inline-flex", transform: refreshing ? "rotate(180deg)" : "none", transition: "transform .5s ease" }}>
-            <IconRefreshOutline16 size={13} />
-          </span>
-        </button>
+        <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
       </div>
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>

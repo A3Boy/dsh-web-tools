@@ -15,7 +15,7 @@ import { ChoiceCard } from "./ChoiceCard.tsx";
 import { formatProviderOptionsSummary } from "../logic.ts";
 import { Switch } from "../WebToolsSection.tsx";
 import { SegmentedControl } from "../ui/SegmentedControl.tsx";
-import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES } from "./contracts.ts";
+import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES, EXA_SEARCH_TYPE_OPTIONS, exaPrimaryMode, exaPrimaryApplyable } from "./contracts.ts";
 
 type TFunc = (key: string, ...args: unknown[]) => string;
 
@@ -201,6 +201,13 @@ function ProviderControls(props: {
       const desc = mode === "fast" ? t("prefsExaFastDesc") : mode === "instant" ? t("prefsFastDesc") : mode.startsWith("deep") ? t("prefsExaDeepDesc") : t("prefsExaAutoDesc");
       const maxAgeHours = raw("maxAgeHours", undefined);
       const freshness: "auto" | "live" | "cache" = maxAgeHours === 0 ? "live" : maxAgeHours === -1 ? "cache" : "auto";
+      // Lossless primary: "深入" only writes when the current mode is NOT
+      // already a precise deep variant (deep-lite / deep / deep-reasoning).
+      const handlePrimaryMode = (v: string) => {
+        if (!exaPrimaryApplyable(v, mode)) return;
+        setValue("searchType", v, "auto");
+      };
+      const primaryValue = exaPrimaryMode(mode);
       return (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -211,8 +218,8 @@ function ProviderControls(props: {
                 { value: "fast", label: t("prefsFast") },
                 { value: "deep", label: t("prefsDeep") },
               ]}
-              value={mode.startsWith("deep") ? "deep" : mode === "instant" ? "fast" : mode}
-              onChange={(v) => setValue("searchType", v, "auto")}
+              value={primaryValue}
+              onChange={handlePrimaryMode}
             />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
@@ -235,6 +242,26 @@ function ProviderControls(props: {
               }}
             />
             <AdvancedDelay t={t}>
+              {/* Native mode picker: 无损精确档位 */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <SectionLabel>{t("prefsExaNativeLabel")}</SectionLabel>
+                <SegmentedControl
+                  style={{ width: "100%", display: "flex" }}
+                  options={EXA_SEARCH_TYPE_OPTIONS.map((m) => {
+                    const keyHint: Record<string, string> = {
+                      auto: "Auto",
+                      fast: "Fast",
+                      instant: "Instant",
+                      "deep-lite": "DeepLite",
+                      deep: "Deep",
+                      "deep-reasoning": "DeepReasoning",
+                    };
+                    return { value: m, label: t(`prefsExaNative${keyHint[m]}`) };
+                  })}
+                  value={mode}
+                  onChange={(v) => setValue("searchType", v, "auto")}
+                />
+              </div>
               <NumberField
                 label={t("prefsExaFreshnessLabel") + " (h)"}
                 hint={t("prefsExaMaxAgeHint")}

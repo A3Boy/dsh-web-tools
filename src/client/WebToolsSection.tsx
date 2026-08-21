@@ -183,7 +183,7 @@ function ProviderRow(props: {
           </span>
         </span>
       ) : (
-        <QuotaInline quota={quota} t={t} />
+        <QuotaInline quota={quota} providerName={p.name} t={t} />
       )}
       {editMode && inOrder && (
         <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-label={t("removeFromChain")} style={{ padding: "0 6px", height: 24, color: stateColor.danger }}>

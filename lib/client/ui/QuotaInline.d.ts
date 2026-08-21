@@ -6,6 +6,7 @@ export declare function formatQuotaNumbers(q?: QuotaView, t?: TFunc): {
 };
 export declare function QuotaInline(props: {
     quota?: QuotaView;
+    providerName?: string;
     t?: TFunc;
 }): import("react").JSX.Element;
 export declare function QuotaCard(props: {
@@ -13,4 +14,6 @@ export declare function QuotaCard(props: {
     providerName?: string;
     t: TFunc;
     onRefresh: () => void;
+    /** Render inside a host SettingsGroup: drop the card chrome (border/radius/bg). */
+    embedded?: boolean;
 }): import("react").JSX.Element;

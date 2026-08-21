@@ -14,6 +14,9 @@ import {
   PARALLEL_EXPERIMENTAL_MODES,
   PARALLEL_ALL_MODES,
   tavilyChunksVisible,
+  EXA_SEARCH_TYPE_OPTIONS,
+  exaPrimaryMode,
+  exaPrimaryApplyable,
 } from "../src/client/provider-preferences/contracts.ts";
 
 // ------ Brave content threshold ------
@@ -58,4 +61,31 @@ test("Tavily: chunks visible only when depth is advanced AND autoParams is false
   assert.strictEqual(tavilyChunksVisible("basic", true), false);
   assert.strictEqual(tavilyChunksVisible("fast", false), false);
   assert.strictEqual(tavilyChunksVisible("ultra-fast", false), false);
+});
+
+// ------ Exa search type contracts ------
+test("Exa: search type options match the official API", () => {
+  assert.deepStrictEqual([...EXA_SEARCH_TYPE_OPTIONS], ["auto", "fast", "instant", "deep-lite", "deep", "deep-reasoning"]);
+});
+
+test("Exa: primary mode mapping collapses instant into fast and deep variants into deep", () => {
+  assert.strictEqual(exaPrimaryMode("auto"), "auto");
+  assert.strictEqual(exaPrimaryMode("fast"), "fast");
+  assert.strictEqual(exaPrimaryMode("instant"), "fast");
+  assert.strictEqual(exaPrimaryMode("deep-lite"), "deep");
+  assert.strictEqual(exaPrimaryMode("deep"), "deep");
+  assert.strictEqual(exaPrimaryMode("deep-reasoning"), "deep");
+});
+
+test("Exa: lossless guard prevents deep from overwriting precise deep variants", () => {
+  // Safe: "deep" clicked while current is auto → allowed
+  assert.strictEqual(exaPrimaryApplyable("deep", "auto"), true);
+  // Safe: "fast" clicked while current is deep-reasoning → allowed (user explicitly switches)
+  assert.strictEqual(exaPrimaryApplyable("fast", "deep-reasoning"), true);
+  // Blocked: "deep" clicked while current is deep-reasoning → lossless, blocked
+  assert.strictEqual(exaPrimaryApplyable("deep", "deep-reasoning"), false);
+  // Blocked: "deep" clicked while current is deep-lite → blocked
+  assert.strictEqual(exaPrimaryApplyable("deep", "deep-lite"), false);
+  // Safe: "deep" clicked while current is deep → blocked (no-op, but harmless)
+  assert.strictEqual(exaPrimaryApplyable("deep", "deep"), false);
 });
