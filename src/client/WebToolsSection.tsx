@@ -98,10 +98,11 @@ function ProviderCard(props: {
   testResult?: TestProviderView;
   /** Whether this provider is in the routing order (default + fallback). */
   inOrder: boolean;
-  isDefault: boolean;
+  /** Show the "首选" badge — only for the first entry in ordered policy. */
+  showPreferred: boolean;
   onClick: () => void;
 }) {
-  const { t, p, quota, testResult, inOrder, isDefault, onClick } = props;
+  const { t, p, quota, testResult, inOrder, showPreferred, onClick } = props;
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -149,7 +150,7 @@ function ProviderCard(props: {
       <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "none" }}>
         {p.label}
       </span>
-      {isDefault && (
+      {showPreferred && (
         <span style={{ color: accentText(), fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px", whiteSpace: "nowrap" }}>
           {t("preferredProviderLabel")}
         </span>
@@ -441,6 +442,11 @@ export function WebToolsSection(props: SectionProps) {
     }
   };
 
+  // "首选" is only meaningful when the policy is ordered — round-robin and
+  // random have no fixed first entry.
+  const showPreferredFor = (name: string) =>
+    (config.searchRoutingPolicy ?? "ordered") === "ordered" && name === config.defaultProvider;
+
   const detailProvider = detailFor !== null ? providerOf(detailFor) : undefined;
 
   return (
@@ -570,7 +576,7 @@ export function WebToolsSection(props: SectionProps) {
                 quota={quotas?.[p.name]}
                 testResult={testResult}
                 inOrder={orderedProviders.includes(p.name)}
-                isDefault={p.name === config.defaultProvider}
+                showPreferred={showPreferredFor(p.name)}
                 onClick={() => setDetailFor(p.name)}
               />
             );
@@ -623,7 +629,7 @@ export function WebToolsSection(props: SectionProps) {
           quota={quotas?.[detailProvider.name]}
           testResult={providerTestResults[detailProvider.name]}
           busy={!!busyProviders[detailProvider.name]}
-          isDefault={detailProvider.name === config.defaultProvider}
+          showPreferred={showPreferredFor(detailProvider.name)}
           inChain={orderedProviders.includes(detailProvider.name)}
           onClose={() => { setDetailFor(null); setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; }); }}
           onToggle={(enabled) => toggleProvider(detailProvider.name, enabled)}

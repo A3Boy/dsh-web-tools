@@ -8,12 +8,19 @@
 import { Pill } from "@deepseek-ai/dsh-client-ui-primitives";
 import { text, surface, state as stateColor, accent } from "../theme.ts";
 
+export interface ChoiceCardBadge {
+  label: string;
+  tone?: "brand" | "neutral" | "warning";
+}
+
 export interface ChoiceCardProps {
   selected: boolean;
   title: string;
   description?: string;
-  /** Badge text e.g. "推荐", "已自定义". Rendered as Pill. */
-  badge?: string;
+  /** Badge text e.g. "默认", or structured badge object with semantic tone. */
+  badge?: string | ChoiceCardBadge;
+  /** Fallback semantic tone when badge is passed as a string. */
+  badgeTone?: "brand" | "neutral" | "warning";
   /** Meta text e.g. "1 credit", "~1s". Rendered as tertiary small text. */
   meta?: string;
   warning?: string;
@@ -22,7 +29,20 @@ export interface ChoiceCardProps {
 }
 
 export function ChoiceCard(props: ChoiceCardProps) {
-  const { selected, title, description, badge, meta, warning, disabled, onClick } = props;
+  const { selected, title, description, badge, badgeTone, meta, warning, disabled, onClick } = props;
+
+  const badgeObj: ChoiceCardBadge | null = badge
+    ? typeof badge === "string"
+      ? {
+          label: badge,
+          tone:
+            badgeTone ??
+            (badge === "推荐" || badge === "默认" || badge === "Default" || badge === "Recommended"
+              ? "brand"
+              : "neutral"),
+        }
+      : badge
+    : null;
 
   return (
     <div
@@ -68,8 +88,8 @@ export function ChoiceCard(props: ChoiceCardProps) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{title}</span>
-        {badge && (
-          <Pill active={badge === "推荐"}>{badge}</Pill>
+        {badgeObj && (
+          <Pill active={badgeObj.tone === "brand"}>{badgeObj.label}</Pill>
         )}
         {meta && <span style={{ marginLeft: "auto", fontSize: 11, color: text.tertiary, whiteSpace: "nowrap" }}>{meta}</span>}
       </div>

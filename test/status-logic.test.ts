@@ -43,9 +43,9 @@ test("provider with a configured key is ready", () => {
   assert.equal(providerStatusOf(p, undefined, true), "ready");
 });
 
-test("provider outside the chain reports not-in-chain even when configured", () => {
+test("provider outside the order reports not-in-order even when configured", () => {
   const p = provider({ keyConfigured: true });
-  assert.equal(providerStatusOf(p, undefined, false), "not-in-chain");
+  assert.equal(providerStatusOf(p, undefined, false), "not-in-order");
 });
 
 test("SearXNG with NO explicit base URL is NOT configured (adapter default does not count)", () => {

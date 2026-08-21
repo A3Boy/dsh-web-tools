@@ -40,14 +40,13 @@ interface Props {
   onConfigChanged: () => void;
 }
 
-/** Collapsed pill: 默认 (brand) / 已调整 (neutral) / 未保存 (warning). */
-function Pill(props: { kind: "default" | "adjusted" | "unsaved" | "none" }) {
-  if (props.kind === "none") return null;
-  const isDefault = props.kind === "default";
+/** Collapsed pill: 已调整 (neutral) / 未保存 (warning). Default state returns null (§30). */
+function Pill(props: { t: TFunc; kind: "default" | "adjusted" | "unsaved" | "none" }) {
+  if (props.kind === "none" || props.kind === "default") return null;
   const isUnsaved = props.kind === "unsaved";
-  const color = isDefault ? "var(--dsw-alias-brand-primary)" : isUnsaved ? stateColor.warning : text.tertiary;
-  const bg = isDefault ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)" : surface.layer2;
-  const label = isDefault ? "默认" : isUnsaved ? "未保存" : "已调整";
+  const color = isUnsaved ? stateColor.warning : text.tertiary;
+  const bg = surface.layer2;
+  const label = isUnsaved ? props.t("prefsUnsaved") : props.t("prefsAdjusted");
   return (
     <span
       style={{
@@ -165,7 +164,7 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
   const seed = { ...(p.options?.overrides ?? {}) };
   const [draft, setDraft] = useState<Record<string, unknown>>(seed);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ text: string; tone: "success" | "error" } | null>(null);
 
   const eff = p.options!.effective;
   const isDef = p.options!.isDefault;
@@ -193,29 +192,23 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
     try {
       await api.providerOptionsSet(p.name, draft);
       onConfigChanged();
-      setMsg(t("prefsSaved"));
+      setMsg({ text: t("prefsSaved"), tone: "success" });
       window.setTimeout(() => setMsg(null), 2000);
     } catch {
-      setMsg(t("prefsSaveFailed"));
+      setMsg({ text: t("prefsSaveFailed"), tone: "error" });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleReset = async () => {
-    setSaving(true);
+  const handleCancel = () => {
+    setDraft(savedOverrides);
     setMsg(null);
-    try {
-      await api.providerOptionsReset(p.name);
-      setDraft({});
-      onConfigChanged();
-      setMsg(t("prefsRestored"));
-      window.setTimeout(() => setMsg(null), 2000);
-    } catch {
-      setMsg(t("prefsRestoreFailed"));
-    } finally {
-      setSaving(false);
-    }
+  };
+
+  const handleResetToDefaults = () => {
+    setDraft({});
+    setMsg(null);
   };
 
   const summary = formatProviderOptionsSummary(p.name, eff);
@@ -253,7 +246,7 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
             <span style={{ fontSize: 12, color: text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {summary}
             </span>
-            <Pill kind={pillKind} />
+            <Pill t={t} kind={pillKind} />
           </div>
         </div>
         <span style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s ease", flex: "none", color: text.tertiary, display: "inline-flex" }}>
@@ -265,15 +258,15 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
           <ProviderControls t={t} provider={p.name} draft={draft} setValue={setValue} eff={eff} />
 
-          {/* Dirty action row — only when the user actually changed something */}
+          {/* Dirty action row — transactional: [取消] restores saved, [保存] commits (§33) */}
           {dirty && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
               <span style={{ fontSize: 12, color: text.secondary }}>
                 {t("prefsModified", { n: dirtyKeys.length })}
               </span>
               <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                <Button size="sm" variant="ghost" onClick={handleReset} disabled={saving}>
-                  {t("prefsRestore")}
+                <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>
+                  {t("prefsCancel")}
                 </Button>
                 <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>
                   {saving ? t("prefsSaving") : t("prefsSave")}
@@ -281,7 +274,21 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
               </span>
             </div>
           )}
-          {msg && <div style={{ fontSize: 12, color: stateColor.success, textAlign: "right" }}>{msg}</div>}
+
+          {/* If not dirty but has non-default overrides, allow resetting draft to empty */}
+          {!dirty && !isDef && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
+              <Button size="sm" variant="ghost" onClick={handleResetToDefaults} disabled={saving}>
+                {t("prefsRestore")}
+              </Button>
+            </div>
+          )}
+
+          {msg && (
+            <div style={{ fontSize: 12, color: msg.tone === "error" ? stateColor.danger : stateColor.success, textAlign: "right" }}>
+              {msg.text}
+            </div>
+          )}
         </div>
       )}
     </div>

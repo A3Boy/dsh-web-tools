@@ -21,7 +21,8 @@ interface Props {
   quota?: QuotaView;
   testResult?: TestProviderView;
   busy: boolean;
-  isDefault: boolean;
+  /** Show the "首选" badge — only when the routing policy is "ordered". */
+  showPreferred: boolean;
   inChain: boolean;
   onClose: () => void;
   onToggle: (enabled: boolean) => void;
@@ -175,14 +176,15 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
     </div>
   );
 }
-function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () => void; onAfterChange: () => void; onError: (msg: string) => void }) {
-  const { t, p, onChanged, onAfterChange, onError } = props;
+function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () => void; onError: (msg: string) => void }) {
+  const { t, p, onChanged, onError } = props;
   const [open, setOpen] = useState(false);
   const keys = p.keys ?? [];
   const allHealthy = keys.length > 0 && keys.every((k) => k.healthy);
   const summary = keys.length > 0
-    ? `${keys.length} 把 API Key · ${allHealthy ? "均正常" : "部分异常"}`
+    ? `${keys.length} 个 · ${allHealthy ? "均正常" : "部分异常"}`
     : t("notConfigured");
+  const canOpen = p.keyWritable;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -190,9 +192,9 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
         role="button"
         tabIndex={0}
         aria-expanded={open}
-        onClick={() => keys.length > 0 && setOpen(!open)}
-        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && keys.length > 0) { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", gap: 8, cursor: keys.length > 0 ? "pointer" : "default", fontSize: 12, color: text.secondary, outline: "none" }}
+        onClick={() => canOpen && setOpen(!open)}
+        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && canOpen) { e.preventDefault(); setOpen(!open); } }}
+        style={{ display: "flex", alignItems: "center", gap: 8, cursor: canOpen ? "pointer" : "default", fontSize: 12, color: text.secondary, outline: "none" }}
       >
         {keys.length > 0 && (
           <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", flex: "none", color: text.tertiary, display: "inline-flex" }}>
@@ -200,6 +202,11 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
             </span>
         )}
         <span>{summary}</span>
+        {keys.length === 0 && canOpen && (
+          <Button size="sm" variant="ghost" onClick={() => setOpen(true)} style={{ marginLeft: "auto", fontSize: 11 }}>
+            {t("addKey")}
+          </Button>
+        )}
         {keys.length > 0 && (
           <Button size="sm" variant="ghost" onClick={() => setOpen(!open)} style={{ marginLeft: "auto", fontSize: 11 }}>
             {open ? t("collapse") : t("manage")}
@@ -207,15 +214,17 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
         )}
       </div>
       {open && p.keyWritable && (
-        <CredentialList t={t} p={p} onChanged={onChanged} onAfterChange={onAfterChange} onError={onError} />
+        <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} />
       )}
     </div>
   );
 }
 
-/** Key list body (same as before, extracted for clarity). */
-function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => void; onAfterChange: () => void; onError: (msg: string) => void }) {
-  const { t, p, onChanged, onAfterChange, onError } = props;
+/** Key list body (same as before, extracted for clarity). Adding a key
+ *  updates the config state but never auto-runs a paid search — the user
+ *  clicks 测试连接 themselves. */
+function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => void; onError: (msg: string) => void }) {
+  const { t, p, onChanged, onError } = props;
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -228,8 +237,6 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
     try {
       await api.credentialsAddKey(p.name, value);
       setDraft(""); setAdding(false);
-      onChanged();
-      await onAfterChange();
       onChanged();
     } catch (e) { onError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
@@ -278,7 +285,7 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
 }
 
 export function ProviderModal(props: Props) {
-  const { t, p, quota, testResult, busy, isDefault, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
+  const { t, p, quota, testResult, busy, showPreferred, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
   const base = providerStatusOf(p, quota, inChain);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
@@ -352,9 +359,9 @@ export function ProviderModal(props: Props) {
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
             <span style={{ color: text.secondary, fontSize: 13 }}>{p.enabled ? t("enabledLabel") : t("disabledLabel")}</span>
-            {isDefault && (
+            {showPreferred && (
               <span style={{ color: "var(--dsw-alias-brand-primary)", fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px" }}>
-                {t("defaultProviderLabel")}
+                {t("preferredProviderLabel")}
               </span>
             )}
             {!inChain && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("notInOrder")}</span>}
@@ -378,8 +385,9 @@ export function ProviderModal(props: Props) {
             </div>
           )}
 
-          {/* Credentials: collapsed by default */}
-          <CredentialDisclosure t={t} p={p} onChanged={onConfigChanged} onAfterChange={onTest} onError={setLocalError} />
+          {/* Credentials: collapsed by default; always openable so a provider
+              with no keys can receive its first key without a test. */}
+          <CredentialDisclosure t={t} p={p} onChanged={onConfigChanged} onError={setLocalError} />
 
           {/* Base URL (self-hosted / custom endpoints) */}
           {(selfHosted || p.baseUrl !== undefined) && (
