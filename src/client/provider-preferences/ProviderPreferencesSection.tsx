@@ -142,7 +142,6 @@ export function ProviderPreferencesSection(props: Props) {
 
 function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () => Promise<void> | void }) {
   const { t, p, onConfigChanged } = props;
-  const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>(() => ({ ...(p.options?.overrides ?? {}) }));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; tone: "success" | "error" } | null>(null);
@@ -205,50 +204,27 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
     }
   };
 
-  const summary = formatProviderOptionsSummary(p.name, eff, (key) => t(key));
-  // In V4: 'adjusted' badge is dropped from header; only 'unsaved' warning pill is shown during active edits
-  const pillKind: "default" | "adjusted" | "unsaved" | "none" = dirty ? "unsaved" : "default";
-
   return (
-    <div style={{ marginTop: 12 }}>
-      <div role="button" tabIndex={0} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpanded(!expanded); } }}
-        style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", borderRadius: 8, padding: "4px 0", outline: "none" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("prefsTitle")}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, minWidth: 0 }}>
-            <span style={{ fontSize: 12, color: text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
-            <Pill t={t} kind={pillKind} />
-          </div>
-        </div>
-        <span style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s ease", flex: "none", color: text.tertiary, display: "inline-flex" }}>
-          <IconChevronRightOutline14 size={14} />
-        </span>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
+      <ProviderControls t={t} provider={p.name} draft={draft} setValue={setValue} eff={eff} />
 
-      {expanded && (
-        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-          <ProviderControls t={t} provider={p.name} draft={draft} setValue={setValue} eff={eff} />
-
-          {dirty && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
-              <span style={{ fontSize: 12, color: text.secondary }}>{t("prefsModified", { n: dirtyKeys.length })}</span>
-              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>{t("prefsCancel")}</Button>
-                <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>{saving ? t("prefsSaving") : t("prefsSave")}</Button>
-              </span>
-            </div>
-          )}
-
-          {!dirty && !isDef && (
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
-              <Button size="sm" variant="ghost" onClick={handleResetToDefaults} disabled={saving}>{t("prefsRestore")}</Button>
-            </div>
-          )}
-
-          {msg && <div style={{ fontSize: 12, color: msg.tone === "error" ? stateColor.danger : stateColor.success, textAlign: "right" }}>{msg.text}</div>}
+      {dirty && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
+          <span style={{ fontSize: 12, color: text.secondary }}>{t("prefsModified", { n: dirtyKeys.length })}</span>
+          <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>{t("prefsCancel")}</Button>
+            <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>{saving ? t("prefsSaving") : t("prefsSave")}</Button>
+          </span>
         </div>
       )}
+
+      {!dirty && !isDef && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+          <Button size="sm" variant="ghost" onClick={handleResetToDefaults} disabled={saving}>{t("prefsRestore")}</Button>
+        </div>
+      )}
+
+      {msg && <div style={{ fontSize: 12, color: msg.tone === "error" ? stateColor.danger : stateColor.success, textAlign: "right" }}>{msg.text}</div>}
     </div>
   );
 }

@@ -177,7 +177,6 @@ function CredentialDisclosure(props: {
   testResult?: TestProviderView;
 }) {
   const { t, p, onChanged, onError, onTest, busy, testResult } = props;
-  const [open, setOpen] = useState(false);
   const keys = p.keys ?? [];
   const invalidCount = keys.filter((k) => !k.healthy).length;
   const allHealthy = keys.length > 0 && invalidCount === 0;
@@ -194,30 +193,14 @@ function CredentialDisclosure(props: {
       ? text.secondary
       : stateColor.danger;
 
-  const canOpen = p.keyWritable;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && canOpen) { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: canOpen ? "pointer" : "default", outline: "none" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
-          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
-            <IconChevronRightOutline14 size={14} />
-          </span>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
       </div>
-      {open && p.keyWritable && (
-        <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 8 }}>
+      {p.keyWritable && (
+        <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 8 }}>
           <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} onTest={onTest} busy={busy} testResult={testResult} />
         </div>
       )}
@@ -402,11 +385,13 @@ export function ProviderModal(props: Props) {
   const selfHosted = p.name === "searxng";
   const [refreshing, setRefreshing] = useState(false);
 
+  const brand = PROVIDER_BRAND[p.name];
+
   return (
     <>
       <style>{`
         .wt-modal-dialog {
-          width: 720px !important;
+          width: 680px !important;
           max-height: min(760px, calc(100vh - 48px)) !important;
           display: flex !important;
           flex-direction: column !important;
@@ -430,26 +415,42 @@ export function ProviderModal(props: Props) {
         contentClassName="wt-modal-content"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 8 }}>
-          {/* Top row: enabled switch on right, abnormal warning if any */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Header row: Brand logo + Name + Capability tag + Switch */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0 2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {brand && (
+                <img
+                  src={brand.icon}
+                  alt={p.label}
+                  width={28}
+                  height={28}
+                  style={{ borderRadius: 6, flexShrink: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                />
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 600, fontSize: 15, color: text.primary }}>{p.label}</span>
+                  {showPreferred && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)", color: "var(--dsw-alias-brand-primary)", fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
+                </div>
+                <span style={{ fontSize: 12, color: text.tertiary }}>{t(`capability.${p.name}`) || ""}</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {status !== "ready" && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                   {statusState === "hollow" ? (
                     <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
                   ) : (
                     <StateDot state={statusState} size={8} />
                   )}
-                  <span style={{ color: statusColor, fontWeight: 500, fontSize: 13 }}>{statusText}</span>
+                  <span style={{ color: statusColor, fontWeight: 500, fontSize: 12 }}>{statusText}</span>
                 </span>
               )}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
             </div>
           </div>
 
-          {/* Base settings grouped card */}
+          {/* Credentials / Service URL */}
           <SettingsGroup>
             {!selfHosted && (
               <CredentialDisclosure
@@ -473,17 +474,19 @@ export function ProviderModal(props: Props) {
             )}
           </SettingsGroup>
 
-          {/* Quota: rich statistical section with progress + breakdown + refresh */}
+          {/* Quota */}
           {quota && <QuotaCard quota={quota} t={t} onRefresh={onRefreshQuota} />}
 
-          {/* Search Experience / Provider-native settings (P4) */}
-          <SettingsGroup title={t("prefsTitle")}>
-            <div style={{ padding: "10px 14px" }}>
-              <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
-            </div>
-          </SettingsGroup>
+          {/* Search Preferences: default uncollapsed flat display */}
+          {p.options && p.name !== "searxng" && (
+            <SettingsGroup title={t("prefsTitle")}>
+              <div style={{ padding: "12px 14px" }}>
+                <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+              </div>
+            </SettingsGroup>
+          )}
 
-          {/* Developer options: raw provider-native parameters */}
+          {/* Developer / Diagnostics options */}
           <SettingsGroup>
             <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
           </SettingsGroup>
