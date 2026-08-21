@@ -32,23 +32,68 @@ interface Props {
   onConfigChanged: () => void;
 }
 
-/** Inline quota summary line (compact, no bar). */
-function QuotaInline(props: { quota: QuotaView; t: TFunc }) {
-  const { quota, t } = props;
+/** Quiet human source label (no "Official/Authoritative" tag stacking). */
+function quotaSourceLabel(t: TFunc, source?: string): string {
+  if (!source) return "";
+  const key = `quotaSource${source[0].toUpperCase()}${source.slice(1)}` as const;
+  const value = t(key);
+  return value !== key ? value : t("quotaSource", { s: source });
+}
+
+/** Full rich quota display: progress bar, percentage, source, updated-ago, breakdown. */
+function QuotaSection(props: { quota: QuotaView; t: TFunc; onRefresh: () => void }) {
+  const { quota, t, onRefresh } = props;
+  const [refreshing, setRefreshing] = useState(false);
   const kind = quotaDisplayKind(quota);
   if (kind === "unavailable" || kind === "self_hosted") return null;
-  if (kind === "unlimited") return <span style={{ color: text.secondary, fontSize: 12 }}>{t("quotaUnlimited")}</span>;
-  const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || "";
+
   const fraction = quotaFraction(quota);
+  const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || "";
+  const ago = quota.fetchedAt !== undefined
+    ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
+    : undefined;
+  const overPlan = quota.remaining !== undefined && quota.limit !== undefined && quota.remaining > quota.limit
+    ? t("quotaOverPlan", { r: quota.remaining.toLocaleString(), l: quota.limit.toLocaleString() })
+    : undefined;
+  const meta = [overPlan, quotaSourceLabel(t, quota.source), ago]
+    .filter((x): x is string => typeof x === "string" && x.length > 0)
+    .join(" · ");
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      onRefresh();
+    } finally {
+      setTimeout(() => setRefreshing(false), 600);
+    }
+  };
+
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: text.secondary }}>
-      <span>{label}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${surface.border}`, paddingTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("quotaTitle")}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 13, color: text.secondary, fontWeight: 500 }}>{label}</span>
+          <Button size="sm" variant="ghost" icon={<IconRefreshOutline16 size={12} />} onClick={() => void refresh()} disabled={refreshing} style={{ padding: "2px 4px" }}>
+            {t("refreshQuota")}
+          </Button>
+        </div>
+      </div>
       {fraction !== undefined && (
-        <span style={{ width: 60, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", display: "inline-block" }}>
-          <span style={{ width: `${fraction * 100}%`, height: "100%", background: stateColor.success, display: "block" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, height: 6, borderRadius: 3, background: surface.layer2, overflow: "hidden" }}>
+            <div style={{ width: `${fraction * 100}%`, height: "100%", background: stateColor.success, transition: "width .3s ease" }} />
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: stateColor.success }}>{Math.round(fraction * 100)}%</span>
+        </div>
+      )}
+      {meta && <span style={{ color: text.tertiary, fontSize: 11 }}>{meta}</span>}
+      {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
+        <span style={{ color: text.tertiary, fontSize: 11 }}>
+          {t("usage")}: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" · ")}
         </span>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -130,7 +175,6 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
           <IconChevronRightOutline14 size={12} />
         </span>
         <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
-        <span style={{ color: text.tertiary, fontSize: 12 }}>{t("developerOptionsHint")}</span>
       </div>
       {open && (
         <div>
@@ -189,34 +233,39 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
   const canOpen = p.keyWritable;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${surface.border}`, paddingTop: 12 }}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
         onClick={() => canOpen && setOpen(!open)}
         onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && canOpen) { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", gap: 8, cursor: canOpen ? "pointer" : "default", fontSize: 12, color: text.secondary, outline: "none" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: canOpen ? "pointer" : "default", outline: "none" }}
       >
-        {keys.length > 0 && (
-          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", flex: "none", color: text.tertiary, display: "inline-flex" }}>
-              <IconChevronRightOutline14 size={12} />
-            </span>
-        )}
-        <span>{summary}</span>
-        {keys.length === 0 && canOpen && (
-          <Button size="sm" variant="ghost" onClick={() => setOpen(true)} style={{ marginLeft: "auto", fontSize: 11 }}>
-            {t("addKey")}
-          </Button>
-        )}
-        {keys.length > 0 && (
-          <Button size="sm" variant="ghost" onClick={() => setOpen(!open)} style={{ marginLeft: "auto", fontSize: 11 }}>
-            {open ? t("collapse") : t("manage")}
-          </Button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+            <IconChevronRightOutline14 size={12} />
+          </span>
+          <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: text.secondary }}>{summary}</span>
+          {keys.length === 0 && canOpen && (
+            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setOpen(true); }} style={{ fontSize: 11 }}>
+              {t("addKey")}
+            </Button>
+          )}
+          {keys.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setOpen(!open); }} style={{ fontSize: 11 }}>
+              {open ? t("collapse") : t("manage")}
+            </Button>
+          )}
+        </div>
       </div>
       {open && p.keyWritable && (
-        <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} />
+        <div style={{ paddingLeft: 18, marginTop: 4 }}>
+          <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} />
+        </div>
       )}
     </div>
   );
@@ -280,6 +329,63 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
       ) : (
         <div style={{ marginTop: 4 }}>
           <Button size="sm" variant="outline" icon={<IconPlusOutline16 size={14} />} onClick={() => setAdding(true)}>{t("addKey")}</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Connection settings (Base URL / custom endpoints) as a clean Settings Row. */
+function ConnectionSettingsDisclosure(props: {
+  t: TFunc;
+  p: ProviderView;
+  draftBaseUrl: string;
+  setDraftBaseUrl: (v: string) => void;
+  onBaseUrl: (url: string) => void;
+}) {
+  const { t, p, draftBaseUrl, setDraftBaseUrl, onBaseUrl } = props;
+  const selfHosted = p.name === "searxng";
+  const [open, setOpen] = useState(selfHosted);
+  const isConfigured = !!p.baseUrl;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: `1px solid ${surface.border}`, paddingTop: 12 }}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+            <IconChevronRightOutline14 size={12} />
+          </span>
+          <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("connectionSettings")}</span>
+        </div>
+        <span style={{ fontSize: 12, color: isConfigured ? "var(--dsw-alias-brand-primary)" : text.tertiary }}>
+          {isConfigured ? t("connectionConfigured") : t("connectionDefault")}
+        </span>
+      </div>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 18, marginTop: 4 }}>
+          <label style={{ fontSize: 12, color: text.secondary }}>{t("serviceAddress")}</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              value={draftBaseUrl}
+              onChange={(e) => setDraftBaseUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { onBaseUrl(draftBaseUrl.trim()); (e.target as HTMLInputElement).blur(); } }}
+              onBlur={() => { if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim()); }}
+              placeholder={t("baseUrlPlaceholder")}
+              style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${surface.border}`, background: surface.layer2, color: text.primary, fontFamily: "inherit", fontSize: 13 }}
+            />
+            {p.baseUrl && (
+              <Button size="sm" variant="ghost" onClick={() => { setDraftBaseUrl(""); onBaseUrl(""); }}>
+                {t("restoreDefaultUrl")}
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -367,30 +473,22 @@ export function ProviderModal(props: Props) {
             </span>
           </div>
 
-          {/* Quota: inline summary + refresh button */}
-          {quota && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <QuotaInline quota={quota} t={t} />
-              <Button size="sm" variant="ghost" icon={<IconRefreshOutline16 size={12} />} onClick={() => { setRefreshing(true); onRefreshQuota(); setTimeout(() => setRefreshing(false), 600); }} disabled={refreshing} style={{ fontSize: 11 }}>
-                {t("refreshQuota")}
-              </Button>
-            </div>
-          )}
+          {/* Quota: rich statistical section with progress + breakdown + refresh */}
+          {quota && <QuotaSection quota={quota} t={t} onRefresh={onRefreshQuota} />}
 
           {/* Credentials: collapsed by default; always openable so a provider
-              with no keys can receive its first key without a test. */}
-          <CredentialDisclosure t={t} p={p} onChanged={onConfigChanged} onError={setLocalError} />
+              with no keys can receive its first key without a test. (SearXNG needs no key) */}
+          {!selfHosted && <CredentialDisclosure t={t} p={p} onChanged={onConfigChanged} onError={setLocalError} />}
 
-          {/* Base URL (self-hosted / custom endpoints) */}
+          {/* Connection settings (Base URL / custom endpoints) */}
           {(selfHosted || p.baseUrl !== undefined) && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: 12, color: text.secondary }}>{t("serviceAddress")}</label>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={draftBaseUrl} onChange={(e) => setDraftBaseUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { onBaseUrl(draftBaseUrl.trim()); (e.target as HTMLInputElement).blur(); } }} onBlur={() => { if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim()); }} placeholder={t("baseUrlPlaceholder")}
-                  style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${surface.border}`, background: surface.layer2, color: text.primary, fontFamily: "inherit", fontSize: 13 }} />
-                {p.baseUrl && <Button size="sm" variant="ghost" onClick={() => { setDraftBaseUrl(""); onBaseUrl(""); }}>{t("restoreDefaultUrl")}</Button>}
-              </div>
-            </div>
+            <ConnectionSettingsDisclosure
+              t={t}
+              p={p}
+              draftBaseUrl={draftBaseUrl}
+              setDraftBaseUrl={setDraftBaseUrl}
+              onBaseUrl={onBaseUrl}
+            />
           )}
 
           {/* Search Experience / Provider-native settings (P4) */}
