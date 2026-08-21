@@ -15,7 +15,7 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchStrategy } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
@@ -184,7 +184,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     uiLanguage: (cfg.uiLanguage as "auto" | "zh" | "en") ?? "auto",
-    searchStrategy: (cfg.searchStrategy as SearchStrategy) ?? "recommended",
+    searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
     providers,
   };
 }
@@ -200,12 +200,38 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
   if (p.uiLanguage === "auto" || p.uiLanguage === "zh" || p.uiLanguage === "en") patch.uiLanguage = p.uiLanguage;
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
-  const strategy = p.searchStrategy;
-  if (strategy === "recommended" || strategy === "fast" || strategy === "quality" || strategy === "cheap" || strategy === "custom") {
-    patch.searchStrategy = strategy;
-  }
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
+}
+
+/** Dedicated routing edit: policy + ordered provider list in ONE atomic write. */
+async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown };
+  const policy = p.policy;
+  if (policy !== "ordered" && policy !== "round-robin" && policy !== "random") {
+    throw new Error("invalid routing policy");
+  }
+  if (!Array.isArray(p.orderedProviders) || p.orderedProviders.length === 0) {
+    throw new Error("orderedProviders required");
+  }
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const raw of p.orderedProviders) {
+    const name = String(raw).trim().toLowerCase();
+    if (name === "" || seen.has(name)) continue;
+    // Validate against the registry before persisting.
+    getProvider(name);
+    seen.add(name);
+    ordered.push(name);
+  }
+  if (ordered.length === 0) throw new Error("no valid providers");
+
+  await deps.writeConfig({
+    searchRoutingPolicy: policy,
+    defaultProvider: ordered[0],
+    fallbackOrder: ordered.slice(1),
+  });
+  return { saved: true, policy, defaultProvider: ordered[0], fallbackOrder: ordered.slice(1) };
 }
 
 async function handleCredentialSet(deps: RouteDeps, payload: unknown) {
@@ -388,6 +414,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/set": (deps, payload) => handleProviderOptionsSet(deps, payload),
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
+  "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

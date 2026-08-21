@@ -49,9 +49,9 @@ export async function call<T>(method: string, payload?: unknown): Promise<T> {
 // typed endpoint wrappers (wire types shared with the Host — see shared/api-types)
 // ---------------------------------------------------------------------------
 
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
+import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy } from "../shared/api-types.ts";
 
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy } from "../shared/api-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
@@ -71,4 +71,6 @@ export const api = {
     call<{ reset: true; options: any }>("provider-options/reset", { provider }),
   providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) =>
     call<Record<string, any>>("provider-options/batch", { providers }),
+  routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
+    call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
 };

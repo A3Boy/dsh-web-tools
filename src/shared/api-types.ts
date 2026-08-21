@@ -8,8 +8,8 @@
 
 import type { ProviderOptionView } from "./provider-options.ts";
 
-/** Global search strategy — user-facing modes mapped to presets client-side. */
-export type SearchStrategy = "recommended" | "fast" | "quality" | "cheap" | "custom";
+/** Search routing policy — how the host picks which provider to try first. */
+export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
 
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {
@@ -56,8 +56,8 @@ export interface ConfigView {
    * page to that language regardless of the DSH-wide preference.
    */
   uiLanguage?: "auto" | "zh" | "en";
-  /** Global search strategy (recommended/fast/quality/cheap/custom). */
-  searchStrategy?: SearchStrategy;
+  /** Search routing policy (ordered/round-robin/random). */
+  searchRoutingPolicy?: SearchRoutingPolicy;
 }
 
 /** One quota snapshot for the card (display only). */

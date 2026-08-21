@@ -214,7 +214,7 @@ export function ProviderModal(props: Props) {
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
     ready: t("ready"), "rate-limited": t("rateLimited"), "auth-error": t("authError"),
-    "unreachable": t("unreachable"), "not-configured": t("notConfigured"), "not-in-chain": t("notInChain"),
+    "unreachable": t("unreachable"), "not-configured": t("notConfigured"), "disabled": t("disabled"), "not-in-order": t("notInOrder"),
   }[status];
   const statusState = status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow" as const;
   const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
@@ -281,7 +281,7 @@ export function ProviderModal(props: Props) {
                 {t("defaultProviderLabel")}
               </span>
             )}
-            {!inChain && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("notInChain")}</span>}
+            {!inChain && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("notInOrder")}</span>}
             <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
               {statusState === "hollow" ? (
                 <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />

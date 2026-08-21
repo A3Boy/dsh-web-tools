@@ -22,12 +22,10 @@ import {
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView } from "./api.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy } from "./api.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { RoutingModal } from "./RoutingModal.tsx";
-import { SearchStrategyCard } from "./SearchStrategyCard.tsx";
-import { STRATEGY_PRESETS, type SearchStrategy } from "./provider-presets.ts";
 import type { UiFace } from "./registration.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
 import {
@@ -91,26 +89,20 @@ interface SectionProps {
 }
 
 /** One provider card in the providers list (click → ProviderModal).
- *  Compact: logo, name, recommendation badge, status dot + text, chevron.
- *  No quota, rank, or self-hosted label on the card. */
+ *  Compact: logo, name, 首选/默认 state, status dot + text, chevron.
+ *  No drag, no quota, no rank, no self-hosted label on the card. */
 function ProviderCard(props: {
   t: TFunc;
   p: ProviderView;
   quota?: QuotaView;
   testResult?: TestProviderView;
-  orderRank?: number;
+  /** Whether this provider is in the routing order (default + fallback). */
+  inOrder: boolean;
   isDefault: boolean;
-  draggable: boolean;
-  isDragOver: boolean;
   onClick: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
 }) {
-  const { t, p, quota, testResult, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
-  const inChain = p.enabled;
-  const base = providerStatusOf(p, quota, inChain);
+  const { t, p, quota, testResult, inOrder, isDefault, onClick } = props;
+  const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
     ready: t("ready"),
@@ -118,7 +110,8 @@ function ProviderCard(props: {
     "auth-error": t("authError"),
     "unreachable": t("unreachable"),
     "not-configured": t("notConfigured"),
-    "not-in-chain": t("notInChain"),
+    "disabled": t("disabled"),
+    "not-in-order": t("notInOrder"),
   }[status];
   const dotState: "done" | "warning" | "error" | "ongoing" | "hollow" =
     status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
@@ -126,11 +119,6 @@ function ProviderCard(props: {
 
   return (
     <div
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
       onClick={onClick}
       className="wt-provider-row"
       role="button"
@@ -142,24 +130,19 @@ function ProviderCard(props: {
         gap: 10,
         width: "100%",
         padding: "10px 14px",
-        background: isDragOver ? surface.hover : surface.layer1,
-        border: `1px solid ${isDragOver ? "var(--dsw-alias-brand-primary)" : surface.border}`,
+        background: surface.layer1,
+        border: `1px solid ${surface.border}`,
         borderRadius: 12,
-        cursor: draggable ? "grab" : "pointer",
+        cursor: "pointer",
         fontFamily: "inherit",
         fontSize: 14,
         color: text.primary,
         textAlign: "left",
         boxSizing: "border-box",
       }}
-      onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.background = surface.hover; }}
-      onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.background = surface.layer1; }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = surface.hover; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = surface.layer1; }}
     >
-      {draggable && (
-        <span aria-hidden style={{ color: text.tertiary, fontSize: 14, cursor: "grab", userSelect: "none", flex: "none" }}>
-          ⠿
-        </span>
-      )}
       {PROVIDER_BRAND[p.name] && (
         <img src={PROVIDER_BRAND[p.name].icon} alt="" width={24} height={24} style={{ borderRadius: 6, flex: "none" }} />
       )}
@@ -168,7 +151,7 @@ function ProviderCard(props: {
       </span>
       {isDefault && (
         <span style={{ color: accentText(), fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px", whiteSpace: "nowrap" }}>
-          {t("defaultProviderLabel")}
+          {t("preferredProviderLabel")}
         </span>
       )}
       <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
@@ -335,13 +318,6 @@ export function WebToolsSection(props: SectionProps) {
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
   const [resettingAll, setResettingAll] = useState(false);
-  const [strategyBusy, setStrategyBusy] = useState(false);
-  // Main-page drag-to-reorder over the search chain (HTML5 DnD).
-  const dragName = useRef<string | null>(null);
-  const [dragOverName, setDragOverName] = useState<string | null>(null);
-  // Optimistic chain order while a drag-save is in flight; cleared once the
-  // persisted config reload lands so the server truth takes over.
-  const [localProviderOrder, setLocalProviderOrder] = useState<string[] | null>(null);
   const loadToken = useRef(0);
   const mounted = useRef(true);
 
@@ -351,7 +327,6 @@ export function WebToolsSection(props: SectionProps) {
       const cfg = await api.configGet();
       if (token !== loadToken.current) return;
       setConfig(cfg);
-      setLocalProviderOrder(null); // persisted truth confirmed → drop optimism
       setError("");
     } catch (e) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
@@ -435,69 +410,15 @@ export function WebToolsSection(props: SectionProps) {
   const saveOrder = (ordered: string[]) => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
     const first = next[0] ?? config.defaultProvider;
-    // A manual order edit overrides any preset strategy → switch to custom so
-    // the mode card stops claiming "推荐/快速/…" while the user drives order.
-    void save({ defaultProvider: first, fallbackOrder: next.slice(1), searchStrategy: "custom" });
+    void api.routingSet(config.searchRoutingPolicy ?? "ordered", next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
-  // Drag-to-reorder on the main page: only chain members are draggable; a
-  // drop reorders within the chain (fallbackOrder stays [default, ...rest]).
-  const reorderOnDrop = (dragged: string, over: string) => {
-    if (dragged === over) return;
-    const next = [...orderedProviders];
-    const from = next.indexOf(dragged);
-    const to = next.indexOf(over);
-    if (from < 0 || to < 0) return;
-    next.splice(from, 1);
-    next.splice(to, 0, dragged);
-    // Optimistic local order so cards re-render instantly; the persisted
-    // config reload confirms it (or reverts on failure).
-    setLocalProviderOrder(next);
-    saveOrder(next);
-  };
-
-  // Rendering order: chain members first (in search order), then providers
-  // outside the chain (registry order). Falls back to the persisted chain
-  // while no drag is in flight.
-  const renderedProviders = (localProviderOrder ?? orderedProviders)
+  // Rendering order: providers are listed in the routing order (default +
+  // fallback), then providers outside the chain (registry order).
+  const renderedProviders = orderedProviders
     .map((name) => providerOf(name))
     .filter((x): x is ProviderView => x !== undefined)
     .concat(config.providers.filter((p) => !orderedProviders.includes(p.name)));
-
-  // Apply a search strategy preset: write the strategy id plus, for non-custom
-  // modes, the preset's per-provider option overrides (merged over existing
-  // overrides) and preferred order. "custom" only records the mode so the
-  // manual order editor takes over.
-  const applyStrategy = async (strategy: SearchStrategy) => {
-    if (strategyBusy) return;
-    setStrategyBusy(true);
-    try {
-      const patch: Record<string, unknown> = { searchStrategy: strategy };
-      if (strategy !== "custom") {
-        const preset = STRATEGY_PRESETS[strategy];
-        if (preset.order && preset.order.length > 0) {
-          patch.defaultProvider = preset.order[0];
-          patch.fallbackOrder = preset.order.slice(1);
-        }
-        const merged: Record<string, Record<string, unknown>> = {};
-        for (const pv of config.providers) {
-          if (pv.options && Object.keys(pv.options.overrides).length > 0) {
-            merged[pv.name] = { ...pv.options.overrides };
-          }
-        }
-        for (const [name, opts] of Object.entries(preset.providerOptions)) {
-          merged[name] = { ...(merged[name] ?? {}), ...opts };
-        }
-        if (Object.keys(merged).length > 0) patch.providerOptions = merged;
-      }
-      await api.configSave(patch);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setStrategyBusy(false);
-    }
-  };
 
   const readyCount = config.providers.filter((p) => {
     if (!p.enabled) return false;
@@ -594,106 +515,52 @@ export function WebToolsSection(props: SectionProps) {
         </div>
       )}
 
-      {/* Search Mode (strategy) */}
+      {/* 搜索源使用方式 (routing policy summary) */}
       <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("strategyLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("strategyHint")}</span>
-        </div>
-        <SearchStrategyCard
-          t={t}
-          current={config.searchStrategy ?? "recommended"}
-          onApply={applyStrategy}
-          disabled={strategyBusy}
-        />
-      </section>
-
-      {/* Summary strip */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          padding: "10px 14px",
-          borderRadius: 12,
-          background: surface.layer1,
-          border: `1px solid ${surface.border}`,
-          fontSize: 13,
-          color: text.secondary,
-          flexWrap: "wrap",
-        }}
-      >
-        <span>
-          {t("readySummary", { n: readyCount, total: config.providers.length })}
-        </span>
-        <span style={{ color: surface.border }}>|</span>
-        <span>
-          {t("defaultProviderLabel")}: <strong style={{ color: text.primary }}>{providerOf(config.defaultProvider)?.label ?? config.defaultProvider}</strong>
-        </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <Button size="sm" variant="ghost" onClick={handleResetAll} disabled={resettingAll}>
-            {resettingAll ? t("resetting") : t("resetAll")}
-          </Button>
-        </span>
-      </div>
-
-      {/* Search order summary + edit */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("orderLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("orderHint")}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("routingLabel")}</h3>
           <span style={{ marginLeft: "auto" }}>
             <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-              {t("editOrder")}
+              {t("routingConfigure")}
             </Button>
           </span>
         </div>
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flexWrap: "wrap",
-            padding: "10px 14px",
+            flexDirection: "column",
+            gap: 4,
+            padding: "9px 14px",
             borderRadius: 12,
             background: surface.layer1,
             border: `1px solid ${surface.border}`,
             fontSize: 13,
+            color: text.secondary,
           }}
         >
-          {orderedProviders.length === 0 && <span style={{ color: text.tertiary }}>{t("notConfigured")}</span>}
-          {orderedProviders.map((name, i) => {
-            const p = providerOf(name);
-            const ok = p !== undefined && enabledNames.has(name);
-            return (
-              <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                {i > 0 && <span style={{ color: text.tertiary }}>→</span>}
-                <span style={{ color: ok ? text.primary : text.tertiary, fontWeight: i === 0 ? 600 : 400 }}>
-                  {p?.label ?? name}
-                </span>
-                {i === 0 && (
-                  <span style={{ color: accentText(), fontSize: 11, fontWeight: 600 }}>{t("defaultProviderLabel")}</span>
-                )}
-              </span>
-            );
-          })}
+          <span style={{ fontWeight: 600, color: text.primary }}>{t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)}</span>
+          <span style={{ fontSize: 12 }}>{t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}</span>
+          <span style={{ fontSize: 12, color: text.tertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {orderedProviders.map((name) => providerOf(name)?.label ?? name).join(" → ")}
+          </span>
         </div>
       </section>
 
-      {/* Providers: card list, chain members drag-to-reorder */}
+      {/* Providers: card list */}
       <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("providersLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("orderHint")}</span>
+          <span style={{ color: text.tertiary, fontSize: 12 }}>
+            {t("readySummary", { n: readyCount, total: config.providers.length })}
+          </span>
           <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-              {t("editOrder")}
+            <Button size="sm" variant="ghost" onClick={handleResetAll} disabled={resettingAll}>
+              {resettingAll ? t("resetting") : t("resetAll")}
             </Button>
           </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {renderedProviders.map((p) => {
-            const inChain = orderedProviders.includes(p.name);
             const testResult = providerTestResults[p.name];
             return (
               <ProviderCard
@@ -702,33 +569,9 @@ export function WebToolsSection(props: SectionProps) {
                 p={p}
                 quota={quotas?.[p.name]}
                 testResult={testResult}
-                orderRank={inChain ? orderedProviders.indexOf(p.name) + 1 : undefined}
+                inOrder={orderedProviders.includes(p.name)}
                 isDefault={p.name === config.defaultProvider}
-                draggable={inChain}
-                isDragOver={dragOverName === p.name && dragName.current !== null && dragName.current !== p.name}
                 onClick={() => setDetailFor(p.name)}
-                onDragStart={(e) => {
-                  dragName.current = p.name;
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", p.name);
-                }}
-                onDragOver={(e) => {
-                  if (!inChain || dragName.current === null) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dragOverName !== p.name) setDragOverName(p.name);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const dragged = dragName.current;
-                  dragName.current = null;
-                  setDragOverName(null);
-                  if (dragged !== null) reorderOnDrop(dragged, p.name);
-                }}
-                onDragEnd={() => {
-                  dragName.current = null;
-                  setDragOverName(null);
-                }}
               />
             );
           })}

@@ -40,12 +40,14 @@ interface Props {
   onConfigChanged: () => void;
 }
 
-/** Collapsed pill: 推荐 (brand) or 已自定义 (neutral). */
-function Pill(props: { kind: "recommend" | "custom" | "none" }) {
+/** Collapsed pill: 默认 (brand) / 已调整 (neutral) / 未保存 (warning). */
+function Pill(props: { kind: "default" | "adjusted" | "unsaved" | "none" }) {
   if (props.kind === "none") return null;
-  const isRecommend = props.kind === "recommend";
-  const color = isRecommend ? "var(--dsw-alias-brand-primary)" : text.tertiary;
-  const bg = isRecommend ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)" : surface.layer2;
+  const isDefault = props.kind === "default";
+  const isUnsaved = props.kind === "unsaved";
+  const color = isDefault ? "var(--dsw-alias-brand-primary)" : isUnsaved ? stateColor.warning : text.tertiary;
+  const bg = isDefault ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)" : surface.layer2;
+  const label = isDefault ? "默认" : isUnsaved ? "未保存" : "已调整";
   return (
     <span
       style={{
@@ -62,7 +64,7 @@ function Pill(props: { kind: "recommend" | "custom" | "none" }) {
         whiteSpace: "nowrap",
       }}
     >
-      {isRecommend ? "推荐" : "已自定义"}
+      {label}
     </span>
   );
 }
@@ -146,19 +148,19 @@ function NumberField(props: {
 }
 
 export function ProviderPreferencesSection(props: Props) {
-  const { p, onConfigChanged } = props;
+  const { t, p, onConfigChanged } = props;
   const isExcluded = p.name === "searxng";
   if (isExcluded || !p.options) {
     // Jina/SearXNG expose no user-facing native options.
     return null;
   }
 
-  return <PreferencesBody key={p.name} p={p} onConfigChanged={onConfigChanged} />;
+  return <PreferencesBody key={p.name} t={t} p={p} onConfigChanged={onConfigChanged} />;
 }
 
 /** Body keyed by provider: draft state is rebuilt per provider entry. */
-function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) {
-  const { p, onConfigChanged } = props;
+function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () => void }) {
+  const { t, p, onConfigChanged } = props;
   const [expanded, setExpanded] = useState(false);
   const seed = { ...(p.options?.overrides ?? {}) };
   const [draft, setDraft] = useState<Record<string, unknown>>(seed);
@@ -179,8 +181,10 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
     });
   };
 
-  // Dirty = draft differs from the persisted overrides (only user edits count).
-  const dirtyKeys = Object.keys(draft).filter((k) => draft[k] !== savedOverrides[k]);
+  // Dirty = union of keys from draft AND savedOverrides, so deleting a saved
+  // override (e.g. clicking back to the default) is correctly detected.
+  const allKeys = new Set([...Object.keys(draft), ...Object.keys(savedOverrides)]);
+  const dirtyKeys = [...allKeys].filter((key) => !Object.is(draft[key], savedOverrides[key]));
   const dirty = dirtyKeys.length > 0;
 
   const handleSave = async () => {
@@ -189,10 +193,10 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
     try {
       await api.providerOptionsSet(p.name, draft);
       onConfigChanged();
-      setMsg("已保存");
+      setMsg(t("prefsSaved"));
       window.setTimeout(() => setMsg(null), 2000);
     } catch {
-      setMsg("保存失败");
+      setMsg(t("prefsSaveFailed"));
     } finally {
       setSaving(false);
     }
@@ -205,17 +209,18 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
       await api.providerOptionsReset(p.name);
       setDraft({});
       onConfigChanged();
-      setMsg("已恢复推荐");
+      setMsg(t("prefsRestored"));
       window.setTimeout(() => setMsg(null), 2000);
     } catch {
-      setMsg("恢复失败");
+      setMsg(t("prefsRestoreFailed"));
     } finally {
       setSaving(false);
     }
   };
 
   const summary = formatProviderOptionsSummary(p.name, eff);
-  const pillKind: "recommend" | "custom" | "none" = !isDef ? "custom" : expanded ? "recommend" : "recommend";
+  const pillKind: "default" | "adjusted" | "unsaved" | "none" =
+    dirty ? "unsaved" : !isDef ? "adjusted" : "default";
 
   return (
     <div style={{ marginTop: 16, borderTop: `1px solid ${surface.border}`, paddingTop: 14 }}>
@@ -243,7 +248,7 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
         }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>搜索偏好</div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("prefsTitle")}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, minWidth: 0 }}>
             <span style={{ fontSize: 12, color: text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {summary}
@@ -258,20 +263,20 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
 
       {expanded && (
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-          <ProviderControls provider={p.name} draft={draft} setValue={setValue} eff={eff} />
+          <ProviderControls t={t} provider={p.name} draft={draft} setValue={setValue} eff={eff} />
 
           {/* Dirty action row — only when the user actually changed something */}
           {dirty && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
               <span style={{ fontSize: 12, color: text.secondary }}>
-                已修改 {dirtyKeys.length} 项
+                {t("prefsModified", { n: dirtyKeys.length })}
               </span>
               <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
                 <Button size="sm" variant="ghost" onClick={handleReset} disabled={saving}>
-                  恢复推荐
+                  {t("prefsRestore")}
                 </Button>
                 <Button size="sm" variant="primary" onClick={handleSave} disabled={saving}>
-                  {saving ? "保存中..." : "保存"}
+                  {saving ? t("prefsSaving") : t("prefsSave")}
                 </Button>
               </span>
             </div>
@@ -285,12 +290,13 @@ function PreferencesBody(props: { p: Props["p"]; onConfigChanged: () => void }) 
 
 /** Per-provider control panels — human-language cards over native options. */
 function ProviderControls(props: {
+  t: TFunc;
   provider: string;
   draft: Record<string, unknown>;
   setValue: (key: string, value: unknown, defaultValue: unknown) => void;
   eff: Record<string, unknown>;
 }) {
-  const { provider, draft, setValue, eff } = props;
+  const { t, provider, draft, setValue, eff } = props;
 
   const raw = (key: string, fallback: unknown): unknown => draft[key] ?? fallback;
 
@@ -377,7 +383,7 @@ function ProviderControls(props: {
                 else setValue("maxAgeHours", -1, undefined);
               }}
             />
-            <AdvancedDelay>
+            <AdvancedDelay t={t}>
               <NumberField
                 label="自定义缓存最大年龄（小时，留空用自动）"
                 hint="例如 24 = 优先使用 24 小时内的缓存"
@@ -439,7 +445,7 @@ function ProviderControls(props: {
             </div>
           </div>
 
-          <AdvancedDelay>
+          <AdvancedDelay t={t}>
             <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Switch
                 checked={autoParams}
@@ -481,7 +487,7 @@ function ProviderControls(props: {
               />
             </div>
           </div>
-          <AdvancedDelay>
+          <AdvancedDelay t={t}>
             <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Switch
                 checked={pref === "llm-context"}
@@ -527,7 +533,7 @@ function ProviderControls(props: {
               />
             </div>
           </div>
-          <AdvancedDelay>
+          <AdvancedDelay t={t}>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <NumberField
                 label="页面读取超时（秒）"
@@ -630,7 +636,7 @@ function ProviderControls(props: {
               />
             </div>
           </div>
-          <AdvancedDelay>
+          <AdvancedDelay t={t}>
             <Segmented
               options={[
                 { value: "auto", label: "自动" },
@@ -662,8 +668,8 @@ function SectionLabel(props: { children: ReactNode }) {
   return <span style={{ fontSize: 12, fontWeight: 600, color: text.secondary }}>{props.children}</span>;
 }
 
-/** "更多设置" collapsible — advanced numeric / niche knobs stay hidden. */
-function AdvancedDelay(props: { children: ReactNode }) {
+/** Collapsible "more settings" — advanced numeric / niche knobs stay hidden. */
+function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -687,7 +693,7 @@ function AdvancedDelay(props: { children: ReactNode }) {
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
           <IconChevronRightOutline14 size={12} />
         </span>
-        更多设置
+        {props.t("moreSettings")}
       </button>
       {open && <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 8, borderRadius: 8, background: surface.layer1 }}>{props.children}</div>}
     </div>

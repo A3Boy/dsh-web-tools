@@ -44,7 +44,14 @@ export function translateDict(
 }
 
 /** Provider page status model (drives the row dot + detail Status block). */
-export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
+export type ProviderStatus =
+  | "ready"
+  | "rate-limited"
+  | "auth-error"
+  | "unreachable"
+  | "not-configured"
+  | "disabled"
+  | "not-in-order";
 
 /**
  * Status override from a connection-test result. A test that failed is NOT
@@ -62,8 +69,10 @@ export function testOutcomeStatus(testResult?: { ok: boolean; error?: { code?: s
   return "unreachable";
 }
 
-export function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain = true): ProviderStatus {
-  if (!inChain) return "not-in-chain";
+export function providerStatusOf(p: ProviderView, quota?: QuotaView, inOrder = true): ProviderStatus {
+  // Disabled providers are OFF regardless of credentials or order.
+  if (p.enabled === false) return "disabled";
+  if (!inOrder) return "not-in-order";
   const selfHosted = p.name === "searxng";
   // Self-hosted providers (SearXNG) are configured by an explicit instance
   // base URL, NOT by an API key — the adapter default URL does not count.
