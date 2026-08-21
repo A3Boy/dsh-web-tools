@@ -195,10 +195,10 @@ function CredentialDisclosure(props: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
-        <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
-      </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+            <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
+          </div>
       {p.keyWritable && (
         <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 8 }}>
           <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} onTest={onTest} busy={busy} testResult={testResult} />
@@ -410,30 +410,24 @@ export function ProviderModal(props: Props) {
         onClose={onClose}
         title={p.label}
         closeLabel={t("close")}
-        description={t(`capability.${p.name}`) || ""}
         className="wt-modal-dialog"
         contentClassName="wt-modal-content"
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 8 }}>
-          {/* Header row: Brand logo + Name + Capability tag + Switch */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0 2px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Header row: Brand logo + Capability tag + Switch */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 0 2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {brand && (
                 <img
                   src={brand.icon}
                   alt={p.label}
-                  width={28}
-                  height={28}
-                  style={{ borderRadius: 6, flexShrink: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}
+                  width={24}
+                  height={24}
+                  style={{ borderRadius: 5, flexShrink: 0 }}
                 />
               )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15, color: text.primary }}>{p.label}</span>
-                  {showPreferred && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)", color: "var(--dsw-alias-brand-primary)", fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
-                </div>
-                <span style={{ fontSize: 12, color: text.tertiary }}>{t(`capability.${p.name}`) || ""}</span>
-              </div>
+              <span style={{ fontSize: 13, color: text.secondary }}>{t(`capability.${p.name}`) || ""}</span>
+              {showPreferred && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: "color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent)", color: "var(--dsw-alias-brand-primary)", fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {status !== "ready" && (
