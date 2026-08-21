@@ -408,10 +408,9 @@ export function WebToolsSection(props: SectionProps) {
   ];
   const providerOf = (name: string) => config.providers.find((p) => p.name === name);
   const enabledNames = new Set(config.providers.filter((p) => p.enabled).map((p) => p.name));
-  const saveOrder = (ordered: string[]) => {
+  const saveOrder = (ordered: string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
-    const first = next[0] ?? config.defaultProvider;
-    void api.routingSet(config.searchRoutingPolicy ?? "ordered", next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    void api.routingSet(policy, next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
   // Rendering order: providers are listed in the routing order (default +
@@ -521,34 +520,38 @@ export function WebToolsSection(props: SectionProps) {
         </div>
       )}
 
-      {/* 搜索源使用方式 (routing policy summary) */}
+      {/* 搜索顺序 (compact routing summary row) */}
       <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("routingLabel")}</h3>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-              {t("routingConfigure")}
-            </Button>
-          </span>
-        </div>
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            padding: "9px 14px",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "10px 14px",
             borderRadius: 12,
             background: surface.layer1,
             border: `1px solid ${surface.border}`,
-            fontSize: 13,
-            color: text.secondary,
           }}
         >
-          <span style={{ fontWeight: 600, color: text.primary }}>{t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)}</span>
-          <span style={{ fontSize: 12 }}>{t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}</span>
-          <span style={{ fontSize: 12, color: text.tertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {orderedProviders.map((name) => providerOf(name)?.label ?? name).join(" → ")}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary, whiteSpace: "nowrap" }}>
+              {t("routingLabel")}
+            </span>
+            <span style={{ color: text.tertiary }}>·</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary, whiteSpace: "nowrap" }}>
+              {t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)}
+            </span>
+            <span style={{ color: text.tertiary }}>·</span>
+            <span style={{ fontSize: 12, color: text.tertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {orderedProviders
+                .map((name) => providerOf(name)?.label ?? name)
+                .join((config.searchRoutingPolicy ?? "ordered") === "random" ? (t("save") === "保存" ? "、" : ", ") : " → ")}
+            </span>
+          </div>
+          <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
+            {t("routingConfigure")}
+          </Button>
         </div>
       </section>
 
@@ -651,6 +654,7 @@ export function WebToolsSection(props: SectionProps) {
           t={t}
           providers={config.providers}
           ordered={orderedProviders}
+          currentPolicy={config.searchRoutingPolicy ?? "ordered"}
           onClose={() => setRoutingOpen(false)}
           onSave={saveOrder}
         />
