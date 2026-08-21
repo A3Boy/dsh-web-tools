@@ -226,7 +226,9 @@ export function apply(ctx: WebToolsContext) {
         const ref = credRefOf(meta.name);
         const cred = await readCredential(ctx, ref);
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
-        const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * 700) / 1000)) : undefined;
+        // Accurate local pricing estimation: Exa ($7/1k = 0.7c/req), Parallel ($1~$5/1k ≈ 0.2c/req)
+        const unitCostCents = meta.name === "parallel" ? 200 : 700;
+        const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * unitCostCents) / 1000)) : 0;
         // Multi-key pool: query EVERY key and merge — the card shows the
         // TOTAL pool balance, not one key's. Each key is authenticated
         // separately (never join the raw string).
