@@ -182,7 +182,9 @@ function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () 
   const keys = p.keys ?? [];
   const allHealthy = keys.length > 0 && keys.every((k) => k.healthy);
   const summary = keys.length > 0
-    ? `${keys.length} 个 · ${allHealthy ? "均正常" : "部分异常"}`
+    ? allHealthy
+      ? t("keysConfigured", { n: keys.length })
+      : t("keysSomeIssues", { n: keys.length })
     : t("notConfigured");
   const canOpen = p.keyWritable;
 
@@ -287,6 +289,7 @@ function CredentialList(props: { t: TFunc; p: ProviderView; onChanged: () => voi
 export function ProviderModal(props: Props) {
   const { t, p, quota, testResult, busy, showPreferred, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
+  const [draftBaseUrl, setDraftBaseUrl] = useState(p.baseUrl ?? "");
   const base = providerStatusOf(p, quota, inChain);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -321,12 +324,12 @@ export function ProviderModal(props: Props) {
         onClose={onClose}
         title={p.label}
         closeLabel={t("close")}
-        description={p.description}
+        description={t(`capability.${p.name}`) || ""}
         className="wt-modal-dialog"
         contentClassName="wt-modal-content"
         footer={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Button variant="primary" onClick={onTest} disabled={busy} style={{ flex: "none" }}>
+            <Button variant="outline" onClick={onTest} disabled={busy} style={{ flex: "none" }}>
               {busy ? t("testingConnection") : t("testConnection")}
             </Button>
             {testResult && (
@@ -344,17 +347,6 @@ export function ProviderModal(props: Props) {
         }
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* Provider identity: logo + name + description */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {PROVIDER_BRAND[p.name] && (
-              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={32} height={32} style={{ borderRadius: 8, flex: "none" }} />
-            )}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 16, color: text.primary }}>{p.label}</div>
-              {p.description && <div style={{ fontSize: 12, color: text.secondary, marginTop: 1 }}>{p.description}</div>}
-            </div>
-          </div>
-
           {/* Top row: enabled + status + quota inline */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
@@ -392,10 +384,11 @@ export function ProviderModal(props: Props) {
           {/* Base URL (self-hosted / custom endpoints) */}
           {(selfHosted || p.baseUrl !== undefined) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 12, color: text.secondary }}>{t("serviceAddress")}</label>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input value={p.baseUrl ?? ""} onChange={(e) => onBaseUrl(e.target.value)} placeholder={t("baseUrlPlaceholder")}
+                <input value={draftBaseUrl} onChange={(e) => setDraftBaseUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { onBaseUrl(draftBaseUrl.trim()); (e.target as HTMLInputElement).blur(); } }} onBlur={() => { if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim()); }} placeholder={t("baseUrlPlaceholder")}
                   style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${surface.border}`, background: surface.layer2, color: text.primary, fontFamily: "inherit", fontSize: 13 }} />
-                {!p.baseUrl && <span style={{ color: text.tertiary, fontSize: 12, whiteSpace: "nowrap" }}>{t("baseUrlDefault")}</span>}
+                {p.baseUrl && <Button size="sm" variant="ghost" onClick={() => { setDraftBaseUrl(""); onBaseUrl(""); }}>{t("restoreDefaultUrl")}</Button>}
               </div>
             </div>
           )}
