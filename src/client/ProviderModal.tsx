@@ -385,8 +385,14 @@ function ConnectionSettingsDisclosure(props: {
             <input
               value={draftBaseUrl}
               onChange={(e) => setDraftBaseUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { onBaseUrl(draftBaseUrl.trim()); (e.target as HTMLInputElement).blur(); } }}
-              onBlur={() => { if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim()); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  (e.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+              onBlur={() => {
+                if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim());
+              }}
               placeholder={t("baseUrlPlaceholder")}
               style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${surface.border}`, background: surface.layer2, color: text.primary, fontFamily: "inherit", fontSize: 13 }}
             />

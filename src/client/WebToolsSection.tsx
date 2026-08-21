@@ -312,8 +312,15 @@ export function WebToolsSection(props: SectionProps) {
   const [routingOpen, setRoutingOpen] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
+  const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
   const loadToken = useRef(0);
   const mounted = useRef(true);
+
+  useEffect(() => {
+    if (config?.providerAttemptTimeoutMs !== undefined) {
+      setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
+    }
+  }, [config?.providerAttemptTimeoutMs]);
 
   const load = async () => {
     const token = ++loadToken.current;
@@ -378,12 +385,6 @@ export function WebToolsSection(props: SectionProps) {
     providerBaseUrls[name] = baseUrl;
     void save({ providerBaseUrls });
   };
-  const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
-  useEffect(() => {
-    if (config?.providerAttemptTimeoutMs !== undefined) {
-      setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
-    }
-  }, [config?.providerAttemptTimeoutMs]);
 
   const commitTimeoutSec = (secStr: string) => {
     const num = Number(secStr);
@@ -563,8 +564,7 @@ export function WebToolsSection(props: SectionProps) {
                 onBlur={() => commitTimeoutSec(timeoutDraftSec)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    commitTimeoutSec(timeoutDraftSec);
-                    (e.target as HTMLInputElement).blur();
+                    (e.currentTarget as HTMLInputElement).blur();
                   }
                 }}
                 style={{

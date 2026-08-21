@@ -355,3 +355,50 @@ test("5. caller abort → no cooldown, no fallback", async () => {
   assert.equal(health.isCoolingDown("tavily", t), false, "no cooldown after abort");
   assert.equal(exa.calls.length, 0, "no fallback after abort");
 });
+
+test("6. search routing runtime: round-robin rotates starting provider A -> B -> C -> A across search calls", async () => {
+  const a = stubAdapter("a");
+  const b = stubAdapter("b");
+  const c = stubAdapter("c");
+
+  const provider = createSearchProvider(
+    () => cfg({ defaultProvider: "a", fallbackOrder: ["b", "c"], searchRoutingPolicy: "round-robin" }),
+    async () => "key",
+    { record() {} },
+    { a, b, c },
+  );
+
+  const r1 = await provider.search({ query: "q1" });
+  assert.equal(r1.backend, "a");
+
+  const r2 = await provider.search({ query: "q2" });
+  assert.equal(r2.backend, "b");
+
+  const r3 = await provider.search({ query: "q3" });
+  assert.equal(r3.backend, "c");
+
+  const r4 = await provider.search({ query: "q4" });
+  assert.equal(r4.backend, "a");
+});
+
+test("7. search routing isolation: createFetchProvider is NOT affected by searchRoutingPolicy", async () => {
+  const a = stubAdapter("a");
+  const b = stubAdapter("b");
+
+  const fetchProvider = createFetchProvider(
+    () => cfg({ defaultProvider: "a", fallbackOrder: ["b"], searchRoutingPolicy: "round-robin" }),
+    async () => "key",
+    { a, b },
+  );
+
+  // Fetch should deterministically always use first fetch-capable provider "a"
+  const f1 = await fetchProvider.fetch({ url: "https://example.com/1" });
+  assert.equal(f1.backend, "a");
+  assert.equal(a.calls.filter(c => c.kind === "fetch").length, 1);
+  assert.equal(b.calls.filter(c => c.kind === "fetch").length, 0);
+
+  const f2 = await fetchProvider.fetch({ url: "https://example.com/2" });
+  assert.equal(f2.backend, "a");
+  assert.equal(a.calls.filter(c => c.kind === "fetch").length, 2);
+  assert.equal(b.calls.filter(c => c.kind === "fetch").length, 0);
+});

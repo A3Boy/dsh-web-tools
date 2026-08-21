@@ -36,7 +36,6 @@ export declare const DEFAULT_SETTINGS: {
     providerEnabled: Record<string, boolean>;
     providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
-    uiLanguage: "auto" | "zh" | "en";
     searchRoutingPolicy: ToolSearchRoutingPolicy;
 };
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -50,8 +49,6 @@ export interface WebToolsSettings {
     providerOptions: StoredProviderOptions;
     /** Brave per-key quota snapshots captured from search response headers. */
     braveQuotaCache: Record<string, QuotaSnapshot>;
-    /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
-    uiLanguage: "auto" | "zh" | "en";
     /** Search routing policy (see shared api-types). */
     searchRoutingPolicy: ToolSearchRoutingPolicy;
 }
