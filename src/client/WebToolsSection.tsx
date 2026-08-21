@@ -318,7 +318,6 @@ export function WebToolsSection(props: SectionProps) {
   const [routingOpen, setRoutingOpen] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
-  const [resettingAll, setResettingAll] = useState(false);
   const loadToken = useRef(0);
   const mounted = useRef(true);
 
@@ -386,20 +385,6 @@ export function WebToolsSection(props: SectionProps) {
     void save({ providerBaseUrls });
   };
   const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
-  const handleResetAll = async () => {
-    setResettingAll(true);
-    try {
-      const providers = config.providers.map((p) => p.name);
-      const patches: Record<string, null> = {};
-      for (const name of providers) patches[name] = null;
-      await api.providerOptionsBatch(patches);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setResettingAll(false);
-    }
-  };
 
   // One ordered list: [defaultProvider, ...fallbackOrder] — Host schema unchanged.
   const orderedProviders = [
@@ -419,12 +404,6 @@ export function WebToolsSection(props: SectionProps) {
     .map((name) => providerOf(name))
     .filter((x): x is ProviderView => x !== undefined)
     .concat(config.providers.filter((p) => !orderedProviders.includes(p.name)));
-
-  const readyCount = config.providers.filter((p) => {
-    if (!p.enabled) return false;
-    const inChain = orderedProviders.includes(p.name);
-    return providerStatusOf(p, quotas?.[p.name], inChain) === "ready";
-  }).length;
 
   const testProvider = async (provider: string) => {
     setBusyProviders((b) => ({ ...b, [provider]: true }));
@@ -449,7 +428,7 @@ export function WebToolsSection(props: SectionProps) {
   const detailProvider = detailFor !== null ? providerOf(detailFor) : undefined;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 720, padding: "4px 0 24px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720, padding: "4px 0 24px" }}>
       {/* Narrow-width responsive rules: provider rows wrap to two lines. */}
       <style>{`
         @media (max-width: 640px) {
@@ -460,37 +439,10 @@ export function WebToolsSection(props: SectionProps) {
       {/* Header: title + enabled switch */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px", color: text.primary }}>{t("title")}</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 14, lineHeight: "22px", color: text.secondary }}>{t("tagline")}</p>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500, lineHeight: "24px", color: text.primary }}>{t("title")}</h2>
+          <p style={{ margin: "2px 0 0", fontSize: 14, lineHeight: "22px", color: text.tertiary }}>{t("tagline")}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {/* Page language: independent of the DSH-wide locale (persisted in
-              the plugin config; "auto" follows the DSH UI language). */}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: text.secondary, whiteSpace: "nowrap" }}>
-            <span>{t("uiLanguage")}</span>
-            <select
-              value={uiPref}
-              onChange={(e) => {
-                const v = e.target.value as UiLangPref;
-                setUiPref(v);
-                void save({ uiLanguage: v });
-              }}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 8,
-                border: `1px solid ${surface.border}`,
-                background: surface.layer2,
-                color: text.primary,
-                fontFamily: "inherit",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              <option value="auto">{t("uiLangAuto")}</option>
-              <option value="zh">中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Switch checked={config.enabled} onChange={setEnabled} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
           {saving && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
           {saved && !saving && <span style={{ color: stateColor.success, fontSize: 12 }}>{t("saved")}</span>}
@@ -556,17 +508,9 @@ export function WebToolsSection(props: SectionProps) {
       </section>
 
       {/* Providers: card list */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("providersLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>
-            {t("readySummary", { n: readyCount, total: config.providers.length })}
-          </span>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" onClick={handleResetAll} disabled={resettingAll}>
-              {resettingAll ? t("resetting") : t("resetAll")}
-            </Button>
-          </span>
+      <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 500, color: text.primary }}>{t("providersLabel")}</h3>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {renderedProviders.map((p) => {
@@ -587,20 +531,15 @@ export function WebToolsSection(props: SectionProps) {
         </div>
       </section>
 
-      {/* Test search */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("testSearchTitle")}</h3>
-        <TestSearchBlock t={t} config={config} onError={(msg) => setError(msg)} />
-      </section>
-
-      {/* Advanced */}
-      <details style={{ fontSize: 13 }}>
-        <summary style={{ cursor: "pointer", color: text.secondary, fontSize: 13, padding: "4px 0" }}>
-          {t("advanced")}
+      {/* 诊断与更多设置 */}
+      <details style={{ fontSize: 13, borderTop: `1px solid ${surface.border}`, paddingTop: 12, marginTop: 4 }}>
+        <summary style={{ cursor: "pointer", color: text.secondary, fontSize: 13, fontWeight: 500, padding: "4px 0" }}>
+          {t("diagnosticsAndMore")}
         </summary>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 0 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <label style={{ color: text.secondary }}>{t("attemptTimeoutLabel")}</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "12px 0 0" }}>
+          {/* Timeout */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ color: text.secondary, fontSize: 13 }}>{t("attemptTimeoutLabel")}</label>
             <input
               type="number"
               min={1000}
@@ -619,7 +558,15 @@ export function WebToolsSection(props: SectionProps) {
                 fontSize: 13,
               }}
             />
-            <span style={{ color: text.tertiary, fontSize: 12 }}>{t("attemptTimeoutHint")} ({t("seconds", { n: Math.round(config.providerAttemptTimeoutMs / 1000) })})</span>
+            <span style={{ color: text.tertiary, fontSize: 12 }}>
+              {t("attemptTimeoutHint")} ({Math.round(config.providerAttemptTimeoutMs / 1000)}s)
+            </span>
+          </div>
+
+          {/* Test search */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("testSearchTitle")}</span>
+            <TestSearchBlock t={t} config={config} onError={(msg) => setError(msg)} />
           </div>
         </div>
       </details>
