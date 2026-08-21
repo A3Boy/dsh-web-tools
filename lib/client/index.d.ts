@@ -6,5 +6,4 @@ export declare const inject: string[];
 export declare const zhDict: Record<string, string>;
 /** en page copy, checked complete against the zh key set. */
 export declare const enDict: Record<string, string>;
-/** Register the Settings page. */
 export declare function apply(ctx: any): void;

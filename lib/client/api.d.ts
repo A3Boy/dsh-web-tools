@@ -48,4 +48,5 @@ export declare const api: {
         reset: true;
         options: any;
     }>;
+    providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) => Promise<Record<string, any>>;
 };

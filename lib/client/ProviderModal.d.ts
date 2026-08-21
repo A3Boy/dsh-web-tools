@@ -13,7 +13,6 @@ interface Props {
     onBaseUrl: (url: string) => void;
     onTest: () => Promise<void>;
     onRefreshQuota: () => void;
-    /** Reload config after credential edits (key list changes). */
     onConfigChanged: () => void;
 }
 export declare function ProviderModal(props: Props): import("react").JSX.Element;
