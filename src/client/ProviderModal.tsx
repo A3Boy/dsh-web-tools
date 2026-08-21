@@ -51,10 +51,16 @@ function QuotaInline(props: { quota: QuotaView; t: TFunc }) {
   );
 }
 
-/** Developer layer: raw provider-native parameters, read-only JSON. */
-function DeveloperOptions(props: { t: TFunc; p: ProviderView }) {
-  const { t, p } = props;
+/** Developer layer: raw provider-native parameters. Effective values are
+ *  read-only; overrides are editable as JSON (parsed + saved through the
+ *  Host's sanitize gate). */
+function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: () => void }) {
+  const { t, p, onConfigChanged } = props;
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [parseError, setParseError] = useState("");
+  const [saving, setSaving] = useState(false);
   const effective = p.options?.effective ?? {};
   const overrides = p.options?.overrides ?? {};
   const hasOverrides = Object.keys(overrides).length > 0;
@@ -72,6 +78,41 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView }) {
     overflowX: "auto",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
+  };
+
+  const startEdit = () => {
+    setDraft(JSON.stringify(overrides, null, 2));
+    setParseError("");
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setParseError("");
+  };
+
+  const saveEdit = async () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draft);
+    } catch {
+      setParseError(t("developerParseError"));
+      return;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      parsed = {};
+    }
+    setSaving(true);
+    setParseError("");
+    try {
+      await api.providerOptionsSet(p.name, parsed as Record<string, unknown>);
+      onConfigChanged();
+      setEditing(false);
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -94,12 +135,41 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView }) {
         <div>
           <div style={{ fontSize: 11, color: text.tertiary, marginTop: 10 }}>{t("developerEffective")}</div>
           <pre style={jsonBox}>{JSON.stringify(effective, null, 2)}</pre>
-          <div style={{ fontSize: 11, color: text.tertiary, marginTop: 10 }}>{t("developerOverrides")}</div>
-          {hasOverrides ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: text.tertiary }}>{t("developerOverrides")}</span>
+            <span style={{ marginLeft: "auto" }}>
+              {editing ? (
+                <>
+                  <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>{t("developerEditCancel")}</Button>
+                  <Button size="sm" variant="primary" onClick={() => void saveEdit()} disabled={saving}>{t("developerEditSave")}</Button>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" onClick={startEdit}>{t("developerEdit")}</Button>
+              )}
+            </span>
+          </div>
+          {editing ? (
+            <>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={6}
+                spellCheck={false}
+                style={{
+                  ...jsonBox,
+                  resize: "vertical",
+                  outline: "none",
+                  color: text.primary,
+                }}
+              />
+              <div style={{ fontSize: 11, color: text.tertiary, marginTop: 4 }}>{t("developerEditHint")}</div>
+            </>
+          ) : hasOverrides ? (
             <pre style={jsonBox}>{JSON.stringify(overrides, null, 2)}</pre>
           ) : (
             <div style={{ fontSize: 12, color: text.tertiary, marginTop: 6 }}>{t("developerNoOverrides")}</div>
           )}
+          {parseError && <div style={{ fontSize: 12, color: stateColor.danger, marginTop: 6 }}>{parseError}</div>}
         </div>
       )}
     </div>
@@ -226,8 +296,14 @@ export function ProviderModal(props: Props) {
       <style>{`
         .wt-modal-dialog {
           width: 720px !important;
+          max-height: min(760px, calc(100vh - 48px)) !important;
           display: flex !important;
           flex-direction: column !important;
+        }
+        .wt-modal-content {
+          min-height: 0;
+          overflow-y: auto;
+          overscroll-behavior: contain;
         }
         @media (max-width: 760px) {
           .wt-modal-dialog { width: calc(100vw - 24px) !important; }
@@ -320,7 +396,7 @@ export function ProviderModal(props: Props) {
           <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
 
           {/* Developer layer: raw provider-native parameters */}
-          <DeveloperOptions t={t} p={p} />
+          <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
 
           {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
         </div>

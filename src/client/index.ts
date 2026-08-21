@@ -169,6 +169,12 @@ export const zhDict: Record<string, string> = {
   developerEffective: "当前生效值",
   developerOverrides: "自定义覆盖",
   developerNoOverrides: "无自定义覆盖，全部使用推荐值",
+  developerEdit: "编辑",
+  developerEditSave: "保存",
+  developerEditCancel: "取消",
+  developerParseError: "JSON 格式错误",
+  manage: "管理",
+  collapse: "收起",
 };
 
 /** en page copy, checked complete against the zh key set. */
@@ -311,6 +317,12 @@ export const enDict: Record<string, string> = {
   developerEffective: "Effective values",
   developerOverrides: "Custom overrides",
   developerNoOverrides: "No custom overrides — using recommended values",
+  developerEdit: "Edit",
+  developerEditSave: "Save",
+  developerEditCancel: "Cancel",
+  developerParseError: "Invalid JSON",
+  manage: "Manage",
+  collapse: "Collapse",
 };
 
 /** Register the Settings page. */
