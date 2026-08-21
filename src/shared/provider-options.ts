@@ -14,6 +14,8 @@ export interface TavilyProviderOptions {
   searchDepth?: "basic" | "advanced" | "fast" | "ultra-fast";
   chunksPerSource?: 1 | 2 | 3;
   autoParameters?: boolean;
+  /** Extract depth for /extract (web_fetch). */
+  fetchExtractDepth?: "basic" | "advanced";
 }
 
 export interface BraveProviderOptions {

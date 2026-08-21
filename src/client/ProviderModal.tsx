@@ -6,7 +6,7 @@
  * by default.
  * @module
  */
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Button, IconChevronRightOutline14, IconPlusOutline16, IconRefreshOutline16, IconTrashOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
@@ -51,7 +51,60 @@ function QuotaInline(props: { quota: QuotaView; t: TFunc }) {
   );
 }
 
-/** Credential disclosure: collapsed by default, shows summary line. */
+/** Developer layer: raw provider-native parameters, read-only JSON. */
+function DeveloperOptions(props: { t: TFunc; p: ProviderView }) {
+  const { t, p } = props;
+  const [open, setOpen] = useState(false);
+  const effective = p.options?.effective ?? {};
+  const overrides = p.options?.overrides ?? {};
+  const hasOverrides = Object.keys(overrides).length > 0;
+
+  const jsonBox: CSSProperties = {
+    marginTop: 8,
+    padding: "8px 10px",
+    borderRadius: 8,
+    background: surface.layer2,
+    border: `1px solid ${surface.border}`,
+    fontFamily: "var(--ds-font-family-code, ui-monospace, Menlo, Consolas, monospace)",
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: text.secondary,
+    overflowX: "auto",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  };
+
+  return (
+    <div style={{ borderTop: `1px solid ${surface.border}`, paddingTop: 12, marginTop: 2 }}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
+        style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", outline: "none" }}
+      >
+        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+          <IconChevronRightOutline14 size={12} />
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("developerOptions")}</span>
+        <span style={{ color: text.tertiary, fontSize: 12 }}>{t("developerOptionsHint")}</span>
+      </div>
+      {open && (
+        <div>
+          <div style={{ fontSize: 11, color: text.tertiary, marginTop: 10 }}>{t("developerEffective")}</div>
+          <pre style={jsonBox}>{JSON.stringify(effective, null, 2)}</pre>
+          <div style={{ fontSize: 11, color: text.tertiary, marginTop: 10 }}>{t("developerOverrides")}</div>
+          {hasOverrides ? (
+            <pre style={jsonBox}>{JSON.stringify(overrides, null, 2)}</pre>
+          ) : (
+            <div style={{ fontSize: 12, color: text.tertiary, marginTop: 6 }}>{t("developerNoOverrides")}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function CredentialDisclosure(props: { t: TFunc; p: ProviderView; onChanged: () => void; onAfterChange: () => void; onError: (msg: string) => void }) {
   const { t, p, onChanged, onAfterChange, onError } = props;
   const [open, setOpen] = useState(false);
@@ -173,14 +226,8 @@ export function ProviderModal(props: Props) {
       <style>{`
         .wt-modal-dialog {
           width: 720px !important;
-          max-height: min(760px, calc(100vh - 48px)) !important;
           display: flex !important;
           flex-direction: column !important;
-        }
-        .wt-modal-content {
-          overflow-y: auto !important;
-          flex: 1 !important;
-          min-height: 0 !important;
         }
         @media (max-width: 760px) {
           .wt-modal-dialog { width: calc(100vw - 24px) !important; }
@@ -215,9 +262,9 @@ export function ProviderModal(props: Props) {
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {/* Provider identity: logo + name + description */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {PROVIDER_BRAND[p.name] && (
-              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={24} height={24} style={{ borderRadius: 6, flex: "none" }} />
+              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={32} height={32} style={{ borderRadius: 8, flex: "none" }} />
             )}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 16, color: text.primary }}>{p.label}</div>
@@ -272,6 +319,9 @@ export function ProviderModal(props: Props) {
 
           {/* Search Experience / Provider-native settings (P4) */}
           <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+
+          {/* Developer layer: raw provider-native parameters */}
+          <DeveloperOptions t={t} p={p} />
 
           {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
         </div>

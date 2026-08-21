@@ -41,7 +41,8 @@ The current branch puts search, page reading and runtime policy behind one stabl
 - **Multi-key pools**: in-flight reservation plus same-provider auth failover
 - **Deterministic provider fallback**: timeout, network, 5xx, rate-limit and quota failures can fall through to the next configured provider
 - **Retry-After cooldown**: a rate-limited provider can be skipped with zero HTTP calls until the server-requested cooldown expires
-- **Provider-native execution profiles**: human-friendly speed/quality/content controls for Exa, Tavily, Brave, You.com, Firecrawl and Parallel
+- **Deeply adapted to each source's native strength**: Exa smart search, Tavily deep retrieval, Brave fast search, Jina reader, Firecrawl extraction — more than plain API calls, each provider runs on its official capability; the settings page presents them as human-readable preferences, never parameter names
+- **Global Search Mode**: one-click 推荐 / 快速 / 精准 / 节省 that applies the right native options and order per provider — or switch to 自定义 and tune the order yourself
 - **Native page / extract backends**: provider-specific Contents / Extract / Scrape / Reader APIs power `web_fetch`
 - **Per-session Search Mode**: force web research before answering, without changing the native DSH tool schema
 - **Proxy and self-hosting**: `HTTP(S)_PROXY`, Windows system proxy, `NO_PROXY`, and keyless self-hosted SearXNG

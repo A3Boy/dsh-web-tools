@@ -26,16 +26,14 @@ import { api, type ConfigView, type QuotaView, type TestProviderView, type TestS
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { RoutingModal } from "./RoutingModal.tsx";
+import { SearchStrategyCard } from "./SearchStrategyCard.tsx";
+import { STRATEGY_PRESETS, type SearchStrategy } from "./provider-presets.ts";
 import type { UiFace } from "./registration.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
 import {
   providerStatusOf,
   testOutcomeStatus,
   quotaSummary,
-  quotaFraction,
-  quotaDisplayKind,
-  quotaRemainingLabel,
-  quotaMetaLine,
   outcomeLabel,
   resolveUiLanguage,
   translateDict,
@@ -93,13 +91,12 @@ interface SectionProps {
 }
 
 /** One provider card in the providers list (click → ProviderModal).
- *  Cards in the search chain are draggable to reorder; cards outside the
- *  chain render non-draggable with a "not in chain" tag. */
+ *  Compact: logo, name, recommendation badge, status dot + text, chevron.
+ *  No quota, rank, or self-hosted label on the card. */
 function ProviderCard(props: {
   t: TFunc;
   p: ProviderView;
   quota?: QuotaView;
-  /** Last connection-test result (drives the row status when it overrides). */
   testResult?: TestProviderView;
   orderRank?: number;
   isDefault: boolean;
@@ -111,11 +108,8 @@ function ProviderCard(props: {
   onDrop: (e: React.DragEvent) => void;
   onDragEnd: () => void;
 }) {
-  const { t, p, quota, testResult, orderRank, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
-  const inChain = orderRank !== undefined;
-  // A connection test can only refine a "ready" guess — it must never flip
-  // "not configured" / "not in chain" to auth-error, and a stale failure
-  // (key since removed) must not keep a provider red forever.
+  const { t, p, quota, testResult, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
+  const inChain = p.enabled;
   const base = providerStatusOf(p, quota, inChain);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -126,9 +120,6 @@ function ProviderCard(props: {
     "not-configured": t("notConfigured"),
     "not-in-chain": t("notInChain"),
   }[status];
-  const selfHosted = p.name === "searxng";
-  // Gray hollow dot for "not configured" / "not in chain"; colored dots only
-  // for real states (green ready / amber rate-limited & unreachable / red auth error).
   const dotState: "done" | "warning" | "error" | "ongoing" | "hollow" =
     status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
   const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
@@ -148,9 +139,9 @@ function ProviderCard(props: {
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 12,
+        gap: 10,
         width: "100%",
-        padding: "12px 14px",
+        padding: "10px 14px",
         background: isDragOver ? surface.hover : surface.layer1,
         border: `1px solid ${isDragOver ? "var(--dsw-alias-brand-primary)" : surface.border}`,
         borderRadius: 12,
@@ -169,97 +160,29 @@ function ProviderCard(props: {
           ⠿
         </span>
       )}
-      {dotState === "hollow" ? (
-        <span
-          aria-hidden
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            border: `1.5px solid ${text.tertiary}`,
-            flex: "none",
-            boxSizing: "border-box",
-          }}
-        />
-      ) : (
-        <StateDot state={dotState} />
+      {PROVIDER_BRAND[p.name] && (
+        <img src={PROVIDER_BRAND[p.name].icon} alt="" width={24} height={24} style={{ borderRadius: 6, flex: "none" }} />
       )}
-      <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8 }}>
-            {PROVIDER_BRAND[p.name] && (
-              <img src={PROVIDER_BRAND[p.name].icon} alt="" width={20} height={20} style={{ borderRadius: 5, flex: "none" }} />
-            )}
-            {p.label}
-          </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }} className="wt-provider-meta">
-        <span
-          style={{
-            color: statusColor,
-            fontSize: 12,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {statusText}
-        </span>
-        {selfHosted && (
-          <span style={{ color: text.tertiary, fontSize: 12, whiteSpace: "nowrap", border: `1px solid ${surface.border}`, borderRadius: 4, padding: "0 6px" }}>
-            {t("selfHosted")}
-          </span>
-        )}
+      <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "none" }}>
+        {p.label}
       </span>
-      {/* Compact quota: label + conditional progress bar (only when a ratio
-          honestly exists), then a quiet meta line. */}
-      {quota && quota.supported && (
-        <ProviderQuotaInline t={t} quota={quota} />
-      )}
       {isDefault && (
         <span style={{ color: accentText(), fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px", whiteSpace: "nowrap" }}>
           {t("defaultProviderLabel")}
         </span>
       )}
-      {orderRank !== undefined && !isDefault && (
-        <span style={{ color: text.tertiary, fontSize: 12, whiteSpace: "nowrap" }}>#{orderRank}</span>
-      )}
+      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
+        {dotState === "hollow" ? (
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
+        ) : (
+          <StateDot state={dotState} size={8} />
+        )}
+        <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
+          {statusText}
+        </span>
+      </span>
       <IconChevronRightOutline14 size={14} />
     </div>
-  );
-}
-
-/** Inline quota summary for the provider card: label + bar when computable. */
-function ProviderQuotaInline(props: { t: TFunc; quota: QuotaView }) {
-  const { t, quota } = props;
-  const kind = quotaDisplayKind(quota);
-  const fraction = quotaFraction(quota);
-
-  // Unsupported / self-hosted / unlimited: one quiet line, nothing else.
-  if (kind === "unavailable") {
-    return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnavailable")}</span>;
-  }
-  if (kind === "self_hosted") {
-    return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaSelfHostedShort")}</span>;
-  }
-  if (kind === "unlimited") {
-    return <span style={{ color: text.secondary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnlimited")}</span>;
-  }
-
-  const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || t("quotaUnavailable");
-  const meta = quotaMetaLine(t, quota);
-  // Fill stays GREEN = remaining share; the gray track under it = used share.
-  const fillColor = stateColor.success;
-  return (
-    <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 120, alignItems: "flex-end", textAlign: "right" }} className="wt-provider-quota">
-      <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-        <span style={{ color: text.secondary, fontSize: 12, whiteSpace: "nowrap" }}>{label}</span>
-        {fraction !== undefined && (
-          <span style={{ color: fillColor, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{Math.round(fraction * 100)}%</span>
-        )}
-      </span>
-      {fraction !== undefined && (
-        <span style={{ width: 140, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", display: "block" }}>
-          <span style={{ width: `${fraction * 100}%`, height: "100%", background: fillColor, display: "block" }} />
-        </span>
-      )}
-      {meta && <span style={{ color: text.tertiary, fontSize: 10, whiteSpace: "nowrap" }}>{meta}</span>}
-    </span>
   );
 }
 
@@ -411,6 +334,8 @@ export function WebToolsSection(props: SectionProps) {
   const [routingOpen, setRoutingOpen] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
+  const [resettingAll, setResettingAll] = useState(false);
+  const [strategyBusy, setStrategyBusy] = useState(false);
   // Main-page drag-to-reorder over the search chain (HTML5 DnD).
   const dragName = useRef<string | null>(null);
   const [dragOverName, setDragOverName] = useState<string | null>(null);
@@ -485,7 +410,6 @@ export function WebToolsSection(props: SectionProps) {
     void save({ providerBaseUrls });
   };
   const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
-  const [resettingAll, setResettingAll] = useState(false);
   const handleResetAll = async () => {
     setResettingAll(true);
     try {
@@ -511,7 +435,9 @@ export function WebToolsSection(props: SectionProps) {
   const saveOrder = (ordered: string[]) => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
     const first = next[0] ?? config.defaultProvider;
-    void save({ defaultProvider: first, fallbackOrder: next.slice(1) });
+    // A manual order edit overrides any preset strategy → switch to custom so
+    // the mode card stops claiming "推荐/快速/…" while the user drives order.
+    void save({ defaultProvider: first, fallbackOrder: next.slice(1), searchStrategy: "custom" });
   };
 
   // Drag-to-reorder on the main page: only chain members are draggable; a
@@ -537,6 +463,41 @@ export function WebToolsSection(props: SectionProps) {
     .map((name) => providerOf(name))
     .filter((x): x is ProviderView => x !== undefined)
     .concat(config.providers.filter((p) => !orderedProviders.includes(p.name)));
+
+  // Apply a search strategy preset: write the strategy id plus, for non-custom
+  // modes, the preset's per-provider option overrides (merged over existing
+  // overrides) and preferred order. "custom" only records the mode so the
+  // manual order editor takes over.
+  const applyStrategy = async (strategy: SearchStrategy) => {
+    if (strategyBusy) return;
+    setStrategyBusy(true);
+    try {
+      const patch: Record<string, unknown> = { searchStrategy: strategy };
+      if (strategy !== "custom") {
+        const preset = STRATEGY_PRESETS[strategy];
+        if (preset.order && preset.order.length > 0) {
+          patch.defaultProvider = preset.order[0];
+          patch.fallbackOrder = preset.order.slice(1);
+        }
+        const merged: Record<string, Record<string, unknown>> = {};
+        for (const pv of config.providers) {
+          if (pv.options && Object.keys(pv.options.overrides).length > 0) {
+            merged[pv.name] = { ...pv.options.overrides };
+          }
+        }
+        for (const [name, opts] of Object.entries(preset.providerOptions)) {
+          merged[name] = { ...(merged[name] ?? {}), ...opts };
+        }
+        if (Object.keys(merged).length > 0) patch.providerOptions = merged;
+      }
+      await api.configSave(patch);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStrategyBusy(false);
+    }
+  };
 
   const readyCount = config.providers.filter((p) => {
     if (!p.enabled) return false;
@@ -632,6 +593,20 @@ export function WebToolsSection(props: SectionProps) {
           <span>{t("proxyDegradedBody")}</span>
         </div>
       )}
+
+      {/* Search Mode (strategy) */}
+      <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("strategyLabel")}</h3>
+          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("strategyHint")}</span>
+        </div>
+        <SearchStrategyCard
+          t={t}
+          current={config.searchStrategy ?? "recommended"}
+          onApply={applyStrategy}
+          disabled={strategyBusy}
+        />
+      </section>
 
       {/* Summary strip */}
       <div

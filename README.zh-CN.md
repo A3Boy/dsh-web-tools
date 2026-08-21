@@ -41,7 +41,8 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
 - **多 API Key 池**：并发 reservation、认证失败自动切同 Provider 下一把 Key
 - **Provider fallback**：超时、网络错误、5xx、限流、额度问题自动尝试下一家
 - **429 Retry-After cooldown**：Provider 被限流后进入临时冷却，冷却期间零 HTTP，直接走下一家，避免下一轮重复撞 429
-- **Provider 原生执行偏好**：Exa / Tavily / Brave / You / Firecrawl / Parallel 都可在设置页用“大众化”选项调整速度、质量、正文和缓存策略
+- **深度适配各搜索源原生能力**：Exa 智能搜索、Tavily 深度检索、Brave 快速搜索、Jina 网页解析、Firecrawl 内容提取——不只是简单调用 API，而是按每个搜索源的官方能力做适配；设置页用“搜索偏好”呈现代理，不暴露内部参数名
+- **全局搜索模式**：推荐 / 快速 / 精准 / 节省 一键切换，自动为各搜索源应用合适的原生参数和搜索顺序；也可以切到“自定义”手动调整
 - **原生正文 / Extract 后端**：Search 找 URL，Fetch 读取页面正文；不同 Provider 会调用自己的 Contents / Extract / Scrape / Reader 接口
 - **Search Mode**：会话级「联网搜索」开关，强制当前回答先完成联网研究；失败时会明确告诉 Agent 哪些信息没有完成联网验证
 - **代理 / SearXNG**：支持系统代理、`HTTP(S)_PROXY`、`NO_PROXY` 和完全自托管的 SearXNG

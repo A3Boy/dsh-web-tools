@@ -11,6 +11,10 @@ import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import type { SearchStrategy } from "../shared/api-types.ts";
+
+/** Persistent search strategy id (shared with the client card). */
+export type ToolSearchStrategy = SearchStrategy;
 
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
@@ -45,6 +49,10 @@ export const DEFAULT_SETTINGS = {
   // Page UI language: "auto" follows the DSH UI language; "zh"/"en" force the
   // page to that language regardless of the DSH-wide preference.
   uiLanguage: "auto" as "auto" | "zh" | "en",
+  // Global search strategy: recommended | fast | quality | cheap | custom.
+  // Presets map to per-provider options + preferred order (see client
+  // provider-presets.ts). "custom" = the operator manages order/options by hand.
+  searchStrategy: "recommended" as ToolSearchStrategy,
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -60,6 +68,8 @@ export interface WebToolsSettings {
   braveQuotaCache: Record<string, QuotaSnapshot>;
   /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
   uiLanguage: "auto" | "zh" | "en";
+  /** Global search strategy (see client provider-presets.ts). */
+  searchStrategy: ToolSearchStrategy;
 }
 
 /** The schema object for settings registration (official z<T> annotation). */
@@ -73,6 +83,7 @@ export const Config: z<WebToolsSettings> = z.object({
   providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
   uiLanguage: z.union([z.const("auto"), z.const("zh"), z.const("en")]),
+  searchStrategy: z.union([z.const("recommended"), z.const("fast"), z.const("quality"), z.const("cheap"), z.const("custom")]),
 });
 
 /** A settings-scope handle: current value + write path. */

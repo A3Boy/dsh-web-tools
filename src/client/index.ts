@@ -37,18 +37,18 @@ export const zhDict: Record<string, string> = {
   enabledLabel: "已启用",
   disabledLabel: "已禁用",
   readySummary: "{total} 个 Provider 中 {n} 个可用",
-  defaultProviderLabel: "默认",
+  defaultProviderLabel: "推荐",
   orderLabel: "搜索顺序",
   orderHint: "从上到下依次尝试；第一项为默认 Provider",
   editOrder: "编辑顺序",
-  providersLabel: "Providers",
+  providersLabel: "搜索源",
   notInChain: "未加入搜索顺序",
   notConfigured: "未配置",
   selfHosted: "自建部署",
-  ready: "正常",
-  rateLimited: "触发限流",
-  authError: "鉴权失败",
-  unreachable: "连接失败",
+  ready: "已连接",
+  rateLimited: "暂时不可用",
+  authError: "密钥错误",
+  unreachable: "无法连接",
   quotaCredits: "{r} / {l} credits",
   quotaRequests: "{r} 次请求{l}",
   quotaUsd: "已用 ${amount}",
@@ -57,7 +57,7 @@ export const zhDict: Record<string, string> = {
   updatedJustNow: "刚刚更新",
   updatedAgo: "{mins} 分钟前更新",
   refreshQuota: "刷新额度",
-  quotaTitle: "额度",
+  quotaTitle: "使用额度",
   resetOn: "重置于 {d}",
   usage: "消耗",
   testSearchTitle: "测试搜索",
@@ -68,8 +68,8 @@ export const zhDict: Record<string, string> = {
   resultCount: "{n} 个结果",
   attempt: "尝试",
   successOutcome: "成功",
-  rateLimitedOutcome: "限流",
-  authOutcome: "鉴权失败",
+  rateLimitedOutcome: "暂时不可用",
+  authOutcome: "密钥错误",
   timeoutOutcome: "超时",
   networkOutcome: "网络错误",
   serverOutcome: "服务端错误",
@@ -80,7 +80,7 @@ export const zhDict: Record<string, string> = {
   unknownOutcome: "未知",
   providerStatus: "状态",
   connected: "已连接",
-  credentials: "Credentials",
+  credentials: "API 密钥",
   keysConfigured: "{n} 把 API Key 已配置",
   addKey: "+ 添加 API Key",
   addKeyPlaceholder: "输入 API Key…",
@@ -88,12 +88,12 @@ export const zhDict: Record<string, string> = {
   add: "添加",
   removeKey: "移除",
   keyReady: "正常",
-  keyAuthError: "鉴权失败",
+  keyAuthError: "密钥错误",
   keyNotConfigured: "未配置",
   keyWritableHint: "可写",
-  baseUrlLabel: "Base URL",
+  baseUrlLabel: "服务地址",
   baseUrlDefault: "默认",
-  baseUrlPlaceholder: "自定义端点（留空使用默认）",
+  baseUrlPlaceholder: "自定义服务地址（留空使用默认）",
   testConnection: "测试连接",
   testingConnection: "测试中…",
   testOk: "连接成功",
@@ -137,6 +137,25 @@ export const zhDict: Record<string, string> = {
   uiLangAuto: "跟随系统",
   searchModeLabel: "联网搜索",
   searchModeUnavailable: "没有可用的搜索源",
+  // --- 搜索策略（UX V2） ---
+  strategyLabel: "搜索模式",
+  strategyHint: "系统会自动选择合适搜索源",
+  strategyRecommended: "推荐",
+  strategyRecommendedDesc: "自动选择最佳搜索源",
+  strategyFast: "快速",
+  strategyFastDesc: "优先速度",
+  strategyQuality: "精准",
+  strategyQualityDesc: "优先质量",
+  strategyCheap: "节省",
+  strategyCheapDesc: "优先减少额度消耗",
+  strategyCustom: "自定义",
+  strategyCustomDesc: "自己调整顺序",
+  // --- 开发者设置（UX V2） ---
+  developerOptions: "开发者设置",
+  developerOptionsHint: "Provider 原生参数（仅高级用户）",
+  developerEffective: "当前生效值",
+  developerOverrides: "自定义覆盖",
+  developerNoOverrides: "无自定义覆盖，全部使用推荐值",
 };
 
 /** en page copy, checked complete against the zh key set. */
@@ -147,17 +166,17 @@ export const enDict: Record<string, string> = {
   enabledLabel: "Enabled",
   disabledLabel: "Disabled",
   readySummary: "{n} of {total} providers ready",
-  defaultProviderLabel: "Default",
+  defaultProviderLabel: "Recommended",
   orderLabel: "Search order",
   orderHint: "Providers are tried from top to bottom; the first is the default",
   editOrder: "Edit order",
-  providersLabel: "Providers",
+  providersLabel: "Search sources",
   notInChain: "Not in search chain",
   notConfigured: "Not configured",
   selfHosted: "Self-hosted",
-  ready: "Ready",
-  rateLimited: "Rate limited",
-  authError: "Auth error",
+  ready: "Connected",
+  rateLimited: "Unavailable",
+  authError: "Key error",
   unreachable: "Unreachable",
   quotaCredits: "{r} / {l} credits",
   quotaRequests: "{r} requests{l}",
@@ -167,7 +186,7 @@ export const enDict: Record<string, string> = {
   updatedJustNow: "Updated just now",
   updatedAgo: "Updated {mins} min ago",
   refreshQuota: "Refresh quota",
-  quotaTitle: "Quota",
+  quotaTitle: "Usage",
   resetOn: "Resets on {d}",
   usage: "Usage",
   testSearchTitle: "Test Search",
@@ -178,8 +197,8 @@ export const enDict: Record<string, string> = {
   resultCount: "{n} result(s)",
   attempt: "Attempt",
   successOutcome: "Success",
-  rateLimitedOutcome: "Rate limited",
-  authOutcome: "Auth error",
+  rateLimitedOutcome: "Unavailable",
+  authOutcome: "Key error",
   timeoutOutcome: "Timed out",
   networkOutcome: "Network error",
   serverOutcome: "Server error",
@@ -190,7 +209,7 @@ export const enDict: Record<string, string> = {
   unknownOutcome: "Unknown",
   providerStatus: "Status",
   connected: "Connected",
-  credentials: "Credentials",
+  credentials: "API Keys",
   keysConfigured: "{n} API key(s) configured",
   addKey: "+ Add API key",
   addKeyPlaceholder: "Paste an API key…",
@@ -198,12 +217,12 @@ export const enDict: Record<string, string> = {
   add: "Add",
   removeKey: "Remove",
   keyReady: "Ready",
-  keyAuthError: "Auth error",
+  keyAuthError: "Key error",
   keyNotConfigured: "Not configured",
   keyWritableHint: "writable",
-  baseUrlLabel: "Base URL",
+  baseUrlLabel: "Service URL",
   baseUrlDefault: "Default",
-  baseUrlPlaceholder: "Custom endpoint (leave empty for default)",
+  baseUrlPlaceholder: "Custom service URL (leave empty for default)",
   testConnection: "Test connection",
   testingConnection: "Testing…",
   testOk: "Connected",
@@ -247,9 +266,52 @@ export const enDict: Record<string, string> = {
   uiLangAuto: "Follow system",
   searchModeLabel: "Web Search",
   searchModeUnavailable: "No search provider available",
+  // --- Search strategies (UX V2) ---
+  strategyLabel: "Search Mode",
+  strategyHint: "The system picks the best search source automatically",
+  strategyRecommended: "Recommended",
+  strategyRecommendedDesc: "Auto-select the best search source",
+  strategyFast: "Fast",
+  strategyFastDesc: "Prioritize speed",
+  strategyQuality: "Precise",
+  strategyQualityDesc: "Prioritize quality",
+  strategyCheap: "Efficient",
+  strategyCheapDesc: "Prioritize low quota usage",
+  strategyCustom: "Custom",
+  strategyCustomDesc: "Adjust the order yourself",
+  // --- Developer settings (UX V2) ---
+  developerOptions: "Developer Options",
+  developerOptionsHint: "Provider-native parameters (advanced users only)",
+  developerEffective: "Effective values",
+  developerOverrides: "Custom overrides",
+  developerNoOverrides: "No custom overrides — using recommended values",
 };
 
 /** Register the Settings page. */
+class SectionErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[dsh-web-tools] WebToolsSection render error", error, info);
+  }
+  render() {
+    if (this.state.error !== null) {
+      return React.createElement(
+        "div",
+        { style: { padding: 12, color: "#e5484d", fontFamily: "ui-monospace, monospace", fontSize: 12, whiteSpace: "pre-wrap", lineHeight: 1.5 } },
+        "[dsh-web-tools] 页面渲染失败:\n" + (this.state.error.stack ?? String(this.state.error)),
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function SectionWithBoundary(props: Record<string, unknown>) {
+  return React.createElement(SectionErrorBoundary, null, React.createElement(WebToolsSection, props as never));
+}
+
 export function apply(ctx: any) {
   ctx.effect(() =>
     ctx.locale.register(NS, {
@@ -267,7 +329,7 @@ export function apply(ctx: any) {
     enDict,
   };
 
-  registerSettingsSection(ctx, t, WebToolsSection, ui);
+  registerSettingsSection(ctx, t, SectionWithBoundary, ui);
 
   // "联网搜索" per-session toggle — a small always-visible control at the left
   // end of the composer tool row (official `conversation.input.left` seat).

@@ -8,6 +8,9 @@
 
 import type { ProviderOptionView } from "./provider-options.ts";
 
+/** Global search strategy — user-facing modes mapped to presets client-side. */
+export type SearchStrategy = "recommended" | "fast" | "quality" | "cheap" | "custom";
+
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {
   name: string;
@@ -53,6 +56,8 @@ export interface ConfigView {
    * page to that language regardless of the DSH-wide preference.
    */
   uiLanguage?: "auto" | "zh" | "en";
+  /** Global search strategy (recommended/fast/quality/cheap/custom). */
+  searchStrategy?: SearchStrategy;
 }
 
 /** One quota snapshot for the card (display only). */

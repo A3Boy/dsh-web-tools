@@ -15,7 +15,7 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchStrategy } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
@@ -184,6 +184,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     uiLanguage: (cfg.uiLanguage as "auto" | "zh" | "en") ?? "auto",
+    searchStrategy: (cfg.searchStrategy as SearchStrategy) ?? "recommended",
     providers,
   };
 }
@@ -198,6 +199,11 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
   if (p.uiLanguage === "auto" || p.uiLanguage === "zh" || p.uiLanguage === "en") patch.uiLanguage = p.uiLanguage;
+  if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
+  const strategy = p.searchStrategy;
+  if (strategy === "recommended" || strategy === "fast" || strategy === "quality" || strategy === "cheap" || strategy === "custom") {
+    patch.searchStrategy = strategy;
+  }
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
 }

@@ -14,6 +14,9 @@
 /** Settings page nav id (drives the Settings section key). */
 export const SECTION_ID = "web-tools";
 
+/** Locale namespace for the settings page. */
+export const NS = "dsh-web-tools";
+
 /** Nav position: after Agent Presets (20), before Plugin Market (40). */
 export const SECTION_ORDER = 30;
 
@@ -59,6 +62,7 @@ export function registerSettingsSection(ctx: RegistrationCtx, t: SectionTFunc, c
         id: SECTION_ID,
         order: SECTION_ORDER,
         label: () => t("nav"),
+        locale: NS,
         inject: () => ({ t, ui }),
       },
       component,
