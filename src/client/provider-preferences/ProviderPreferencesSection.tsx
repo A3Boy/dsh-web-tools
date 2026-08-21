@@ -7,7 +7,7 @@
  * posts them to provider-options/set, reset deletes the override.
  * @module
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api } from "../api.ts";
 import { text, surface, state as stateColor } from "../theme.ts";
@@ -29,7 +29,7 @@ interface Props {
       isDefault: boolean;
     };
   };
-  onConfigChanged: () => void;
+  onConfigChanged: () => Promise<void> | void;
 }
 
 /** Collapsed pill: 已调整 (neutral) / 未保存 (warning). Default state returns null (§30). */
@@ -139,19 +139,24 @@ export function ProviderPreferencesSection(props: Props) {
   return <PreferencesBody key={p.name} t={t} p={p} onConfigChanged={onConfigChanged} />;
 }
 
-function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () => void }) {
+function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () => Promise<void> | void }) {
   const { t, p, onConfigChanged } = props;
   const [expanded, setExpanded] = useState(false);
-  const seed = { ...(p.options?.overrides ?? {}) };
-  const [draft, setDraft] = useState<Record<string, unknown>>(seed);
+  const [draft, setDraft] = useState<Record<string, unknown>>(() => ({ ...(p.options?.overrides ?? {}) }));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; tone: "success" | "error" } | null>(null);
 
+  // Sync draft whenever upstream options change from external reload or save
+  useEffect(() => {
+    setDraft({ ...(p.options?.overrides ?? {}) });
+  }, [p.options?.overrides]);
+
   const eff = p.options!.effective;
   const isDef = p.options!.isDefault;
-  const savedOverrides = p.options!.overrides ?? {};
+  const savedOverrides = useMemo(() => p.options?.overrides ?? {}, [p.options?.overrides]);
 
   const setValue = (key: string, value: unknown, defaultValue: unknown) => {
+    setMsg(null);
     setDraft((prev) => {
       const next = { ...prev };
       if (value === defaultValue) delete next[key];
@@ -168,8 +173,11 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
     setSaving(true);
     setMsg(null);
     try {
-      await api.providerOptionsSet(p.name, draft);
-      onConfigChanged();
+      const res = await api.providerOptionsSet(p.name, draft);
+      if (res?.options?.overrides) {
+        setDraft({ ...res.options.overrides });
+      }
+      await onConfigChanged();
       setMsg({ text: t("prefsSaved"), tone: "success" });
       window.setTimeout(() => setMsg(null), 2000);
     } catch {
@@ -179,8 +187,22 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
     }
   };
 
-  const handleCancel = () => { setDraft(savedOverrides); setMsg(null); };
-  const handleResetToDefaults = () => { setDraft({}); setMsg(null); };
+  const handleCancel = () => { setDraft({ ...savedOverrides }); setMsg(null); };
+  const handleResetToDefaults = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const res = await api.providerOptionsReset(p.name);
+      setDraft({});
+      await onConfigChanged();
+      setMsg({ text: t("prefsRestored"), tone: "success" });
+      window.setTimeout(() => setMsg(null), 2000);
+    } catch {
+      setMsg({ text: t("prefsRestoreFailed"), tone: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const summary = formatProviderOptionsSummary(p.name, eff, (key) => t(key));
   const pillKind: "default" | "adjusted" | "unsaved" | "none" = dirty ? "unsaved" : !isDef ? "adjusted" : "default";

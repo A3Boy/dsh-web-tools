@@ -14,7 +14,7 @@ interface Props {
     onBaseUrl: (url: string) => void;
     onTest: () => Promise<void>;
     onRefreshQuota: () => void;
-    onConfigChanged: () => void;
+    onConfigChanged: () => Promise<void> | void;
 }
 export declare function ProviderModal(props: Props): import("react").JSX.Element;
 export {};

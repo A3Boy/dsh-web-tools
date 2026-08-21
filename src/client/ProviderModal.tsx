@@ -29,7 +29,7 @@ interface Props {
   onBaseUrl: (url: string) => void;
   onTest: () => Promise<void>;
   onRefreshQuota: () => void;
-  onConfigChanged: () => void;
+  onConfigChanged: () => Promise<void> | void;
 }
 
 /** Quiet human source label (no "Official/Authoritative" tag stacking). */

@@ -11,7 +11,7 @@ interface Props {
             isDefault: boolean;
         };
     };
-    onConfigChanged: () => void;
+    onConfigChanged: () => Promise<void> | void;
 }
 export declare function ProviderPreferencesSection(props: Props): import("react").JSX.Element;
 export {};

@@ -608,11 +608,11 @@ export function WebToolsSection(props: SectionProps) {
           onBaseUrl={(url) => setBaseUrl(detailProvider.name, url)}
           onTest={() => testProvider(detailProvider.name)}
           onRefreshQuota={() => void loadQuotas(true)}
-          onConfigChanged={() => {
-            // Credentials changed (add/remove key): drop the stale probe so a
+          onConfigChanged={async () => {
+            // Credentials or preferences changed: drop the stale probe so a
             // previous "no key" / auth error does not linger after the edit.
             setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; });
-            void load();
+            await load();
           }}
         />
       )}
