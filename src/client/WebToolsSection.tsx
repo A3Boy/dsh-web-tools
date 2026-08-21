@@ -93,6 +93,20 @@ interface SectionProps {
   ui?: UiFace;
 }
 
+/** 6-dot grip icon for drag handle. */
+function GripIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.35, flexShrink: 0, cursor: "grab" }}>
+      <circle cx="5" cy="3" r="1.5" />
+      <circle cx="11" cy="3" r="1.5" />
+      <circle cx="5" cy="8" r="1.5" />
+      <circle cx="11" cy="8" r="1.5" />
+      <circle cx="5" cy="13" r="1.5" />
+      <circle cx="11" cy="13" r="1.5" />
+    </svg>
+  );
+}
+
 /** One provider row inside the unified SettingsGroup list. */
 function ProviderRow(props: {
   t: TFunc;
@@ -104,10 +118,22 @@ function ProviderRow(props: {
   /** Show the "首选" text — only for the first entry in ordered policy. */
   showPreferred: boolean;
   isLast: boolean;
+  isDragging?: boolean;
+  isOver?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
   onToggle: (enabled: boolean) => void;
   onClick: () => void;
 }) {
-  const { t, p, quota, testResult, inOrder, showPreferred, isLast, onToggle, onClick } = props;
+  const {
+    t, p, quota, testResult, inOrder, showPreferred, isLast,
+    isDragging, isOver,
+    onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
+    onToggle, onClick,
+  } = props;
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
@@ -123,9 +149,22 @@ function ProviderRow(props: {
     status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
   const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
 
-  const brandIcon = PROVIDER_BRAND[p.name] ? (
-    <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
-  ) : undefined;
+  const brandIcon = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        title="拖动调整顺序"
+        style={{ display: "inline-flex", alignItems: "center", padding: "2px 0", cursor: "grab" }}
+      >
+        <GripIcon />
+      </span>
+      {PROVIDER_BRAND[p.name] && (
+        <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
+      )}
+    </div>
+  );
 
   const trailing = (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
@@ -150,16 +189,27 @@ function ProviderRow(props: {
   );
 
   return (
-    <SettingsRow
-      icon={brandIcon}
-      title={p.label}
-      subtitle={showPreferred ? <SoftChip>{t("preferredProviderLabel")}</SoftChip> : undefined}
-      trailing={trailing}
-      chevron
-      isLast={isLast}
-      insetDivider
-      onClick={onClick}
-    />
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      style={{
+        background: isOver ? surface.hover : isDragging ? surface.layer2 : undefined,
+        opacity: isDragging ? 0.4 : 1,
+        transition: "background .12s ease",
+      }}
+    >
+      <SettingsRow
+        icon={brandIcon}
+        title={p.label}
+        subtitle={showPreferred ? <SoftChip>{t("preferredProviderLabel")}</SoftChip> : undefined}
+        trailing={trailing}
+        chevron
+        isLast={isLast}
+        insetDivider
+        onClick={onClick}
+      />
+    </div>
   );
 }
 
@@ -307,6 +357,8 @@ export function WebToolsSection(props: SectionProps) {
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
   const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
+  const dragProvider = useRef<string | null>(null);
+  const [overProvider, setOverProvider] = useState<string | null>(null);
   const loadToken = useRef(0);
   const mounted = useRef(true);
 
@@ -510,6 +562,8 @@ export function WebToolsSection(props: SectionProps) {
         <SettingsGroup title={t("providersLabel")}>
           {renderedProviders.map((p, idx) => {
             const testResult = providerTestResults[p.name];
+            const isDragging = dragProvider.current === p.name;
+            const isOver = overProvider === p.name && dragProvider.current !== null && dragProvider.current !== p.name;
             return (
               <ProviderRow
                 key={p.name}
@@ -520,6 +574,46 @@ export function WebToolsSection(props: SectionProps) {
                 inOrder={orderedProviders.includes(p.name)}
                 showPreferred={showPreferredFor(p.name)}
                 isLast={idx === renderedProviders.length - 1}
+                isDragging={isDragging}
+                isOver={isOver}
+                onDragStart={(e) => {
+                  dragProvider.current = p.name;
+                  e.dataTransfer.effectAllowed = "move";
+                  e.dataTransfer.setData("text/plain", p.name);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (overProvider !== p.name) setOverProvider(p.name);
+                }}
+                onDragLeave={() => {
+                  if (overProvider === p.name) setOverProvider(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const fromName = dragProvider.current;
+                  dragProvider.current = null;
+                  setOverProvider(null);
+                  if (!fromName || fromName === p.name) return;
+
+                  // Compute next order
+                  const currentOrderList = [...orderedProviders];
+                  const fromIdx = currentOrderList.indexOf(fromName);
+                  const toIdx = currentOrderList.indexOf(p.name);
+
+                  if (fromIdx !== -1 && toIdx !== -1) {
+                    currentOrderList.splice(fromIdx, 1);
+                    currentOrderList.splice(toIdx, 0, fromName);
+                    saveOrder(currentOrderList);
+                  } else if (fromIdx === -1 && toIdx !== -1) {
+                    currentOrderList.splice(toIdx, 0, fromName);
+                    saveOrder(currentOrderList);
+                  }
+                }}
+                onDragEnd={() => {
+                  dragProvider.current = null;
+                  setOverProvider(null);
+                }}
                 onToggle={(enabled) => toggleProvider(p.name, enabled)}
                 onClick={() => setDetailFor(p.name)}
               />
