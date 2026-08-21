@@ -289,7 +289,6 @@ export function ProviderModal(props: Props) {
                 <StateDot state={statusState} size={8} />
               )}
               <span style={{ color: statusColor, fontWeight: 500, fontSize: 13 }}>{statusText}</span>
-              {status === "ready" && <span style={{ color: text.tertiary, fontSize: 11 }}>· {t("connected")}</span>}
             </span>
           </div>
 
