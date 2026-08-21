@@ -182,7 +182,7 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
   const handleCancel = () => { setDraft(savedOverrides); setMsg(null); };
   const handleResetToDefaults = () => { setDraft({}); setMsg(null); };
 
-  const summary = formatProviderOptionsSummary(p.name, eff);
+  const summary = formatProviderOptionsSummary(p.name, eff, (key) => t(key));
   const pillKind: "default" | "adjusted" | "unsaved" | "none" = dirty ? "unsaved" : !isDef ? "adjusted" : "default";
 
   return (

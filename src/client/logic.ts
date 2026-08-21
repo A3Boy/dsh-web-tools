@@ -217,51 +217,53 @@ export function outcomeLabel(t: TFunc, outcome: string): string {
 /**
  * Format a human-friendly summary of the currently resolved provider execution
  * options for the collapsed Search Experience section.
+ * Accepts optional t() for i18n; falls back to Chinese when no t is provided.
  */
-export function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined): string {
-  if (!effective) return "使用推荐设置";
+export function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined, t?: (key: string) => string): string {
+  if (!effective) return t ? t("prefsDefault") : "默认设置";
   switch (providerName) {
     case "exa": {
       const type = String(effective.searchType ?? "auto");
-      const typeLabel = type === "fast" ? "快速搜索" : type === "instant" ? "极速搜索" : type.startsWith("deep") ? "深度搜索" : "自动搜索";
-      const freshness = effective.maxAgeHours === 0 ? "始终刷新" : effective.maxAgeHours === -1 ? "仅使用缓存" : "自动新鲜度";
+      const typeLabel = type === "fast" ? (t ? t("prefsFast") : "快速") : type === "instant" ? (t ? t("prefsInstant") : "极速") : type.startsWith("deep") ? (t ? t("prefsDeep") : "深入") : (t ? t("prefsAutoLabel") : "自动");
+      const freshness = effective.maxAgeHours === 0 ? (t ? t("prefsFreshnessLive") : "每次刷新") : effective.maxAgeHours === -1 ? (t ? t("prefsFreshnessCache") : "仅缓存") : (t ? t("prefsFreshnessAuto") : "缓存自动");
       return `${typeLabel} · ${freshness}`;
     }
     case "tavily": {
-      if (effective.autoParameters) return "自动优化 · 1-2 credits";
+      if (effective.autoParameters) return t ? t("prefsTavilyAutoParams") : "自动调节";
       const depth = String(effective.searchDepth ?? "basic");
-      if (depth === "advanced") return "高质量 · 2 credits";
-      if (depth === "fast") return "快速 · 1 credit";
-      if (depth === "ultra-fast") return "极速 · 1 credit";
-      return "平衡 · 1 credit";
+      if (depth === "advanced") return `${t ? t("prefsTavilyAdvanced") : "深入"} · 2 credits`;
+      if (depth === "fast") return `${t ? t("prefsTavilyFast") : "快速"} · 1 credit`;
+      if (depth === "ultra-fast") return `${t ? t("prefsTavilyUltraFast") : "极速"} · 1 credit`;
+      return `${t ? t("prefsTavilyBasic") : "标准"} · 1 credit`;
     }
     case "brave": {
       const pref = String(effective.endpointPreference ?? "auto");
-      if (pref === "web-search") return "普通网页搜索";
-      return "智能上下文 · 推荐";
+      if (pref === "web-search") return t ? t("prefsBraveWebSearch") : "Web Search";
+      if (pref === "llm-context") return t ? t("prefsBraveLlmContext") : "LLM Context";
+      return t ? t("prefsBraveAuto") : "自动";
     }
     case "you": {
       const ext = String(effective.extractionMode ?? "highlights");
-      return ext === "none" ? "简短摘要模式" : "AI 相关片段 · 推荐";
+      return ext === "none" ? (t ? t("prefsYouSummary") : "搜索摘要") : (t ? t("prefsYouHighlights") : "重点片段");
     }
     case "firecrawl": {
-      const fresh = effective.fetchMaxAgeMs === 0 ? "始终刷新" : "智能缓存";
-      return `正文清洗 · ${fresh}`;
+      const fresh = effective.fetchMaxAgeMs === 0 ? (t ? t("prefsFreshnessLive") : "每次刷新") : (t ? t("prefsFreshnessAuto") : "自动缓存");
+      return `${t ? t("prefsFirecrawlOnlyMain") : "仅正文"} · ${fresh}`;
     }
     case "parallel": {
       const mode = String(effective.mode ?? "advanced");
-      if (mode === "basic") return "平衡模式";
-      if (mode === "fast") return "快速模式";
-      if (mode === "turbo") return "极速模式";
-      return "高质量搜索 · 推荐";
+      if (mode === "basic") return t ? t("prefsParallelBasic") : "标准";
+      if (mode === "fast") return t ? t("prefsParallelFast") : "快速";
+      if (mode === "turbo") return t ? t("prefsParallelTurbo") : "极速";
+      return t ? t("prefsParallelAdvanced") : "深入";
     }
     case "jina": {
       const engine = String(effective.fetchEngine ?? "auto");
       const readerLm = effective.fetchReaderLmV2 === true;
-      const engineLabel = engine === "curl" ? "快速读取" : engine === "browser" ? "浏览器渲染" : "自动引擎";
-      return readerLm ? `${engineLabel} · 高质量转换` : engineLabel;
+      const engineLabel = engine === "curl" ? (t ? t("prefsJinaModeDirect") : "直接读取") : engine === "browser" ? (t ? t("prefsJinaModeBrowser") : "浏览器") : (t ? t("prefsJinaModeAuto") : "自动读取");
+      return readerLm ? `${engineLabel} · ${t ? t("prefsJinaReaderLmLabel") : "高质量转换"}` : engineLabel;
     }
     default:
-      return "推荐设置";
+      return t ? t("prefsDefault") : "默认设置";
   }
 }
