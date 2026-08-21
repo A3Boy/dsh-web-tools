@@ -114,46 +114,61 @@ export function RoutingModal(props: Props) {
         {/* Section 1: 使用方式 (policy selector) */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: text.secondary }}>{t("routingPolicySection")}</div>
-          {POLICIES.map((p) => {
-            const selected = policy === p;
-            return (
-              <div
-                key={p}
-                onClick={() => setPolicy(p)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  border: selected ? "1px solid var(--dsw-alias-brand-primary)" : `1px solid ${surface.border}`,
-                  background: selected ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent)" : surface.layer1,
-                  cursor: "pointer",
-                  transition: "all .12s ease",
-                }}
-              >
-                <div
-                  style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    border: selected ? "5px solid var(--dsw-alias-brand-primary)" : `2px solid ${surface.border}`,
-                    boxSizing: "border-box",
-                    flexShrink: 0,
-                    transition: "all .12s ease",
+          <div role="radiogroup" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {POLICIES.map((p) => {
+              const selected = policy === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  tabIndex={0}
+                  onClick={() => setPolicy(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setPolicy(p);
+                    }
                   }}
-                />
-                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                  <span style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: text.primary }}>
-                    {t(`routingPolicy.${p}`)}
-                  </span>
-                  <span style={{ fontSize: 11, color: text.tertiary }}>
-                    {t(`routingPolicyHint.${p}`)}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    borderRadius: 10,
+                    border: selected ? "1px solid var(--dsw-alias-brand-primary)" : `1px solid ${surface.border}`,
+                    background: selected ? "color-mix(in srgb, var(--dsw-alias-brand-primary) 6%, transparent)" : surface.layer1,
+                    cursor: "pointer",
+                    transition: "all .12s ease",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    outline: "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      border: selected ? "5px solid var(--dsw-alias-brand-primary)" : `2px solid ${surface.border}`,
+                      boxSizing: "border-box",
+                      flexShrink: 0,
+                      transition: "all .12s ease",
+                    }}
+                  />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: selected ? 600 : 500, color: text.primary }}>
+                      {t(`routingPolicy.${p}`)}
+                    </span>
+                    <span style={{ fontSize: 11, color: text.tertiary }}>
+                      {t(`routingPolicyHint.${p}`)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Section 2: 搜索源 (sources order) */}

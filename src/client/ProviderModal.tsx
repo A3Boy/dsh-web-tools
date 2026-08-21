@@ -452,7 +452,7 @@ export function ProviderModal(props: Props) {
               <span style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <StateDot state={testResult.ok ? "done" : "error"} size={8} />
                 {testResult.ok
-                  ? `${t("testOk")} · ${testResult.latencyMs}ms · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
+                  ? `${t("testOk")} · ${(testResult.latencyMs / 1000).toFixed(2)} ${t("secondsUnit")} · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
                   : `${t("testFail")}: ${testResult.error?.message ?? ""}`}
               </span>
             )}

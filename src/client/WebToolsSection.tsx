@@ -223,7 +223,7 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: stateColor.success, fontSize: 13 }}>
               <StateDot state="done" size={8} />
               <span style={{ fontWeight: 600 }}>
-                {label(result.backend ?? "")} · {result.latencyMs}ms · {t("resultCount", { n: result.resultCount ?? 0 })}
+                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {(result.latencyMs / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
               </span>
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
@@ -241,19 +241,22 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 
           {/* Human-readable attempts timeline */}
           {attempts.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: text.secondary }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: text.secondary }}>
               {attempts.map((a, i) => {
                 const ok = a.outcome === "success";
                 const skipped = a.outcome.startsWith("skipped-");
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ width: 14, color: text.tertiary }}>{i + 1}.</span>
-                    <span style={{ color: text.primary, fontWeight: 500 }}>{label(a.provider)}</span>
-                    <span style={{ color: ok ? stateColor.success : skipped ? text.tertiary : stateColor.danger }}>
+                    <span style={{ color: text.primary, fontWeight: 500, minWidth: 60 }}>{label(a.provider)}</span>
+                    <span style={{ color: ok ? stateColor.success : skipped ? text.tertiary : stateColor.danger, minWidth: 70 }}>
                       {outcomeLabel(t, a.outcome)}
                     </span>
-                    {a.latencyMs !== undefined && <span style={{ color: text.tertiary }}>{a.latencyMs}ms</span>}
-                    {i < attempts.length - 1 && <span style={{ marginLeft: "auto", color: text.tertiary }}>↓</span>}
+                    {a.latencyMs !== undefined && (
+                      <span style={{ color: text.tertiary, marginLeft: "auto" }}>
+                        {(a.latencyMs / 1000).toFixed(1)} {t("secondsUnit")}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -285,22 +288,13 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 export function WebToolsSection(props: SectionProps) {
   const { t: baseT, ui } = props;
   const [config, setConfig] = useState<ConfigView | null>(null);
-  // Independent page language: "auto" follows the DSH UI language, "zh"/"en"
-  // force the page — persisted in the plugin's own config, never the DSH-wide
-  // preference. The local `t` shadows props.t so every child translation
-  // (ProviderModal/RoutingModal included) rides the effective language.
-  const [uiPref, setUiPref] = useState<UiLangPref>("auto");
   const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
-  // Follow DSH-wide locale switches while the preference is "auto".
+  // Follow DSH-wide locale switches directly — the page always mirrors DSH.
   useEffect(() => {
     if (!ui) return;
     return ui.subscribeLocale(() => setDshActive(ui.getActiveLocale()));
   }, [ui]);
-  // Adopt the persisted preference once the config loads (and after saves).
-  useEffect(() => {
-    if (config) setUiPref(config.uiLanguage ?? "auto");
-  }, [config]);
-  const effectiveLang = resolveUiLanguage(uiPref, dshActive);
+  const effectiveLang = dshActive === "en" ? "en" : "zh";
   const t: TFunc = useMemo(() => {
     if (!ui) return baseT;
     const dict = effectiveLang === "en" ? ui.enDict : ui.zhDict;
@@ -384,7 +378,25 @@ export function WebToolsSection(props: SectionProps) {
     providerBaseUrls[name] = baseUrl;
     void save({ providerBaseUrls });
   };
-  const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
+  const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
+  useEffect(() => {
+    if (config?.providerAttemptTimeoutMs !== undefined) {
+      setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
+    }
+  }, [config?.providerAttemptTimeoutMs]);
+
+  const commitTimeoutSec = (secStr: string) => {
+    const num = Number(secStr);
+    if (!Number.isFinite(num) || num <= 0) {
+      if (config) setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
+      return;
+    }
+    const ms = Math.min(60000, Math.max(1000, Math.round(num * 1000)));
+    setTimeoutDraftSec(String(Math.round(ms / 1000)));
+    if (!config || ms !== config.providerAttemptTimeoutMs) {
+      void save({ providerAttemptTimeoutMs: ms });
+    }
+  };
 
   // One ordered list: [defaultProvider, ...fallbackOrder] — Host schema unchanged.
   const orderedProviders = [
@@ -540,26 +552,36 @@ export function WebToolsSection(props: SectionProps) {
           {/* Timeout */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <label style={{ color: text.secondary, fontSize: 13 }}>{t("attemptTimeoutLabel")}</label>
-            <input
-              type="number"
-              min={1000}
-              max={60000}
-              step={1000}
-              value={config.providerAttemptTimeoutMs}
-              onChange={(e) => setAttemptTimeout(Number(e.target.value))}
-              style={{
-                width: 90,
-                padding: "4px 8px",
-                borderRadius: 6,
-                border: `1px solid ${surface.border}`,
-                background: surface.layer2,
-                color: text.primary,
-                fontFamily: "inherit",
-                fontSize: 13,
-              }}
-            />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                step={1}
+                value={timeoutDraftSec}
+                onChange={(e) => setTimeoutDraftSec(e.target.value)}
+                onBlur={() => commitTimeoutSec(timeoutDraftSec)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    commitTimeoutSec(timeoutDraftSec);
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                style={{
+                  width: 64,
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: `1px solid ${surface.border}`,
+                  background: surface.layer2,
+                  color: text.primary,
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                }}
+              />
+              <span style={{ color: text.secondary, fontSize: 13 }}>{t("secondsUnit")}</span>
+            </div>
             <span style={{ color: text.tertiary, fontSize: 12 }}>
-              {t("attemptTimeoutHint")} ({Math.round(config.providerAttemptTimeoutMs / 1000)}s)
+              {t("attemptTimeoutHint")}
             </span>
           </div>
 
