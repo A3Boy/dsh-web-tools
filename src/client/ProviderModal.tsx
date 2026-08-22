@@ -424,7 +424,6 @@ export function ProviderModal(props: Props) {
       title={p.label}
       headless
       className="dswt-modal-dialog"
-      contentClassName="dswt-modal-content"
     >
       <div className="dswt-modal-body">
         {/* Unified Provider Header: [Logo] Name \n Capability · Preferred | Switch + Close */}
