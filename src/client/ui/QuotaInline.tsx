@@ -78,9 +78,10 @@ function cardShell(embedded: boolean): React.CSSProperties {
 export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t?: TFunc }) {
   const { quota, providerName, t } = props;
 
-  // Brave is pay-as-you-go metered ($5/1k reqs) — always show "按量计费" (4 chars),
+  // Brave / Exa / Parallel are pay-as-you-go metered — always show "按量计费" (4 chars),
   // never misleading percentages or fake progress bars.
-  if (providerName === "brave") {
+  const meteredNames = new Set(["brave", "exa", "parallel"]);
+  if (meteredNames.has(providerName ?? "")) {
     return (
       <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, whiteSpace: "nowrap", flex: "none" }}>
         {t ? t("quotaMeteredPrefix") : "Pay-as-you-go"}
@@ -135,8 +136,10 @@ export function QuotaCard(props: {
     }
   };
 
-  // Brave is pay-as-you-go metered ($5/1k reqs) — show "按量计费" unconditionally.
-  if (providerName === "brave") {
+  // Brave / Exa / Parallel are pay-as-you-go metered — show "按量计费" unconditionally.
+  const meteredNames = new Set(["brave", "exa", "parallel"]);
+  if (meteredNames.has(providerName ?? "")) {
+    const sourceLabel = providerName === "brave" ? "quotaSourceResponseHeader" : "quotaSourceLocalEstimate";
     return (
       <div style={cardShell(embedded)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -151,7 +154,7 @@ export function QuotaCard(props: {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
-          <span>· {t("quotaSourceResponseHeader")}</span>
+          <span>· {t(sourceLabel)}</span>
           {dash && (
             <a
               href={dash.url}
@@ -170,7 +173,6 @@ export function QuotaCard(props: {
 
   // Fallback card when no quota snapshot or for dashboard-only providers
   if (!quota || !quota.supported || quota.source === "dashboard") {
-    const isLocalMetered = providerName === "parallel" || providerName === "exa";
     return (
       <div style={cardShell(embedded)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -181,9 +183,7 @@ export function QuotaCard(props: {
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, color: text.secondary }}>
-            {isLocalMetered
-              ? t("quotaSourceLocalEstimate")
-              : t("quotaSourceDashboard")}
+            {t("quotaSourceDashboard")}
           </span>
           {dash && (
             <a
