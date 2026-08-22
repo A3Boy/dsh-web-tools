@@ -121,3 +121,13 @@ export interface SearchModeView {
 export interface QuotaDescribeView {
   quotas: Record<string, QuotaView>;
 }
+
+/** Non-blocking release check surfaced by the settings page. */
+export interface VersionCheckView {
+  currentVersion: string;
+  latestVersion?: string;
+  updateAvailable: boolean;
+  releaseUrl?: string;
+  releaseName?: string;
+  publishedAt?: string;
+}

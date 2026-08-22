@@ -23,9 +23,10 @@ import {
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy } from "./api.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView } from "./api.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
+import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
 import type { UiFace } from "./registration.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
 import {
@@ -253,7 +254,7 @@ function ProviderRow(props: {
       <SettingsRow
         icon={brandIcon}
         title={titleWithBadge}
-        subtitle={undefined}
+        subtitle={t(PROVIDER_CAPABILITY_KEY[p.name] ?? "capability.search")}
         trailing={trailing}
         chevron={!editMode}
         isLast={isLast}
@@ -400,6 +401,7 @@ export function WebToolsSection(props: SectionProps) {
     };
   }, [ui, effectiveLang, baseT]);
   const [quotas, setQuotas] = useState<Record<string, QuotaView> | null>(null);
+  const [versionInfo, setVersionInfo] = useState<VersionCheckView | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -444,6 +446,7 @@ export function WebToolsSection(props: SectionProps) {
   useEffect(() => {
     void load();
     void loadQuotas();
+    void api.versionCheck().then(setVersionInfo).catch(() => {});
     return () => {
       loadToken.current += 1;
       mounted.current = false;
@@ -557,6 +560,19 @@ export function WebToolsSection(props: SectionProps) {
       </div>
 
       {error && <div style={{ color: stateColor.danger, fontSize: 13 }}>{error}</div>}
+
+      {versionInfo?.updateAvailable && versionInfo.latestVersion && versionInfo.releaseUrl && (
+        <div className="dswt-update-banner" role="status">
+          <div className="dswt-update-copy">
+            <strong>{t("updateAvailableTitle", { version: versionInfo.latestVersion })}</strong>
+            <span>{t("updateAvailableBody", { current: versionInfo.currentVersion })}</span>
+          </div>
+          <a className="dswt-update-link" href={versionInfo.releaseUrl} target="_blank" rel="noreferrer">
+            {t("viewUpdate")}
+            <ExternalLinkIcon size={12} />
+          </a>
+        </div>
+      )}
 
       {/* Proxy degraded warning: a proxy is configured but undici is missing,
           so provider calls fall back to direct fetch and may time out. */}

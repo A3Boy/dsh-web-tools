@@ -15,7 +15,7 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
@@ -43,6 +43,8 @@ export interface RouteDeps {
   poolEntries?: (provider: string) => Promise<PoolEntry[]>;
   /** Proxy support status (configured + whether undici is loadable). */
   proxyStatus?: () => Promise<{ configured: boolean; degraded: boolean }>;
+  /** Cached, failure-tolerant GitHub release check. */
+  checkVersion?: () => Promise<VersionCheckView>;
   /** Search-Mode runtime access (see search-mode-runtime.ts). */
   searchMode?: {
     view(sessionId: string): SearchModeView;
@@ -303,6 +305,11 @@ async function handleQuotaDescribe(deps: RouteDeps, payload: unknown) {
   return { quotas: await deps.describeQuotas(force) };
 }
 
+async function handleVersionCheck(deps: RouteDeps): Promise<VersionCheckView> {
+  if (!deps.checkVersion) throw new Error("version check unavailable");
+  return deps.checkVersion();
+}
+
 async function handleSearchModeGet(deps: RouteDeps, payload: unknown) {
   const sessionId = String((payload as { sessionId?: unknown })?.sessionId ?? "");
   if (!sessionId) throw new Error("missing sessionId");
@@ -407,6 +414,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
   "test/search": (deps, payload) => handleTestSearch(deps, payload),
   "quota/describe": (deps, payload) => handleQuotaDescribe(deps, payload),
+  "version/check": (deps) => handleVersionCheck(deps),
   "search-mode/get": (deps, payload) => handleSearchModeGet(deps, payload),
   "search-mode/set": (deps, payload) => handleSearchModeSet(deps, payload),
   "provider-options/set": (deps, payload) => handleProviderOptionsSet(deps, payload),

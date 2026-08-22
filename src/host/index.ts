@@ -15,6 +15,8 @@ import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./
 import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
+import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
+import type { VersionCheckView } from "../shared/api-types.ts";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
@@ -22,7 +24,7 @@ import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { proxyStatus } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
@@ -39,6 +41,67 @@ export const inject = ["webServer", "webRuntime", "settings", "credentials", "we
  * resolving plugin config); an empty object would crash at load.
  */
 export const Config = PluginConfig;
+
+const RELEASES_API = "https://api.github.com/repos/A3Boy/dsh-web-tools/releases/latest";
+const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
+const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
+let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
+
+/** Release lookup is best-effort: startup and settings must work offline. */
+async function checkVersion(): Promise<VersionCheckView> {
+  if (versionCache && Date.now() - versionCache.fetchedAt < VERSION_CACHE_MS) return versionCache.value;
+
+  const fallback: VersionCheckView = { currentVersion: CURRENT_VERSION, updateAvailable: false };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    timer.unref?.();
+    let response: Response;
+    try {
+      response = await fetchWithProxy(RELEASES_API, {
+        signal: controller.signal,
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": `dsh-web-tools/${CURRENT_VERSION}`,
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // A repository without releases is a valid "no update" state.
+    if (response.status === 404) {
+      versionCache = { fetchedAt: Date.now(), value: fallback };
+      return fallback;
+    }
+    if (!response.ok) throw new Error(`GitHub releases returned HTTP ${response.status}`);
+
+    const release = await response.json() as {
+      tag_name?: unknown;
+      name?: unknown;
+      html_url?: unknown;
+      published_at?: unknown;
+      draft?: unknown;
+      prerelease?: unknown;
+    };
+    const latestVersion = typeof release.tag_name === "string" ? release.tag_name.replace(/^v/i, "") : "";
+    if (!latestVersion || release.draft === true || release.prerelease === true) return fallback;
+
+    const value: VersionCheckView = {
+      currentVersion: CURRENT_VERSION,
+      latestVersion,
+      updateAvailable: compareVersions(latestVersion, CURRENT_VERSION) > 0,
+      releaseUrl: typeof release.html_url === "string" ? release.html_url : RELEASES_URL,
+      releaseName: typeof release.name === "string" && release.name.trim() ? release.name : `v${latestVersion}`,
+      publishedAt: typeof release.published_at === "string" ? release.published_at : undefined,
+    };
+    versionCache = { fetchedAt: Date.now(), value };
+    return value;
+  } catch {
+    // Do not cache transient network failures; the next settings open can retry.
+    return fallback;
+  }
+}
 
 /** Resolve one credential ref's state + optional value (Host side only). */
 async function readCredential(ctx: WebToolsContext, ref: string): Promise<{ configured: boolean; source?: string; writable: boolean; value?: string }> {
@@ -325,6 +388,7 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
+        checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,
         searchMode,

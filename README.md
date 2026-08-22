@@ -67,6 +67,8 @@ Update:
 dsh plugin --profile web update dsh-web-tools
 ```
 
+The Settings page checks GitHub Releases in the background. When a newer stable version is available, it shows an update notice with a link to the release notes. Check failures never block search or plugin startup.
+
 Remove:
 
 ```bash

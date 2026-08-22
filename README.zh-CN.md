@@ -67,6 +67,8 @@ Settings → Web Search
 dsh plugin --profile web update dsh-web-tools
 ```
 
+设置页会在后台检查 GitHub Release；发现高于当前安装版本的正式版本时，会显示更新提示和发布说明入口。检查失败不会影响搜索或插件启动。
+
 移除：
 
 ```bash
