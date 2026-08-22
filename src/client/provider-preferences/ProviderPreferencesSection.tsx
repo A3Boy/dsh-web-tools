@@ -705,7 +705,7 @@ function SectionLabel(props: { children: ReactNode }) {
 function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -715,7 +715,7 @@ function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
           alignItems: "center",
           gap: 6,
           padding: "2px 0",
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: 500,
           border: "none",
           background: "transparent",
@@ -725,7 +725,7 @@ function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
         }}
       >
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
-          <IconChevronRightOutline14 size={12} />
+          <IconChevronRightOutline14 size={14} />
         </span>
         {props.t("advancedParamsTitle")}
       </button>
@@ -734,9 +734,10 @@ function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 12,
-            padding: "12px",
-            borderRadius: 8,
+            gap: 14,
+            marginTop: 4,
+            padding: "14px 16px",
+            borderRadius: 10,
             background: surface.layer2,
             border: `1px solid ${surface.border}`,
           }}

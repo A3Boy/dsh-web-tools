@@ -165,16 +165,16 @@ export function QuotaCard(props: {
     const isLocalMetered = quota?.source === "local_estimate" && quota?.unit === "requests" && quota?.used !== undefined;
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderTop: `1px solid ${surface.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="dswt-settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", minHeight: 54 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ color: text.secondary, display: "inline-flex" }}><IconCard /></span>
             <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("billingMethod")}</span>
           </div>
           <span style={{ fontSize: 13, color: text.secondary }}>{t("quotaMeteredPrefix")}</span>
         </div>
         {isLocalMetered && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderTop: `1px solid ${surface.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="dswt-settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", minHeight: 54 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("localUsage")}</span>
             </div>
             <span style={{ fontSize: 13, color: text.secondary }}>{t("localUsageTimes", { n: quota!.used! })}</span>
@@ -185,18 +185,19 @@ export function QuotaCard(props: {
             href={dash.url}
             target="_blank"
             rel="noreferrer"
+            className="dswt-settings-row clickable"
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              padding: "11px 14px",
-              borderTop: `1px solid ${surface.border}`,
+              padding: "11px 16px",
+              minHeight: 54,
               color: text.primary,
               textDecoration: "none",
               fontSize: 13,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
               <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
             </div>
@@ -219,18 +220,19 @@ export function QuotaCard(props: {
             href={dash.url}
             target="_blank"
             rel="noreferrer"
+            className="dswt-settings-row clickable"
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              padding: "11px 14px",
-              borderTop: `1px solid ${surface.border}`,
+              padding: "11px 16px",
+              minHeight: 54,
               color: text.primary,
               textDecoration: "none",
               fontSize: 13,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
               <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
             </div>

@@ -39,10 +39,10 @@ export function SettingsGroup(props: {
           right: 0;
         }
       `}</style>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, ...style }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, ...style }}>
         {(title || action) && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 2px" }}>
-            {title && <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary, textTransform: "none" }}>{title}</span>}
+            {title && <span style={{ fontSize: 13, fontWeight: 600, color: text.secondary, textTransform: "none" }}>{title}</span>}
             {action && <div>{action}</div>}
           </div>
         )}
@@ -88,8 +88,8 @@ export function SettingsRow(props: {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 10px 14px;
-          min-height: 48px;
+          padding: 11px 16px;
+          min-height: 54px;
           background: transparent;
           cursor: default;
           outline: none;

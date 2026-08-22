@@ -228,11 +228,8 @@ function ProviderRow(props: {
         <span
           style={{
             fontSize: 11,
-            fontWeight: 500,
-            color: "var(--dsw-alias-brand-primary, #4f8cff)",
-            background: "rgba(79, 140, 255, 0.1)",
-            padding: "1px 6px",
-            borderRadius: 4,
+            fontWeight: 400,
+            color: text.tertiary,
             lineHeight: "16px",
           }}
         >

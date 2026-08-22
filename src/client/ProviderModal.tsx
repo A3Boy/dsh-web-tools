@@ -186,13 +186,14 @@ function CredentialDisclosure(props: {
       : stateColor.danger;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 14px" }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
       <button
         type="button"
+        className="dswt-settings-row clickable"
         onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0, fontFamily: "inherit", color: "inherit" }}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "11px 16px", minHeight: 54, fontFamily: "inherit", color: "inherit" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ color: text.secondary, display: "inline-flex" }}><IconKey /></span>
           <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
         </div>
@@ -204,7 +205,7 @@ function CredentialDisclosure(props: {
         </div>
       </button>
       {open && p.keyWritable && (
-        <div style={{ marginTop: 2, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
           <CredentialList t={t} p={p} onChanged={onChanged} onError={onError} onTest={onTest} busy={busy} testResult={testResult} />
         </div>
       )}
@@ -407,8 +408,8 @@ export function ProviderModal(props: Props) {
     <>
       <style>{`
         .wt-modal-dialog {
-          width: 680px !important;
-          max-height: min(760px, calc(100vh - 48px)) !important;
+          width: 710px !important;
+          max-height: min(780px, calc(100vh - 40px)) !important;
           display: flex !important;
           flex-direction: column !important;
         }
@@ -416,10 +417,11 @@ export function ProviderModal(props: Props) {
           min-height: 0;
           overflow-y: auto;
           overscroll-behavior: contain;
-          padding: 20px 24px !important;
+          padding: 30px 36px 34px !important;
         }
         @media (max-width: 760px) {
           .wt-modal-dialog { width: calc(100vw - 24px) !important; }
+          .wt-modal-content { padding: 24px 20px !important; }
         }
       `}</style>
       <Modal
@@ -430,30 +432,30 @@ export function ProviderModal(props: Props) {
         className="wt-modal-dialog"
         contentClassName="wt-modal-content"
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Unified Provider Header: [Logo] Name \n Capability · Preferred | Switch + Close */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               {brand && (
                 <img
                   src={brand.icon}
                   alt={p.label}
-                  width={36}
-                  height={36}
-                  style={{ borderRadius: 8, flexShrink: 0 }}
+                  width={44}
+                  height={44}
+                  style={{ borderRadius: 10, flexShrink: 0 }}
                 />
               )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: "24px", color: text.primary }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "26px", color: text.primary }}>
                   {p.label}
                 </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: text.tertiary }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: text.tertiary }}>
                   <span>{t(`capability.${p.name}`) || ""}</span>
                   {showPreferred && <span>· {t("preferredProviderLabel")}</span>}
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 4 }}>
               {status !== "ready" && (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                   {statusState === "hollow" ? (
@@ -481,7 +483,7 @@ export function ProviderModal(props: Props) {
                   color: text.tertiary,
                   cursor: "pointer",
                   padding: 0,
-                  marginLeft: 4,
+                  marginLeft: 2,
                 }}
               >
                 <IconCloseOutline16 size={16} />
@@ -490,7 +492,7 @@ export function ProviderModal(props: Props) {
           </div>
 
           {/* 账户: credentials + quota rows + connection settings */}
-          <SettingsGroup title={t("accountTitle")} dividers="none">
+          <SettingsGroup title={t("accountTitle")} dividers="inset">
             {!selfHosted && (
               <CredentialDisclosure
                 t={t}
@@ -532,7 +534,7 @@ export function ProviderModal(props: Props) {
                 ) : undefined
               }
             >
-              <div style={{ padding: "12px 14px" }}>
+              <div style={{ padding: "18px 20px 20px" }}>
                 <ProviderPreferencesSection
                   t={t}
                   p={p}
