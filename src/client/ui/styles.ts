@@ -177,6 +177,14 @@ const CSS = `
   text-align: left;
   font-family: inherit;
   color: inherit;
+  text-decoration: none !important;
+}
+a.dswt-settings-row,
+a.dswt-settings-row:hover,
+a.dswt-settings-row:active,
+a.dswt-settings-row:focus {
+  text-decoration: none !important;
+  color: inherit;
 }
 .dswt-settings-row.clickable {
   cursor: pointer;
