@@ -79,12 +79,12 @@ export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t
   const { quota, providerName, t } = props;
 
   // Brave has no quota endpoint: without a captured header snapshot the
-  // honest state is "请求配额 · 首次搜索后同步" — never a fake number.
+  // honest state is "按量计费 · 首次搜索后同步" — never a fake number.
   const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
   if (bravePendingSync) {
     return (
       <span style={{ fontSize: 12, color: text.tertiary, whiteSpace: "nowrap", flex: "none" }}>
-        {t ? `${t("quotaRequestsTitle")} · ${t("quotaBraveFirstSync")}` : `Request quota · ${quota.note ?? ""}`}
+        {t ? `${t("quotaMeteredPrefix")} · ${t("quotaBraveFirstSync")}` : `Pay-as-you-go · ${quota.note ?? ""}`}
       </span>
     );
   }
@@ -147,7 +147,7 @@ export function QuotaCard(props: {
       <div style={cardShell(embedded)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {isBrave ? t("quotaRequestsTitle") : t("quotaTitle")}
+            {isBrave ? t("quotaMeteredPrefix") : t("quotaTitle")}
           </span>
           <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
         </div>
