@@ -197,7 +197,7 @@ function ProviderRow(props: {
             justifyContent: "center",
             width: 20,
             height: 20,
-            borderRadius: "50%",
+            borderRadius: 5,
             border: "none",
             background: stateColor.danger,
             color: "#fff",
@@ -211,7 +211,7 @@ function ProviderRow(props: {
           onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
         >
           <svg width="10" height="2" viewBox="0 0 10 2" fill="currentColor">
-            <rect width="10" height="2" rx="1" />
+            <rect width="10" height="2" rx="0.5" />
           </svg>
         </button>
       )}
