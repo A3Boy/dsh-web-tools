@@ -188,9 +188,7 @@ function CredentialDisclosure(props: {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0, fontFamily: "inherit", color: "inherit", outline: "none" }}
-        onFocus={(e) => e.currentTarget.style.outline = "2px solid var(--dsw-alias-brand-primary, #4f8cff)"}
-        onBlur={(e) => e.currentTarget.style.outline = "none"}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0, fontFamily: "inherit", color: "inherit" }}
       >
         <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

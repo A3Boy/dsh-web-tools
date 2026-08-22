@@ -21,38 +21,22 @@ export function SettingsGroup(props: {
   return (
     <>
       <style>{`
-        .dswt-group-row {
-          position: relative;
-        }
-        .dswt-group-dividers-inset .dswt-group-row + .dswt-group-row::before,
-        .dswt-group-dividers-inset .dswt-group-row + *::before {
-          display: none;
-        }
-        .dswt-group-dividers-inset .dswt-group-row + .dswt-group-row {
-          box-shadow: inset 0 1px 0 ${surface.border};
-        }
-        .dswt-group-dividers-full .dswt-group-row + .dswt-group-row {
-          box-shadow: none;
-        }
-        .dswt-group-dividers-full .dswt-group-row + .dswt-group-row::after {
+        .dswt-group-dividers-inset .dswt-settings-row + .dswt-settings-row::after,
+        .dswt-group-dividers-full .dswt-settings-row + .dswt-settings-row::after {
           content: "";
           position: absolute;
           top: 0;
-          left: 0;
-          right: 0;
           height: 1px;
           background: ${surface.border};
           pointer-events: none;
         }
-        .dswt-group-dividers-inset .dswt-group-row + .dswt-group-row::after {
-          content: "";
-          position: absolute;
-          top: 0;
+        .dswt-group-dividers-inset .dswt-settings-row + .dswt-settings-row::after {
           left: 48px;
           right: 0;
-          height: 1px;
-          background: ${surface.border};
-          pointer-events: none;
+        }
+        .dswt-group-dividers-full .dswt-settings-row + .dswt-settings-row::after {
+          left: 0;
+          right: 0;
         }
       `}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, ...style }}>

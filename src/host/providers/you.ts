@@ -23,11 +23,13 @@ function youAuthHeader(apiKey: string): Record<string, string> {
 }
 
 /** Error handler that highlights missing product scope for 403. */
-function throwYouError(res: Response): void {
+function throwYouError(res: Response): never {
   if (res.status === 403) {
     throw providerError("auth", "You.com returned 403: Forbidden (check API key permissions and product scopes)", 403);
   }
+  // Only called when !res.ok, so this always throws.
   throwIfHttp("You.com", res);
+  throw new Error("unreachable");
 }
 
 export const YouProvider: ProviderAdapter = {

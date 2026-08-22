@@ -573,7 +573,7 @@ export function WebToolsSection(props: SectionProps) {
                 <span style={{ color: text.tertiary }}>{t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)} · </span>
                 {(() => {
                   const names = orderedProviders.map((name) => providerOf(name)?.label ?? name);
-                  const separator = (config.searchRoutingPolicy ?? "ordered") === "random" ? (t("save") === "保存" ? "、" : ", ") : " → ";
+                  const separator = (config.searchRoutingPolicy ?? "ordered") === "random" ? (dshActive === "zh" ? "、" : ", ") : " → ";
                   if (names.length <= 3) {
                     return names.join(separator);
                   }

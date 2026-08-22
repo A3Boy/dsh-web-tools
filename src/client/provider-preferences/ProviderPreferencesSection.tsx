@@ -11,8 +11,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api } from "../api.ts";
 import { text, surface, state as stateColor } from "../theme.ts";
-import { ChoiceCard } from "./ChoiceCard.tsx";
-import { formatProviderOptionsSummary } from "../logic.ts";
 import { Switch } from "../WebToolsSection.tsx";
 import { SegmentedControl } from "../ui/SegmentedControl.tsx";
 import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES, EXA_SEARCH_TYPE_OPTIONS, exaPrimaryMode, exaPrimaryApplyable } from "./contracts.ts";
