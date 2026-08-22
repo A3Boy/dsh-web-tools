@@ -302,7 +302,7 @@ a.dswt-settings-row:focus {
 }
 .dswt-segmented-btn.selected {
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  color: var(--dsw-alias-brand-primary, #2b66ff);
+  color: var(--dsw-alias-state-business-primary, #4d6bfe);
   font-weight: 500;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
@@ -310,7 +310,7 @@ a.dswt-settings-row:focus {
   color: var(--dsw-alias-label-primary);
 }
 .dswt-segmented-btn:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff);
+  outline: 2px solid var(--dsw-alias-state-business-primary, #4d6bfe);
   outline-offset: 1px;
   z-index: 1;
 }
