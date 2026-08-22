@@ -21,6 +21,7 @@ import { WebToolsSection } from "./WebToolsSection.tsx";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
+import { adoptWebToolsStyles } from "./ui/styles.ts";
 import * as React from "react";
 import { useSyncExternalStore } from "react";
 
@@ -58,6 +59,8 @@ function SectionWithBoundary(props: Record<string, unknown>) {
 }
 
 export function apply(ctx: any) {
+  adoptWebToolsStyles();
+
   ctx.effect(() =>
     ctx.locale.register(NS, {
       zh: zhDict,

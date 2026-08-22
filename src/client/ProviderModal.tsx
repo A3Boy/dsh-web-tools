@@ -11,11 +11,12 @@ import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline1
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, quotaSourceLabel, type ProviderStatus } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, type ProviderStatus } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
 import { PROVIDER_BRAND } from "./brand.ts";
 import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
 import { QuotaCard } from "./ui/QuotaInline.tsx";
+import { adoptWebToolsStyles } from "./ui/styles.ts";
 
 interface Props {
   t: TFunc;
@@ -33,7 +34,6 @@ interface Props {
   onRefreshQuota: () => void;
   onConfigChanged: () => Promise<void> | void;
 }
-
 
 /** Developer layer: raw provider-native parameters. Effective values are
  *  read-only; overrides are editable as JSON (parsed + saved through the
@@ -148,11 +148,21 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
     </div>
   );
 }
+
 function IconKey() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="6" cy="6.5" r="3.5" />
       <path d="M8.5 9l5 5M11.5 12l1.5 1.5M13.5 10l1 1" />
+    </svg>
+  );
+}
+
+function IconConsole() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="M5 6.5l2 1.5-2 1.5M9 9.5h2" />
     </svg>
   );
 }
@@ -191,15 +201,16 @@ function CredentialDisclosure(props: {
         type="button"
         className="dswt-settings-row clickable"
         onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "11px 16px", minHeight: 54, fontFamily: "inherit", color: "inherit" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: text.secondary, display: "inline-flex" }}><IconKey /></span>
-          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        <div className="dswt-row-icon"><IconKey /></div>
+        <div className="dswt-row-main">
+          <div className="dswt-row-title">{t("credentials")}</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 500, color: summaryColor }}>{summaryText}</span>
-          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+        <div className="dswt-row-trailing">
+          <span style={{ fontSize: 13, fontWeight: allHealthy ? 400 : 500, color: summaryColor }}>{summaryText}</span>
+        </div>
+        <div className="dswt-row-chevron">
+          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
             <IconChevronRightOutline14 size={14} />
           </span>
         </div>
@@ -326,29 +337,31 @@ function ConnectionSettingsDisclosure(props: {
   const isConfigured = !!p.baseUrl;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <button
+        type="button"
+        className="dswt-settings-row clickable"
         onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open); } }}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", outline: "none" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("connectionSettings")}</span>
+        <div className="dswt-row-icon">
+          <IconConsole />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, color: isConfigured ? "var(--dsw-alias-brand-primary)" : text.tertiary }}>
+        <div className="dswt-row-main">
+          <div className="dswt-row-title">{t("connectionSettings")}</div>
+        </div>
+        <div className="dswt-row-trailing">
+          <span style={{ fontSize: 13, color: isConfigured ? "var(--dsw-alias-brand-primary)" : text.tertiary }}>
             {isConfigured ? t("connectionConfigured") : t("connectionDefault")}
           </span>
-          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
+        </div>
+        <div className="dswt-row-chevron">
+          <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
             <IconChevronRightOutline14 size={14} />
           </span>
         </div>
-      </div>
+      </button>
       {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+        <div style={{ padding: "0 16px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 12, color: text.secondary }}>{t("serviceAddress")}</label>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input
@@ -378,6 +391,7 @@ function ConnectionSettingsDisclosure(props: {
 }
 
 export function ProviderModal(props: Props) {
+  adoptWebToolsStyles();
   const { t, p, quota, testResult, busy, showPreferred, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
   const [draftBaseUrl, setDraftBaseUrl] = useState(p.baseUrl ?? "");
@@ -390,7 +404,6 @@ export function ProviderModal(props: Props) {
   const statusState: "done" | "warning" | "error" | "ongoing" | "hollow" = status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
   const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
   const selfHosted = p.name === "searxng";
-  const [refreshing, setRefreshing] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
   const restoreDraftRef = useRef<(() => void) | null>(null);
@@ -405,168 +418,133 @@ export function ProviderModal(props: Props) {
   })();
 
   return (
-    <>
-      <style>{`
-        .wt-modal-dialog {
-          width: 710px !important;
-          max-height: min(780px, calc(100vh - 40px)) !important;
-          display: flex !important;
-          flex-direction: column !important;
-        }
-        .wt-modal-content {
-          min-height: 0;
-          overflow-y: auto;
-          overscroll-behavior: contain;
-          padding: 30px 36px 34px !important;
-        }
-        @media (max-width: 760px) {
-          .wt-modal-dialog { width: calc(100vw - 24px) !important; }
-          .wt-modal-content { padding: 24px 20px !important; }
-        }
-      `}</style>
-      <Modal
-        open
-        onClose={onClose}
-        title={p.label}
-        headless
-        className="wt-modal-dialog"
-        contentClassName="wt-modal-content"
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          {/* Unified Provider Header: [Logo] Name \n Capability · Preferred | Switch + Close */}
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              {brand && (
-                <img
-                  src={brand.icon}
-                  alt={p.label}
-                  width={44}
-                  height={44}
-                  style={{ borderRadius: 10, flexShrink: 0 }}
-                />
-              )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "26px", color: text.primary }}>
-                  {p.label}
-                </h2>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: text.tertiary }}>
-                  <span>{t(`capability.${p.name}`) || ""}</span>
-                  {showPreferred && <span>· {t("preferredProviderLabel")}</span>}
-                </div>
+    <Modal
+      open
+      onClose={onClose}
+      title={p.label}
+      headless
+      className="dswt-modal-dialog"
+      contentClassName="dswt-modal-content"
+    >
+      <div className="dswt-modal-body">
+        {/* Unified Provider Header: [Logo] Name \n Capability · Preferred | Switch + Close */}
+        <div className="dswt-provider-header">
+          <div className="dswt-provider-identity">
+            {brand && (
+              <img
+                src={brand.icon}
+                alt={p.label}
+                className="dswt-provider-logo"
+              />
+            )}
+            <div className="dswt-provider-title-stack">
+              <h2 className="dswt-provider-name">
+                {p.label}
+              </h2>
+              <div className="dswt-provider-meta">
+                <span>{t(`capability.${p.name}`) || ""}</span>
+                {showPreferred && <span>· {t("preferredProviderLabel")}</span>}
               </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 4 }}>
-              {status !== "ready" && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                  {statusState === "hollow" ? (
-                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
-                  ) : (
-                    <StateDot state={statusState} size={8} />
-                  )}
-                  <span style={{ color: statusColor, fontWeight: 500, fontSize: 12 }}>{statusText}</span>
-                </span>
-              )}
-              <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label={t("close")}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 28,
-                  height: 28,
-                  borderRadius: 6,
-                  border: "none",
-                  background: "transparent",
-                  color: text.tertiary,
-                  cursor: "pointer",
-                  padding: 0,
-                  marginLeft: 2,
-                }}
-              >
-                <IconCloseOutline16 size={16} />
-              </button>
             </div>
           </div>
-
-          {/* 账户: credentials + quota rows + connection settings */}
-          <SettingsGroup title={t("accountTitle")} dividers="inset">
-            {!selfHosted && (
-              <CredentialDisclosure
-                t={t}
-                p={p}
-                onChanged={onConfigChanged}
-                onError={setLocalError}
-                onTest={onTest}
-                busy={busy}
-                testResult={testResult}
-              />
+          <div className="dswt-provider-actions">
+            {status !== "ready" && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                {statusState === "hollow" ? (
+                  <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
+                ) : (
+                  <StateDot state={statusState} size={8} />
+                )}
+                <span style={{ color: statusColor, fontWeight: 500, fontSize: 12 }}>{statusText}</span>
+              </span>
             )}
-            {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} embedded />}
-            {(selfHosted || p.baseUrl !== undefined) && (
-              <ConnectionSettingsDisclosure
-                t={t}
-                p={p}
-                draftBaseUrl={draftBaseUrl}
-                setDraftBaseUrl={setDraftBaseUrl}
-                onBaseUrl={onBaseUrl}
-              />
-            )}
-          </SettingsGroup>
-
-          {/* 搜索设置 / 网页读取: provider-native preferences */}
-          {p.options && p.name !== "searxng" && (
-            <SettingsGroup
-              title={sectionTitle}
-              dividers="none"
-              action={
-                showRestore ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => restoreDraftRef.current?.()}
-                    style={{ fontSize: 12, padding: "0 4px", height: 20, color: text.secondary }}
-                  >
-                    {t("prefsRestore")}
-                  </Button>
-                ) : undefined
-              }
+            <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("close")}
+              className="dswt-modal-close-btn"
             >
-              <div style={{ padding: "18px 20px 20px" }}>
-                <ProviderPreferencesSection
-                  t={t}
-                  p={p}
-                  onConfigChanged={onConfigChanged}
-                  onRestoreDraft={(fn) => { restoreDraftRef.current = fn; }}
-                  onCustomizedChange={(customized) => setShowRestore(customized)}
-                />
-              </div>
-            </SettingsGroup>
-          )}
-
-          {/* 高级设置: developer-facing diagnostics, explicit collapse */}
-          <SettingsGroup dividers="none">
-            <SettingsRow
-              icon={
-                <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
-                  <IconSettingsOutline16 size={16} />
-                </div>
-              }
-              title={t("advancedSettingsTitle")}
-              chevron
-              isLast
-              onClick={() => setAdvancedOpen(!advancedOpen)}
-            />
-            {advancedOpen && (
-              <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
-            )}
-          </SettingsGroup>
-
-          {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
+              <IconCloseOutline16 size={16} />
+            </button>
+          </div>
         </div>
-      </Modal>
-    </>
+
+        {/* 账户: credentials + quota rows + connection settings */}
+        <SettingsGroup title={t("accountTitle")} dividers="inset">
+          {!selfHosted && (
+            <CredentialDisclosure
+              t={t}
+              p={p}
+              onChanged={onConfigChanged}
+              onError={setLocalError}
+              onTest={onTest}
+              busy={busy}
+              testResult={testResult}
+            />
+          )}
+          {!selfHosted && <QuotaCard quota={quota} providerName={p.name} t={t} onRefresh={onRefreshQuota} embedded />}
+          {(selfHosted || p.baseUrl !== undefined) && (
+            <ConnectionSettingsDisclosure
+              t={t}
+              p={p}
+              draftBaseUrl={draftBaseUrl}
+              setDraftBaseUrl={setDraftBaseUrl}
+              onBaseUrl={onBaseUrl}
+            />
+          )}
+        </SettingsGroup>
+
+        {/* 搜索设置 / 网页读取: provider-native preferences */}
+        {p.options && p.name !== "searxng" && (
+          <SettingsGroup
+            title={sectionTitle}
+            dividers="none"
+            action={
+              showRestore ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => restoreDraftRef.current?.()}
+                  style={{ fontSize: 12, padding: "0 4px", height: 20, color: text.secondary }}
+                >
+                  {t("prefsRestore")}
+                </Button>
+              ) : undefined
+            }
+          >
+            <div className="dswt-search-card-inner">
+              <ProviderPreferencesSection
+                t={t}
+                p={p}
+                onConfigChanged={onConfigChanged}
+                onRestoreDraft={(fn) => { restoreDraftRef.current = fn; }}
+                onCustomizedChange={(customized) => setShowRestore(customized)}
+              />
+            </div>
+          </SettingsGroup>
+        )}
+
+        {/* 高级设置: developer-facing diagnostics, explicit collapse */}
+        <SettingsGroup dividers="none">
+          <SettingsRow
+            icon={
+              <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                <IconSettingsOutline16 size={16} />
+              </div>
+            }
+            title={t("advancedSettingsTitle")}
+            chevron
+            isLast
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+          />
+          {advancedOpen && (
+            <DeveloperOptions t={t} p={p} onConfigChanged={onConfigChanged} />
+          )}
+        </SettingsGroup>
+
+        {localError && <div style={{ color: stateColor.danger, fontSize: 12 }}>{localError}</div>}
+      </div>
+    </Modal>
   );
 }

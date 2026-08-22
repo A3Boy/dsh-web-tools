@@ -14,6 +14,7 @@ import { text, surface, state as stateColor } from "../theme.ts";
 import { Switch } from "../WebToolsSection.tsx";
 import { SegmentedControl } from "../ui/SegmentedControl.tsx";
 import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES, EXA_SEARCH_TYPE_OPTIONS, exaPrimaryMode, exaPrimaryApplyable } from "./contracts.ts";
+import { adoptWebToolsStyles } from "../ui/styles.ts";
 
 type TFunc = (key: string, ...args: unknown[]) => string;
 
@@ -45,9 +46,9 @@ function SettingInputRow(props: {
 }) {
   const { label, hint, value, unit, placeholder, onChange } = props;
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    <div className="dswt-input-row">
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{label}</span>
+        <span className="dswt-pref-label">{label}</span>
         {hint && <span style={{ fontSize: 12, color: text.tertiary }}>{hint}</span>}
       </div>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
@@ -56,20 +57,7 @@ function SettingInputRow(props: {
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            height: 32,
-            width: 72,
-            padding: "0 8px",
-            borderRadius: 8,
-            border: `1px solid ${surface.border}`,
-            background: surface.layer2,
-            color: text.primary,
-            fontFamily: "inherit",
-            fontSize: 13,
-            textAlign: "center",
-            boxSizing: "border-box",
-            outline: "none",
-          }}
+          className="dswt-input-num"
         />
         {unit && <span style={{ fontSize: 13, color: text.secondary }}>{unit}</span>}
       </div>
@@ -88,8 +76,8 @@ function DropdownSelect(props: {
   const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{label}</span>
+    <div className="dswt-input-row">
+      <span className="dswt-pref-label">{label}</span>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
@@ -102,20 +90,7 @@ function DropdownSelect(props: {
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              height: 32,
-              padding: "0 10px",
-              borderRadius: 8,
-              border: `1px solid ${surface.border}`,
-              background: surface.layer2,
-              color: text.primary,
-              fontSize: 13,
-              fontFamily: "inherit",
-              cursor: "pointer",
-            }}
+            className="dswt-dropdown-btn"
           >
             <span>{valueLabel}</span>
             <span style={{ display: "inline-flex", color: text.tertiary }}>
@@ -129,6 +104,7 @@ function DropdownSelect(props: {
 }
 
 export function ProviderPreferencesSection(props: Props) {
+  adoptWebToolsStyles();
   const { t, p, onConfigChanged, onRestoreDraft, onCustomizedChange } = props;
   if (p.name === "searxng" || !p.options) return null;
   return (
@@ -261,7 +237,7 @@ function ProviderControls(props: {
   isCustomized: boolean;
   onRestoreDefault: () => void;
 }) {
-  const { t, provider, draft, setValue, isCustomized, onRestoreDefault } = props;
+  const { t, provider, draft, setValue } = props;
   const raw = (key: string, fallback: unknown): unknown => draft[key] ?? fallback;
 
   switch (provider) {
@@ -306,7 +282,7 @@ function ProviderControls(props: {
 
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsExaModeLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -318,11 +294,11 @@ function ProviderControls(props: {
               value={primaryValue}
               onChange={handlePrimaryMode}
             />
-            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div className="dswt-pref-desc">
               <span>{desc}</span>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsExaFreshnessLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -369,7 +345,7 @@ function ProviderControls(props: {
       const desc = depth === "advanced" ? t("prefsTavilyAdvancedDesc") : depth === "fast" ? t("prefsTavilyFastDesc") : depth === "ultra-fast" ? t("prefsTavilyUltraFastDesc") : t("prefsTavilyBasicDesc");
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsTavilyDepthLabel")}</SectionLabel>
             <SegmentedControl
               disabled={autoParams}
@@ -384,7 +360,7 @@ function ProviderControls(props: {
               onChange={(v) => setValue("searchDepth", v, "basic")}
             />
             {!autoParams && (
-              <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+              <div className="dswt-pref-desc">
                 <span>{desc}</span>
               </div>
             )}
@@ -398,7 +374,7 @@ function ProviderControls(props: {
           </label>
           <AdvancedDelay t={t}>
             {tavilyChunksVisible(depth, autoParams) && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="dswt-pref-field">
                 <SectionLabel>{t("prefsTavilyChunksPerSource")}</SectionLabel>
                 <SegmentedControl
                   style={{ width: "100%" }}
@@ -408,7 +384,7 @@ function ProviderControls(props: {
                 />
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="dswt-pref-field">
               <SectionLabel>{t("prefsTavilyExtractDepth")}</SectionLabel>
               <SegmentedControl
                 style={{ width: "100%" }}
@@ -428,7 +404,7 @@ function ProviderControls(props: {
       const desc = pref === "llm-context" ? t("prefsBraveLlmContextDesc") : pref === "web-search" ? t("prefsBraveWebSearchDesc") : t("prefsBraveAutoDesc");
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsBraveModeLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -440,12 +416,12 @@ function ProviderControls(props: {
               value={pref}
               onChange={(v) => setValue("endpointPreference", v, "auto")}
             />
-            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div className="dswt-pref-desc">
               <span>{desc}</span>
             </div>
           </div>
           <AdvancedDelay t={t}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="dswt-pref-field">
               <SectionLabel>{t("prefsBraveThreshold")}</SectionLabel>
               <SegmentedControl
                 style={{ width: "100%" }}
@@ -459,7 +435,7 @@ function ProviderControls(props: {
                 onChange={(v) => setValue("contextThresholdMode", v, "balanced")}
               />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="dswt-pref-field">
               <SectionLabel>{t("prefsBraveTokenBudget")}</SectionLabel>
               <SegmentedControl
                 style={{ width: "100%" }}
@@ -480,7 +456,7 @@ function ProviderControls(props: {
       const desc = ext === "none" ? t("prefsYouSummaryDesc") : t("prefsYouHighlightsDesc");
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsYouResultsLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -491,7 +467,7 @@ function ProviderControls(props: {
               value={ext}
               onChange={(v) => setValue("extractionMode", v, "highlights")}
             />
-            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div className="dswt-pref-desc">
               <span>{desc}</span>
             </div>
           </div>
@@ -531,7 +507,7 @@ function ProviderControls(props: {
               <span style={{ fontSize: 12, color: text.secondary }}>{t("prefsFirecrawlOnlyMainDesc")}</span>
             </span>
           </label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsPageCache")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -587,7 +563,7 @@ function ProviderControls(props: {
               {t("prefsParallelExperimentalNote")}
             </div>
           )}
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsParallelQualityLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -595,7 +571,7 @@ function ProviderControls(props: {
               value={primaryMode}
               onChange={(v) => setValue("mode", v, "advanced")}
             />
-            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div className="dswt-pref-desc">
               <span>{desc}</span>
             </div>
           </div>
@@ -606,7 +582,7 @@ function ProviderControls(props: {
               items={parallelExpItems}
               onSelect={(id) => setValue("mode", id === "off" ? "advanced" : id, "advanced")}
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div className="dswt-pref-field">
               <SectionLabel>{t("prefsParallelCharsLabel")}</SectionLabel>
               <SegmentedControl
                 style={{ width: "100%" }}
@@ -629,7 +605,7 @@ function ProviderControls(props: {
       const cacheKind: "auto" | "live" | "hour" | "day" = cacheTolerance === 0 ? "live" : cacheTolerance === 3600 ? "hour" : cacheTolerance === 86400 ? "day" : "auto";
       return (
         <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsJinaModeLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -641,7 +617,7 @@ function ProviderControls(props: {
               value={engine}
               onChange={(v) => setValue("fetchEngine", v, "auto")}
             />
-            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div className="dswt-pref-desc">
               <span>{desc}</span>
             </div>
           </div>
@@ -652,7 +628,7 @@ function ProviderControls(props: {
               <span style={{ fontSize: 12, color: text.secondary }}>{t("prefsJinaReaderLmDesc")}</span>
             </span>
           </label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="dswt-pref-field">
             <SectionLabel>{t("prefsJinaCacheLabel")}</SectionLabel>
             <SegmentedControl
               style={{ width: "100%" }}
@@ -699,30 +675,17 @@ function ProviderControls(props: {
 }
 
 function SectionLabel(props: { children: ReactNode }) {
-  return <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{props.children}</span>;
+  return <span className="dswt-pref-label">{props.children}</span>;
 }
 
 function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 6 }}>
+    <div className="dswt-advanced-disclosure">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        style={{
-          alignSelf: "flex-start",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "2px 0",
-          fontSize: 13,
-          fontWeight: 500,
-          border: "none",
-          background: "transparent",
-          color: text.secondary,
-          cursor: "pointer",
-          fontFamily: "inherit",
-        }}
+        className="dswt-advanced-btn"
       >
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
           <IconChevronRightOutline14 size={14} />
@@ -730,18 +693,7 @@ function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
         {props.t("advancedParamsTitle")}
       </button>
       {open && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-            marginTop: 4,
-            padding: "14px 16px",
-            borderRadius: 10,
-            background: surface.layer2,
-            border: `1px solid ${surface.border}`,
-          }}
-        >
+        <div className="dswt-advanced-surface">
           {props.children}
         </div>
       )}

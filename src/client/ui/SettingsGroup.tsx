@@ -7,7 +7,7 @@
  *   row separators are drawn at the GROUP level without per-row props.
  * @module
  */
-import { text, surface } from "../theme.ts";
+import { adoptWebToolsStyles } from "./styles.ts";
 import { IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 
 export function SettingsGroup(props: {
@@ -17,50 +17,21 @@ export function SettingsGroup(props: {
   style?: React.CSSProperties;
   dividers?: "none" | "inset" | "full";
 }) {
+  adoptWebToolsStyles();
   const { title, action, children, style, dividers = "none" } = props;
+
   return (
-    <>
-      <style>{`
-        .dswt-group-dividers-inset .dswt-settings-row + .dswt-settings-row::after,
-        .dswt-group-dividers-full .dswt-settings-row + .dswt-settings-row::after {
-          content: "";
-          position: absolute;
-          top: 0;
-          height: 1px;
-          background: ${surface.border};
-          pointer-events: none;
-        }
-        .dswt-group-dividers-inset .dswt-settings-row + .dswt-settings-row::after {
-          left: 48px;
-          right: 0;
-        }
-        .dswt-group-dividers-full .dswt-settings-row + .dswt-settings-row::after {
-          left: 0;
-          right: 0;
-        }
-      `}</style>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, ...style }}>
-        {(title || action) && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 2px" }}>
-            {title && <span style={{ fontSize: 13, fontWeight: 600, color: text.secondary, textTransform: "none" }}>{title}</span>}
-            {action && <div>{action}</div>}
-          </div>
-        )}
-        <div
-          className={`dswt-group dswt-group-dividers-${dividers}`}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            borderRadius: 12,
-            background: surface.layer1,
-            border: `1px solid ${surface.border}`,
-            overflow: "hidden",
-          }}
-        >
-          {children}
+    <div className="dswt-group-wrapper" style={style}>
+      {(title || action) && (
+        <div className="dswt-group-header">
+          {title && <span className="dswt-group-title">{title}</span>}
+          {action && <div>{action}</div>}
         </div>
+      )}
+      <div className={`dswt-group-card dswt-group-dividers-${dividers}`}>
+        {children}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -75,68 +46,34 @@ export function SettingsRow(props: {
   insetDivider?: boolean;
   disabled?: boolean;
 }) {
+  adoptWebToolsStyles();
   const { icon, title, subtitle, trailing, chevron, onClick, disabled } = props;
   const isClickable = !!onClick && !disabled;
 
   const inner = (
     <>
-      <style>{`
-        .dswt-settings-row {
-          width: 100%;
-          box-sizing: border-box;
-          position: relative;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 11px 16px;
-          min-height: 54px;
-          background: transparent;
-          cursor: default;
-          outline: none;
-          transition: background .12s ease;
-          opacity: ${disabled ? 0.6 : 1};
-          border: none;
-          margin: 0;
-          text-align: left;
-          font-family: inherit;
-          color: inherit;
-        }
-        .dswt-settings-row.clickable {
-          cursor: pointer;
-        }
-        .dswt-settings-row.clickable:hover {
-          background: ${surface.hover};
-        }
-        .dswt-settings-row.clickable:active {
-          background: ${surface.hover};
-        }
-        .dswt-settings-row.clickable:focus-visible {
-          outline: 2px solid var(--dsw-alias-brand-primary, #4f8cff);
-          outline-offset: -2px;
-        }
-        .dswt-settings-row:disabled {
-          cursor: not-allowed;
-          opacity: 0.6;
-        }
-      `}</style>
-      {icon && <div style={{ display: "inline-flex", alignItems: "center", flex: "none" }}>{icon}</div>}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: text.primary, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+      {icon && <div className="dswt-row-icon">{icon}</div>}
+      <div className="dswt-row-main">
+        <div className="dswt-row-title">
+          {typeof title === "string" ? (
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+          ) : (
+            title
+          )}
         </div>
         {subtitle && (
-          <div style={{ fontSize: 12, color: text.tertiary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div className="dswt-row-subtitle">
             {subtitle}
           </div>
         )}
       </div>
       {trailing && (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
+        <div className="dswt-row-trailing">
           {trailing}
         </div>
       )}
       {chevron && (
-        <div style={{ display: "inline-flex", alignItems: "center", color: text.tertiary, flex: "none" }}>
+        <div className="dswt-row-chevron">
           <IconChevronRightOutline14 size={14} />
         </div>
       )}
@@ -145,7 +82,7 @@ export function SettingsRow(props: {
 
   if (isClickable) {
     return (
-      <button type="button" className={"dswt-settings-row clickable"} onClick={onClick} disabled={disabled}>
+      <button type="button" className="dswt-settings-row clickable" onClick={onClick} disabled={disabled}>
         {inner}
       </button>
     );

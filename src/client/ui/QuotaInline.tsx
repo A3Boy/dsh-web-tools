@@ -10,6 +10,7 @@ import { quotaFraction, quotaTier, quotaSourceLabel, type TFunc } from "../logic
 import { IconRefreshOutline16, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useState } from "react";
 import { dashboardOf, ExternalLinkIcon } from "../provider-ui-meta.tsx";
+import { adoptWebToolsStyles } from "./styles.ts";
 
 function IconCard() {
   return (
@@ -87,13 +88,6 @@ function RefreshButton(props: { refreshing: boolean; onRefresh: () => void; titl
   );
 }
 
-/** Outermost wrapper style: standalone card vs embedded (no card-in-card). */
-function cardShell(embedded: boolean): React.CSSProperties {
-  return embedded
-    ? { display: "flex", flexDirection: "column", gap: 10, padding: "10px 14px" }
-    : { display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderRadius: 10, background: surface.layer1, border: `1px solid ${surface.border}` };
-}
-
 export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t?: TFunc }) {
   const { quota, providerName, t } = props;
 
@@ -146,6 +140,7 @@ export function QuotaCard(props: {
   /** Render inside a host SettingsGroup: drop the card chrome (border/radius/bg). */
   embedded?: boolean;
 }) {
+  adoptWebToolsStyles();
   const { quota, providerName, t, onRefresh, embedded = false } = props;
   const [refreshing, setRefreshing] = useState(false);
   const dash = dashboardOf(providerName);
@@ -165,19 +160,23 @@ export function QuotaCard(props: {
     const isLocalMetered = quota?.source === "local_estimate" && quota?.unit === "requests" && quota?.used !== undefined;
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <div className="dswt-settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", minHeight: 54 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ color: text.secondary, display: "inline-flex" }}><IconCard /></span>
-            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("billingMethod")}</span>
+        <div className="dswt-settings-row">
+          <div className="dswt-row-icon"><IconCard /></div>
+          <div className="dswt-row-main">
+            <div className="dswt-row-title">{t("billingMethod")}</div>
           </div>
-          <span style={{ fontSize: 13, color: text.secondary }}>{t("quotaMeteredPrefix")}</span>
+          <div className="dswt-row-trailing">
+            <span style={{ fontSize: 13, color: text.secondary }}>{t("quotaMeteredPrefix")}</span>
+          </div>
         </div>
         {isLocalMetered && (
-          <div className="dswt-settings-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", minHeight: 54 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("localUsage")}</span>
+          <div className="dswt-settings-row">
+            <div className="dswt-row-main">
+              <div className="dswt-row-title">{t("localUsage")}</div>
             </div>
-            <span style={{ fontSize: 13, color: text.secondary }}>{t("localUsageTimes", { n: quota!.used! })}</span>
+            <div className="dswt-row-trailing">
+              <span style={{ fontSize: 13, color: text.secondary }}>{t("localUsageTimes", { n: quota!.used! })}</span>
+            </div>
           </div>
         )}
         {dash && (
@@ -186,23 +185,15 @@ export function QuotaCard(props: {
             target="_blank"
             rel="noreferrer"
             className="dswt-settings-row clickable"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "11px 16px",
-              minHeight: 54,
-              color: text.primary,
-              textDecoration: "none",
-              fontSize: 13,
-            }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
-              <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
+            <div className="dswt-row-icon"><IconConsole /></div>
+            <div className="dswt-row-main">
+              <div className="dswt-row-title">{t("dashboardLabel")}</div>
             </div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: text.secondary }}>
-              <span>{t(dash.labelKey)}</span>
+            <div className="dswt-row-trailing">
+              <span style={{ fontSize: 13, color: text.secondary }}>{t(dash.labelKey)}</span>
+            </div>
+            <div className="dswt-row-chevron">
               <IconChevronRightOutline14 size={14} />
             </div>
           </a>
@@ -221,23 +212,15 @@ export function QuotaCard(props: {
             target="_blank"
             rel="noreferrer"
             className="dswt-settings-row clickable"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "11px 16px",
-              minHeight: 54,
-              color: text.primary,
-              textDecoration: "none",
-              fontSize: 13,
-            }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
-              <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
+            <div className="dswt-row-icon"><IconConsole /></div>
+            <div className="dswt-row-main">
+              <div className="dswt-row-title">{t("dashboardLabel")}</div>
             </div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: text.secondary }}>
-              <span>{t(dash.labelKey)}</span>
+            <div className="dswt-row-trailing">
+              <span style={{ fontSize: 13, color: text.secondary }}>{t(dash.labelKey)}</span>
+            </div>
+            <div className="dswt-row-chevron">
               <IconChevronRightOutline14 size={14} />
             </div>
           </a>
@@ -258,8 +241,19 @@ export function QuotaCard(props: {
   const isUsdBalance = quota.unit === "usd_cents";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderTop: `1px solid ${surface.border}` }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div
+      className={embedded ? "dswt-settings-row" : undefined}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        padding: embedded ? "14px 16px" : "12px 14px",
+        borderRadius: embedded ? undefined : 10,
+        background: embedded ? undefined : surface.layer1,
+        border: embedded ? undefined : `1px solid ${surface.border}`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
           {isUsdBalance ? t("quotaBalance") : t("quotaTitle")}
         </span>
@@ -270,7 +264,7 @@ export function QuotaCard(props: {
         )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, width: "100%" }}>
         <span style={{ fontSize: 18, fontWeight: 600, color: text.primary, fontVariantNumeric: "tabular-nums" }}>
           {main}
         </span>
@@ -283,7 +277,7 @@ export function QuotaCard(props: {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2, width: "100%" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {ago && <span>{ago}</span>}
           <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
