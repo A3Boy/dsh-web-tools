@@ -78,12 +78,11 @@ function cardShell(embedded: boolean): React.CSSProperties {
 export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t?: TFunc }) {
   const { quota, providerName, t } = props;
 
-  // Brave has no quota endpoint: without a captured header snapshot the
-  // honest state is "按量计费" — never a fake number.
-  const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
-  if (bravePendingSync) {
+  // Brave is pay-as-you-go metered ($5/1k reqs) — always show "按量计费" (4 chars),
+  // never misleading percentages or fake progress bars.
+  if (providerName === "brave") {
     return (
-      <span style={{ fontSize: 12, color: text.tertiary, whiteSpace: "nowrap", flex: "none" }}>
+      <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, whiteSpace: "nowrap", flex: "none" }}>
         {t ? t("quotaMeteredPrefix") : "Pay-as-you-go"}
       </span>
     );
@@ -136,28 +135,55 @@ export function QuotaCard(props: {
     }
   };
 
-  // Brave pending-sync: no captured header snapshot yet → explicit prompt.
-  const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
-
-  // Fallback card when no quota snapshot or for dashboard-only providers
-  if (!quota || !quota.supported || quota.source === "dashboard") {
-    const isLocalMetered = providerName === "parallel" || providerName === "exa";
-    const isBrave = bravePendingSync;
+  // Brave is pay-as-you-go metered ($5/1k reqs) — show "按量计费" unconditionally.
+  if (providerName === "brave") {
     return (
       <div style={cardShell(embedded)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {isBrave ? t("quotaMeteredPrefix") : t("quotaTitle")}
+            {t("quotaTitle")}
+          </span>
+          <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 18, fontWeight: 600, color: text.primary }}>
+            {t("quotaMeteredPrefix")}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
+          <span>· {t("quotaSourceResponseHeader")}</span>
+          {dash && (
+            <a
+              href={dash.url}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <span>{t(dash.labelKey)}</span>
+              <ExternalLinkIcon size={12} />
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback card when no quota snapshot or for dashboard-only providers
+  if (!quota || !quota.supported || quota.source === "dashboard") {
+    const isLocalMetered = providerName === "parallel" || providerName === "exa";
+    return (
+      <div style={cardShell(embedded)}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
+            {t("quotaTitle")}
           </span>
           <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, color: text.secondary }}>
-            {isBrave
-              ? t("quotaMeteredPrefix")
-              : isLocalMetered
-                ? t("quotaSourceLocalEstimate")
-                : t("quotaSourceDashboard")}
+            {isLocalMetered
+              ? t("quotaSourceLocalEstimate")
+              : t("quotaSourceDashboard")}
           </span>
           {dash && (
             <a
