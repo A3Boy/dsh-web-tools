@@ -79,12 +79,12 @@ export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t
   const { quota, providerName, t } = props;
 
   // Brave has no quota endpoint: without a captured header snapshot the
-  // honest state is "按量计费 · 首次搜索后同步" — never a fake number.
+  // honest state is "按量计费" — never a fake number.
   const bravePendingSync = providerName === "brave" && !!quota && !quota.supported;
   if (bravePendingSync) {
     return (
       <span style={{ fontSize: 12, color: text.tertiary, whiteSpace: "nowrap", flex: "none" }}>
-        {t ? `${t("quotaMeteredPrefix")} · ${t("quotaBraveFirstSync")}` : `Pay-as-you-go · ${quota.note ?? ""}`}
+        {t ? t("quotaMeteredPrefix") : "Pay-as-you-go"}
       </span>
     );
   }
@@ -154,7 +154,7 @@ export function QuotaCard(props: {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, color: text.secondary }}>
             {isBrave
-              ? t("quotaBraveFirstSync")
+              ? t("quotaMeteredPrefix")
               : isLocalMetered
                 ? t("quotaSourceLocalEstimate")
                 : t("quotaSourceDashboard")}
