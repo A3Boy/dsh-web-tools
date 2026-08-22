@@ -6,9 +6,31 @@
  * @module
  */
 import type { ProviderView, QuotaView } from "../shared/api-types.ts";
+import type { QuotaSource } from "../host/quota.ts";
 
 /** t() bound to the dsh-web-tools namespace (injected into the section). */
 export type TFunc = (key: string, ...args: unknown[]) => string;
+
+/** Explicit mapping from QuotaSource enum to translation dictionary keys (never dynamic concatenation). */
+export const QUOTA_SOURCE_LABEL_KEY = {
+  api: "quotaSourceApi",
+  response_header: "quotaSourceResponseHeader",
+  best_effort_api: "quotaSourceBestEffortApi",
+  local_estimate: "quotaSourceLocalEstimate",
+  dashboard: "quotaSourceDashboard",
+  self_hosted: "quotaSourceSelfHosted",
+} as const satisfies Record<QuotaSource, string>;
+
+/** Resolve human label for any QuotaSource safely. */
+export function quotaSourceLabel(t: TFunc, source?: string): string {
+  if (!source) return "";
+  const key = QUOTA_SOURCE_LABEL_KEY[source as QuotaSource];
+  if (key) {
+    const val = t(key);
+    if (val && val !== key) return val;
+  }
+  return t("quotaSource", { s: source });
+}
 
 // ---------------------------------------------------------------------------
 // page UI language (independent of the DSH-wide locale)

@@ -6,10 +6,29 @@
  */
 import { text, surface, state as stateColor } from "../theme.ts";
 import { type QuotaView } from "../api.ts";
-import { quotaFraction, quotaTier, type TFunc } from "../logic.ts";
-import { IconRefreshOutline16 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { quotaFraction, quotaTier, quotaSourceLabel, type TFunc } from "../logic.ts";
+import { IconRefreshOutline16, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useState } from "react";
 import { dashboardOf, ExternalLinkIcon } from "../provider-ui-meta.tsx";
+
+function IconCard() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3.5" width="12" height="9" rx="1.5" />
+      <path d="M2 6.5h12" />
+      <path d="M4.5 10h2" />
+    </svg>
+  );
+}
+
+function IconConsole() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+      <path d="M5 6.5l2 1.5-2 1.5M9 9.5h2" />
+    </svg>
+  );
+}
 
 export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; unit?: string } {
   const fmt = (n: number) => n.toLocaleString();
@@ -24,7 +43,7 @@ export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; un
   }
   if (q.unit === "usd_cents") {
     const amount = ((q.remaining ?? q.used ?? 0) / 100).toFixed(2);
-    if (q.remaining !== undefined) return { main: `$${amount}` };
+    if (q.remaining !== undefined) return { main: t ? `${t("quotaBalance")} $${amount}` : `Balance $${amount}` };
     if (q.used !== undefined) return { main: `$${amount}`, unit: t ? t("quotaUsedLabel") : "used" };
   }
   if (q.unit === "tokens" && q.remaining !== undefined) {
@@ -78,14 +97,16 @@ function cardShell(embedded: boolean): React.CSSProperties {
 export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t?: TFunc }) {
   const { quota, providerName, t } = props;
 
-  // Brave / Exa / Parallel are pay-as-you-go metered — always show "按量计费" (4 chars),
-  // never misleading percentages or fake progress bars.
+  // Brave / Exa / Parallel are pay-as-you-go metered — show "按量计费" (fixed 220px slot alignment).
   const meteredNames = new Set(["brave", "exa", "parallel"]);
   if (meteredNames.has(providerName ?? "")) {
     return (
-      <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, whiteSpace: "nowrap", flex: "none" }}>
-        {t ? t("quotaMeteredPrefix") : "Pay-as-you-go"}
-      </span>
+      <div style={{ width: 220, display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", alignItems: "center", justifyItems: "end" }}>
+        <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, whiteSpace: "nowrap" }}>
+          {t ? t("quotaMeteredPrefix") : "Pay-as-you-go"}
+        </span>
+        <div style={{ width: 64 }} />
+      </div>
     );
   }
 
@@ -99,18 +120,20 @@ export function QuotaInline(props: { quota?: QuotaView; providerName?: string; t
   const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : text.tertiary;
 
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: "none" }}>
-      <div style={{ display: "inline-flex", alignItems: "baseline", gap: 4 }}>
+    <div style={{ width: 220, display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", alignItems: "center", justifyItems: "end", gap: 8, flex: "none" }}>
+      <div style={{ display: "inline-flex", alignItems: "baseline", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, fontVariantNumeric: "tabular-nums" }}>
           {main}
         </span>
         {unit && <span style={{ fontSize: 11, color: text.tertiary }}>{unit}</span>}
       </div>
-      {fraction !== undefined && (
-        <div style={{ width: 64, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", flex: "none" }}>
-          <div style={{ width: `${Math.round(fraction * 100)}%`, height: "100%", background: barColor, transition: "width .2s ease" }} />
-        </div>
-      )}
+      <div style={{ width: 64, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+        {fraction !== undefined && (
+          <div style={{ width: 64, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", flex: "none" }}>
+            <div style={{ width: `${Math.round(fraction * 100)}%`, height: "100%", background: barColor, transition: "width .2s ease" }} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -136,37 +159,53 @@ export function QuotaCard(props: {
     }
   };
 
-  // Brave / Exa / Parallel are pay-as-you-go metered — show "按量计费" unconditionally.
+  // Brave / Exa / Parallel are pay-as-you-go metered — show clean rows without giant 18px text.
   const meteredNames = new Set(["brave", "exa", "parallel"]);
   if (meteredNames.has(providerName ?? "")) {
-    const sourceLabel = providerName === "brave" ? "quotaSourceResponseHeader" : "quotaSourceLocalEstimate";
+    const isLocalMetered = quota?.source === "local_estimate" && quota?.unit === "requests" && quota?.used !== undefined;
     return (
-      <div style={cardShell(embedded)}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {t("quotaTitle")}
-          </span>
-          <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderTop: `1px solid ${surface.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ color: text.secondary, display: "inline-flex" }}><IconCard /></span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("billingMethod")}</span>
+          </div>
+          <span style={{ fontSize: 13, color: text.secondary }}>{t("quotaMeteredPrefix")}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 18, fontWeight: 600, color: text.primary }}>
-            {t("quotaMeteredPrefix")}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
-          <span>· {t(sourceLabel)}</span>
-          {dash && (
-            <a
-              href={dash.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}
-            >
+        {isLocalMetered && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", borderTop: `1px solid ${surface.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("localUsage")}</span>
+            </div>
+            <span style={{ fontSize: 13, color: text.secondary }}>{t("localUsageTimes", { n: quota!.used! })}</span>
+          </div>
+        )}
+        {dash && (
+          <a
+            href={dash.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "11px 14px",
+              borderTop: `1px solid ${surface.border}`,
+              color: text.primary,
+              textDecoration: "none",
+              fontSize: 13,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
+              <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
+            </div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: text.secondary }}>
               <span>{t(dash.labelKey)}</span>
-              <ExternalLinkIcon size={12} />
-            </a>
-          )}
-        </div>
+              <IconChevronRightOutline14 size={14} />
+            </div>
+          </a>
+        )}
       </div>
     );
   }
@@ -174,29 +213,33 @@ export function QuotaCard(props: {
   // Fallback card when no quota snapshot or for dashboard-only providers
   if (!quota || !quota.supported || quota.source === "dashboard") {
     return (
-      <div style={cardShell(embedded)}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {t("quotaTitle")}
-          </span>
-          <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13, color: text.secondary }}>
-            {t("quotaSourceDashboard")}
-          </span>
-          {dash && (
-            <a
-              href={dash.url}
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: "var(--dsw-alias-brand-primary)", textDecoration: "none", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}
-            >
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {dash && (
+          <a
+            href={dash.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "11px 14px",
+              borderTop: `1px solid ${surface.border}`,
+              color: text.primary,
+              textDecoration: "none",
+              fontSize: 13,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ color: text.secondary, display: "inline-flex" }}><IconConsole /></span>
+              <span style={{ fontWeight: 500 }}>{t("dashboardLabel")}</span>
+            </div>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: text.secondary }}>
               <span>{t(dash.labelKey)}</span>
-              <ExternalLinkIcon size={12} />
-            </a>
-          )}
-        </div>
+              <IconChevronRightOutline14 size={14} />
+            </div>
+          </a>
+        )}
       </div>
     );
   }
@@ -206,39 +249,30 @@ export function QuotaCard(props: {
   const tier = quotaTier(fraction);
   const barColor = tier === "danger" ? stateColor.danger : tier === "warn" ? stateColor.warning : "var(--dsw-alias-brand-primary)";
 
-  const sourceKey = `quotaSource${quota.source[0].toUpperCase()}${quota.source.slice(1)}` as const;
-  const sourceName = t(sourceKey);
-
   const ago = quota.fetchedAt !== undefined
     ? (quota.fetchedAt > Date.now() - 60_000 ? t("updatedJustNow") : t("updatedAgo", { mins: Math.max(1, Math.round((Date.now() - quota.fetchedAt) / 60_000)) }))
     : undefined;
 
-  const isLocalMetered = quota.source === "local_estimate" && quota.unit === "requests" && quota.used !== undefined;
+  const isUsdBalance = quota.unit === "usd_cents";
 
   return (
-    <div style={cardShell(embedded)}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px", borderTop: `1px solid ${surface.border}` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
-            {isLocalMetered ? t("quotaLocalTitle") : t("quotaTitle")}
-          </span>
-          {!isLocalMetered && <span style={{ fontSize: 11, color: text.tertiary }}>· {sourceName}</span>}
-        </div>
-        <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
-      </div>
-
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span style={{ fontSize: 18, fontWeight: 600, color: text.primary, fontVariantNumeric: "tabular-nums" }}>
-            {main}
-          </span>
-          {unit && <span style={{ fontSize: 12, color: text.tertiary }}>{unit}</span>}
-        </div>
+        <span style={{ fontSize: 12, fontWeight: 600, color: text.tertiary }}>
+          {isUsdBalance ? t("quotaBalance") : t("quotaTitle")}
+        </span>
         {fraction !== undefined && (
-          <span style={{ fontSize: 12, fontWeight: 600, color: text.secondary, fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: text.secondary, fontVariantNumeric: "tabular-nums" }}>
             {Math.round(fraction * 100)}%
           </span>
         )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <span style={{ fontSize: 18, fontWeight: 600, color: text.primary, fontVariantNumeric: "tabular-nums" }}>
+          {main}
+        </span>
+        {unit && <span style={{ fontSize: 12, color: text.tertiary }}>{unit}</span>}
       </div>
 
       {fraction !== undefined && (
@@ -250,10 +284,7 @@ export function QuotaCard(props: {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: text.tertiary, flexWrap: "wrap", gap: 6, paddingTop: 2 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {ago && <span>{ago}</span>}
-          {isLocalMetered && <span>· {t("quotaSourceLocalEstimate")}</span>}
-          {quota.breakdown && Object.keys(quota.breakdown).length > 0 && (
-            <span>· {t("usage")}: {Object.entries(quota.breakdown).map(([k, v]) => `${k} ${v}`).join(" ")}</span>
-          )}
+          <RefreshButton refreshing={refreshing} onRefresh={() => void refresh()} title={t("refreshQuota")} />
         </div>
         {dash && (
           <a

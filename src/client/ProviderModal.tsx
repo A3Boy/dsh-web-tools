@@ -6,12 +6,12 @@
  * by default.
  * @module
  */
-import { useState, type CSSProperties } from "react";
-import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import { useState, useRef, type CSSProperties } from "react";
+import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16, IconCloseOutline16, IconSettingsOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, type ProviderStatus } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus, quotaSourceLabel, type ProviderStatus } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
 import { PROVIDER_BRAND } from "./brand.ts";
 import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
@@ -34,13 +34,6 @@ interface Props {
   onConfigChanged: () => Promise<void> | void;
 }
 
-/** Quiet human source label (no "Official/Authoritative" tag stacking). */
-function quotaSourceLabel(t: TFunc, source?: string): string {
-  if (!source) return "";
-  const key = `quotaSource${source[0].toUpperCase()}${source.slice(1)}` as const;
-  const value = t(key);
-  return value !== key ? value : t("quotaSource", { s: source });
-}
 
 /** Developer layer: raw provider-native parameters. Effective values are
  *  read-only; overrides are editable as JSON (parsed + saved through the
@@ -155,6 +148,15 @@ function DeveloperOptions(props: { t: TFunc; p: ProviderView; onConfigChanged: (
     </div>
   );
 }
+function IconKey() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="6.5" r="3.5" />
+      <path d="M8.5 9l5 5M11.5 12l1.5 1.5M13.5 10l1 1" />
+    </svg>
+  );
+}
+
 function CredentialDisclosure(props: {
   t: TFunc;
   p: ProviderView;
@@ -184,15 +186,18 @@ function CredentialDisclosure(props: {
       : stateColor.danger;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 14px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "11px 14px" }}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: 0, fontFamily: "inherit", color: "inherit" }}
       >
-        <span style={{ fontWeight: 600, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: text.secondary, display: "inline-flex" }}><IconKey /></span>
+          <span style={{ fontWeight: 500, fontSize: 13, color: text.primary }}>{t("credentials")}</span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 600, color: summaryColor }}>{summaryText}</span>
+          <span style={{ fontSize: 12, fontWeight: allHealthy ? 400 : 500, color: summaryColor }}>{summaryText}</span>
           <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", color: text.tertiary, display: "inline-flex", flex: "none" }}>
             <IconChevronRightOutline14 size={14} />
           </span>
@@ -386,8 +391,17 @@ export function ProviderModal(props: Props) {
   const selfHosted = p.name === "searxng";
   const [refreshing, setRefreshing] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [showRestore, setShowRestore] = useState(false);
+  const restoreDraftRef = useRef<(() => void) | null>(null);
 
   const brand = PROVIDER_BRAND[p.name];
+
+  const sectionTitle = (() => {
+    if (p.name === "searxng") return t("connectionSectionTitle");
+    if (p.name === "firecrawl" || p.name === "jina") return t("pageReadSettingsTitle");
+    if (p.name === "you") return t("searchAndReadSettingsTitle");
+    return t("searchSettingsTitle");
+  })();
 
   return (
     <>
@@ -402,6 +416,7 @@ export function ProviderModal(props: Props) {
           min-height: 0;
           overflow-y: auto;
           overscroll-behavior: contain;
+          padding: 20px 24px !important;
         }
         @media (max-width: 760px) {
           .wt-modal-dialog { width: calc(100vw - 24px) !important; }
@@ -411,27 +426,34 @@ export function ProviderModal(props: Props) {
         open
         onClose={onClose}
         title={p.label}
-        closeLabel={t("close")}
+        headless
         className="wt-modal-dialog"
         contentClassName="wt-modal-content"
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 8 }}>
-          {/* Header row: Brand logo + Capability tag (+ preferred) + Switch */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 0 2px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Unified Provider Header: [Logo] Name \n Capability · Preferred | Switch + Close */}
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {brand && (
                 <img
                   src={brand.icon}
                   alt={p.label}
-                  width={24}
-                  height={24}
-                  style={{ borderRadius: 5, flexShrink: 0 }}
+                  width={36}
+                  height={36}
+                  style={{ borderRadius: 8, flexShrink: 0 }}
                 />
               )}
-              <span style={{ fontSize: 13, color: text.secondary }}>{t(`capability.${p.name}`) || ""}</span>
-              {showPreferred && <span style={{ fontSize: 11, color: text.tertiary, fontWeight: 500 }}>{t("preferredProviderLabel")}</span>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, lineHeight: "24px", color: text.primary }}>
+                  {p.label}
+                </h2>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: text.tertiary }}>
+                  <span>{t(`capability.${p.name}`) || ""}</span>
+                  {showPreferred && <span>· {t("preferredProviderLabel")}</span>}
+                </div>
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
               {status !== "ready" && (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                   {statusState === "hollow" ? (
@@ -443,10 +465,31 @@ export function ProviderModal(props: Props) {
                 </span>
               )}
               <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t("close")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  border: "none",
+                  background: "transparent",
+                  color: text.tertiary,
+                  cursor: "pointer",
+                  padding: 0,
+                  marginLeft: 4,
+                }}
+              >
+                <IconCloseOutline16 size={16} />
+              </button>
             </div>
           </div>
 
-          {/* 账户与状态: credentials + quota (rich panel) + connection settings */}
+          {/* 账户: credentials + quota rows + connection settings */}
           <SettingsGroup title={t("accountTitle")} dividers="none">
             {!selfHosted && (
               <CredentialDisclosure
@@ -471,11 +514,32 @@ export function ProviderModal(props: Props) {
             )}
           </SettingsGroup>
 
-          {/* 搜索与读取: provider-native preferences (flat, no nested collapses) */}
+          {/* 搜索设置 / 网页读取: provider-native preferences */}
           {p.options && p.name !== "searxng" && (
-            <SettingsGroup title={t("searchReadTitle")} dividers="none">
+            <SettingsGroup
+              title={sectionTitle}
+              dividers="none"
+              action={
+                showRestore ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => restoreDraftRef.current?.()}
+                    style={{ fontSize: 12, padding: "0 4px", height: 20, color: text.secondary }}
+                  >
+                    {t("prefsRestore")}
+                  </Button>
+                ) : undefined
+              }
+            >
               <div style={{ padding: "12px 14px" }}>
-                <ProviderPreferencesSection t={t} p={p} onConfigChanged={onConfigChanged} />
+                <ProviderPreferencesSection
+                  t={t}
+                  p={p}
+                  onConfigChanged={onConfigChanged}
+                  onRestoreDraft={(fn) => { restoreDraftRef.current = fn; }}
+                  onCustomizedChange={(customized) => setShowRestore(customized)}
+                />
               </div>
             </SettingsGroup>
           )}
@@ -483,7 +547,12 @@ export function ProviderModal(props: Props) {
           {/* 高级设置: developer-facing diagnostics, explicit collapse */}
           <SettingsGroup dividers="none">
             <SettingsRow
-              title={t("advanced")}
+              icon={
+                <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                  <IconSettingsOutline16 size={16} />
+                </div>
+              }
+              title={t("advancedSettingsTitle")}
               chevron
               isLast
               onClick={() => setAdvancedOpen(!advancedOpen)}

@@ -17,7 +17,11 @@ import {
   quotaDisplayKind,
   resolveUiLanguage,
   translateDict,
+  QUOTA_SOURCE_LABEL_KEY,
+  quotaSourceLabel,
 } from "../src/client/logic.ts";
+import { zhDict, enDict } from "../src/client/i18n-dict.ts";
+import type { QuotaSource } from "../src/host/quota.ts";
 
 function provider(overrides: Partial<Parameters<typeof providerStatusOf>[0]> = {}) {
   return {
@@ -257,3 +261,66 @@ test("translateDict: picks the active dict, falls back cross-locale, substitutes
   assert.equal(translateDict(en, zh, "missing"), undefined);
   assert.equal(translateDict(zh, en, "missing", { name: "x" }), undefined);
 });
+
+// ---- QuotaSource exhaustive mapping & release gate tests ----
+
+test("QUOTA_SOURCE_LABEL_KEY maps every QuotaSource to a valid dictionary key in both zh and en", () => {
+  const sources: QuotaSource[] = [
+    "api",
+    "response_header",
+    "best_effort_api",
+    "local_estimate",
+    "dashboard",
+    "self_hosted",
+  ];
+
+  for (const s of sources) {
+    const key = QUOTA_SOURCE_LABEL_KEY[s];
+    assert.ok(key, `QuotaSource "${s}" must have a defined label key`);
+    assert.ok(key in zhDict, `Key "${key}" for QuotaSource "${s}" must exist in zhDict`);
+    assert.ok(key in enDict, `Key "${key}" for QuotaSource "${s}" must exist in enDict`);
+    assert.ok(!zhDict[key].includes("quotaSource"), `zh translation for "${key}" must not leak key name`);
+    assert.ok(!enDict[key].includes("quotaSource"), `en translation for "${key}" must not leak key name`);
+  }
+});
+
+test("quotaSourceLabel safely translates any QuotaSource and never outputs raw keys", () => {
+  const tZh = (k: string, ...args: unknown[]) => translateDict(zhDict, enDict, k, args[0] as Record<string, unknown>) ?? k;
+  const tEn = (k: string, ...args: unknown[]) => translateDict(enDict, zhDict, k, args[0] as Record<string, unknown>) ?? k;
+
+  assert.equal(quotaSourceLabel(tZh, "best_effort_api"), zhDict.quotaSourceBestEffortApi);
+  assert.ok(!quotaSourceLabel(tZh, "best_effort_api").includes("quotaSourceBest_effort_api"));
+  assert.equal(quotaSourceLabel(tEn, "best_effort_api"), enDict.quotaSourceBestEffortApi);
+  assert.ok(!quotaSourceLabel(tEn, "best_effort_api").includes("quotaSourceBest_effort_api"));
+  assert.equal(quotaSourceLabel(tZh, "response_header"), zhDict.quotaSourceResponseHeader);
+  assert.equal(quotaSourceLabel(tZh, "api"), zhDict.quotaSourceApi);
+  assert.equal(quotaSourceLabel(tZh, "local_estimate"), zhDict.quotaSourceLocalEstimate);
+  assert.equal(quotaSourceLabel(tZh, "dashboard"), zhDict.quotaSourceDashboard);
+  assert.equal(quotaSourceLabel(tZh, "self_hosted"), zhDict.quotaSourceSelfHosted);
+});
+
+test("forbidden marketing copy audit: zhDict contains no banned terms", () => {
+  const bannedTerms = [
+    "智能匹配",
+    "智能判定",
+    "智能去除",
+    "智能",
+    "高质量",
+    "适合深度研究",
+    "适合简单事实",
+    "~1s",
+    "~4s",
+    "<1s",
+    "极速返回",
+    "多层语义解析",
+    "多源内容深度递归",
+    "广告",
+  ];
+
+  for (const [key, val] of Object.entries(zhDict)) {
+    for (const banned of bannedTerms) {
+      assert.ok(!val.includes(banned), `zhDict[${key}] = "${val}" contains forbidden term "${banned}"`);
+    }
+  }
+});
+

@@ -18,6 +18,8 @@ import {
   Button,
   IconChevronRightOutline14,
   IconSearchOutline16,
+  IconEditOutline16,
+  IconSettingsOutline16,
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
@@ -146,8 +148,8 @@ function ProviderRow(props: {
     "disabled": t("disabled"),
     "not-in-order": t("notInOrder"),
   }[status];
-  const dotState: "warning" | "error" | "hollow" =
-    status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
+  const dotState: "warning" | "error" | "none" =
+    status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "none";
   const statusColor = status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
 
   const brandIcon = (
@@ -172,16 +174,12 @@ function ProviderRow(props: {
   const trailing = (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
       {status !== "ready" ? (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
-          {dotState === "hollow" ? (
-            <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
-          ) : (
-            <StateDot state={dotState} size={8} />
-          )}
+        <div style={{ width: 220, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+          {dotState !== "none" && <StateDot state={dotState} size={8} />}
           <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
             {statusText}
           </span>
-        </span>
+        </div>
       ) : (
         <QuotaInline quota={quota} providerName={p.name} t={t} />
       )}
@@ -223,6 +221,27 @@ function ProviderRow(props: {
     </div>
   );
 
+  const titleWithBadge = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span>{p.label}</span>
+      {showPreferred && (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: "var(--dsw-alias-brand-primary, #4f8cff)",
+            background: "rgba(79, 140, 255, 0.1)",
+            padding: "1px 6px",
+            borderRadius: 4,
+            lineHeight: "16px",
+          }}
+        >
+          {t("preferredProviderLabel")}
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div
       onDragOver={onDragOver}
@@ -236,8 +255,8 @@ function ProviderRow(props: {
     >
       <SettingsRow
         icon={brandIcon}
-        title={p.label}
-        subtitle={showPreferred ? <span style={{ color: text.tertiary, fontSize: 12 }}>{t("preferredProviderLabel")}</span> : undefined}
+        title={titleWithBadge}
+        subtitle={undefined}
         trailing={trailing}
         chevron={!editMode}
         isLast={isLast}
@@ -567,10 +586,19 @@ export function WebToolsSection(props: SectionProps) {
       <section>
         <SettingsGroup>
           <SettingsRow
+            icon={
+              <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                  <path d="M2 4h7M13 4h1M2 8h3M9 8h5M2 12h8M14 12h0" />
+                  <circle cx="11" cy="4" r="1.5" />
+                  <circle cx="7" cy="8" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                </svg>
+              </div>
+            }
             title={t("routingLabel")}
             subtitle={
               <span>
-                <span style={{ color: text.tertiary }}>{t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)} · </span>
                 {(() => {
                   const names = orderedProviders.map((name) => providerOf(name)?.label ?? name);
                   const separator = (config.searchRoutingPolicy ?? "ordered") === "random" ? (dshActive === "zh" ? "、" : ", ") : " → ";
@@ -583,7 +611,7 @@ export function WebToolsSection(props: SectionProps) {
               </span>
             }
             trailing={
-              <Button size="sm" variant={editingOrder ? "primary" : "outline"} onClick={() => setEditingOrder(!editingOrder)}>
+              <Button size="sm" variant={editingOrder ? "primary" : "outline"} icon={!editingOrder ? <IconEditOutline16 size={13} /> : undefined} onClick={() => setEditingOrder(!editingOrder)}>
                 {editingOrder ? t("done") : t("editOrder")}
               </Button>
             }
@@ -691,6 +719,11 @@ export function WebToolsSection(props: SectionProps) {
       <section style={{ marginTop: 4 }}>
         <SettingsGroup>
           <SettingsRow
+            icon={
+              <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                <IconSettingsOutline16 size={16} />
+              </div>
+            }
             title={t("diagnosticsAndMore")}
             chevron
             isLast

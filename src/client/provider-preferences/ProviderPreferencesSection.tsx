@@ -8,7 +8,7 @@
  * @module
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Button, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, IconChevronRightOutline14, IconChevronDownOutline14, Menu, type MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api } from "../api.ts";
 import { text, surface, state as stateColor } from "../theme.ts";
 import { Switch } from "../WebToolsSection.tsx";
@@ -30,76 +30,127 @@ interface Props {
     };
   };
   onConfigChanged: () => Promise<void> | void;
+  onRestoreDraft?: (restore: () => void) => void;
+  onCustomizedChange?: (customized: boolean) => void;
 }
 
-/** Collapsed pill: 已调整 (neutral) / 未保存 (warning). Default state returns null (§30). */
-function Pill(props: { t: TFunc; kind: "default" | "adjusted" | "unsaved" | "none" }) {
-  if (props.kind === "none" || props.kind === "default") return null;
-  const isUnsaved = props.kind === "unsaved";
-  const color = isUnsaved ? stateColor.warning : text.tertiary;
-  const bg = surface.layer2;
-  const label = isUnsaved ? props.t("prefsUnsaved") : props.t("prefsAdjusted");
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        fontSize: 11,
-        lineHeight: 1,
-        padding: "3px 8px",
-        borderRadius: 999,
-        border: `1px solid ${color}55`,
-        background: bg,
-        color,
-        fontWeight: 600,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function NumberField(props: {
+/** Modern Setting row input field with optional trailing addon/unit. */
+function SettingInputRow(props: {
   label: string;
   hint?: string;
   value: string;
+  unit?: string;
   placeholder?: string;
   onChange: (v: string) => void;
 }) {
-  const { label, hint, value, placeholder, onChange } = props;
+  const { label, hint, value, unit, placeholder, onChange } = props;
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: text.secondary }}>
-      <span>{label}</span>
-      <input
-        type="number"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          padding: "5px 9px",
-          borderRadius: 7,
-          border: `1px solid ${surface.border}`,
-          background: surface.layer2,
-          color: text.primary,
-          fontFamily: "inherit",
-          fontSize: 13,
-          width: 120,
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{label}</span>
+        {hint && <span style={{ fontSize: 12, color: text.tertiary }}>{hint}</span>}
+      </div>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
+        <input
+          type="number"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            height: 32,
+            width: 72,
+            padding: "0 8px",
+            borderRadius: 8,
+            border: `1px solid ${surface.border}`,
+            background: surface.layer2,
+            color: text.primary,
+            fontFamily: "inherit",
+            fontSize: 13,
+            textAlign: "center",
+            boxSizing: "border-box",
+            outline: "none",
+          }}
+        />
+        {unit && <span style={{ fontSize: 13, color: text.secondary }}>{unit}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Dropdown menu trigger for selecting expert options (>4 items). */
+function DropdownSelect(props: {
+  label: string;
+  valueLabel: string;
+  items: MenuItem[];
+  onSelect: (id: string) => void;
+}) {
+  const { label, valueLabel, items, onSelect } = props;
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{label}</span>
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        items={items}
+        onSelect={(id) => {
+          onSelect(id);
+          setOpen(false);
         }}
+        anchor={
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              height: 32,
+              padding: "0 10px",
+              borderRadius: 8,
+              border: `1px solid ${surface.border}`,
+              background: surface.layer2,
+              color: text.primary,
+              fontSize: 13,
+              fontFamily: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <span>{valueLabel}</span>
+            <span style={{ display: "inline-flex", color: text.tertiary }}>
+              <IconChevronDownOutline14 size={14} />
+            </span>
+          </button>
+        }
       />
-      {hint && <span style={{ color: text.tertiary, fontSize: 11 }}>{hint}</span>}
-    </label>
+    </div>
   );
 }
 
 export function ProviderPreferencesSection(props: Props) {
-  const { t, p, onConfigChanged } = props;
+  const { t, p, onConfigChanged, onRestoreDraft, onCustomizedChange } = props;
   if (p.name === "searxng" || !p.options) return null;
-  return <PreferencesBody key={p.name} t={t} p={p} onConfigChanged={onConfigChanged} />;
+  return (
+    <PreferencesBody
+      key={p.name}
+      t={t}
+      p={p}
+      onConfigChanged={onConfigChanged}
+      onRestoreDraft={onRestoreDraft}
+      onCustomizedChange={onCustomizedChange}
+    />
+  );
 }
 
-function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () => Promise<void> | void }) {
-  const { t, p, onConfigChanged } = props;
+function PreferencesBody(props: {
+  t: TFunc;
+  p: Props["p"];
+  onConfigChanged: () => Promise<void> | void;
+  onRestoreDraft?: (restore: () => void) => void;
+  onCustomizedChange?: (customized: boolean) => void;
+}) {
+  const { t, p, onConfigChanged, onRestoreDraft, onCustomizedChange } = props;
   const [draft, setDraft] = useState<Record<string, unknown>>(() => ({ ...(p.options?.overrides ?? {}) }));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ text: string; tone: "success" | "error" } | null>(null);
@@ -112,6 +163,11 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
   const eff = p.options!.effective;
   const isDef = p.options!.isDefault;
   const savedOverrides = useMemo(() => p.options?.overrides ?? {}, [p.options?.overrides]);
+
+  const isCustomized = !isDef || Object.keys(draft).length > 0;
+  useEffect(() => {
+    onCustomizedChange?.(isCustomized);
+  }, [isCustomized, onCustomizedChange]);
 
   const setValue = (key: string, value: unknown, defaultValue: unknown) => {
     setMsg(null);
@@ -136,8 +192,7 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
         setDraft({ ...res.options.overrides });
       }
       await onConfigChanged();
-      setMsg({ text: t("prefsSaved"), tone: "success" });
-      window.setTimeout(() => setMsg(null), 2000);
+      // On success, remain silent per design spec (no green "已保存" bar)
     } catch {
       setMsg({ text: t("prefsSaveFailed"), tone: "error" });
     } finally {
@@ -146,21 +201,41 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
   };
 
   const handleCancel = () => { setDraft({ ...savedOverrides }); setMsg(null); };
-  // Transactional restore: "恢复默认" only clears the DRAFT — nothing is
-  // written to the Host until the user presses 保存. This keeps the restore
-  // and the regular edit on the same interaction model (draft → save) and
-  // makes the action undoable by pressing 取消.
   const handleResetToDefaults = () => {
     setDraft({});
     setMsg(null);
   };
 
+  useEffect(() => {
+    if (onRestoreDraft) {
+      onRestoreDraft(handleResetToDefaults);
+    }
+  }, [onRestoreDraft]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 13 }}>
-      <ProviderControls t={t} provider={p.name} draft={draft} setValue={setValue} eff={eff} />
+      <ProviderControls
+        t={t}
+        provider={p.name}
+        draft={draft}
+        setValue={setValue}
+        eff={eff}
+        isCustomized={isCustomized}
+        onRestoreDefault={handleResetToDefaults}
+      />
 
       {dirty && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: surface.layer2,
+            marginTop: 4,
+          }}
+        >
           <span style={{ fontSize: 12, color: text.secondary }}>{t("prefsModified", { n: dirtyKeys.length })}</span>
           <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
             <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving}>{t("prefsCancel")}</Button>
@@ -169,48 +244,72 @@ function PreferencesBody(props: { t: TFunc; p: Props["p"]; onConfigChanged: () =
         </div>
       )}
 
-      {!dirty && !isDef && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
-          <Button size="sm" variant="ghost" onClick={handleResetToDefaults} disabled={saving}>{t("prefsRestore")}</Button>
-        </div>
+      {msg && msg.tone === "error" && (
+        <div style={{ fontSize: 12, color: stateColor.danger, textAlign: "right" }}>{msg.text}</div>
       )}
-
-      {msg && <div style={{ fontSize: 12, color: msg.tone === "error" ? stateColor.danger : stateColor.success, textAlign: "right" }}>{msg.text}</div>}
     </div>
   );
 }
 
-/** Per-provider control panels — fully i18n, Segmented single-choice with active description & subtle default hint. */
+/** Per-provider control panels — fully i18n, Segmented single-choice with active description. */
 function ProviderControls(props: {
   t: TFunc;
   provider: string;
   draft: Record<string, unknown>;
   setValue: (key: string, value: unknown, defaultValue: unknown) => void;
   eff: Record<string, unknown>;
+  isCustomized: boolean;
+  onRestoreDefault: () => void;
 }) {
-  const { t, provider, draft, setValue } = props;
+  const { t, provider, draft, setValue, isCustomized, onRestoreDefault } = props;
   const raw = (key: string, fallback: unknown): unknown => draft[key] ?? fallback;
 
   switch (provider) {
     // ------------------------------------------------------------------ Exa
     case "exa": {
       const mode = String(raw("searchType", "auto"));
-      const isCustomMode = mode !== "auto";
       const desc = mode === "fast" ? t("prefsExaFastDesc") : mode === "instant" ? t("prefsFastDesc") : mode.startsWith("deep") ? t("prefsExaDeepDesc") : t("prefsExaAutoDesc");
       const maxAgeHours = raw("maxAgeHours", undefined);
       const freshness: "auto" | "live" | "cache" = maxAgeHours === 0 ? "live" : maxAgeHours === -1 ? "cache" : "auto";
-      // Lossless primary: "深入" only writes when the current mode is NOT
-      // already a precise deep variant (deep-lite / deep / deep-reasoning).
       const handlePrimaryMode = (v: string) => {
         if (!exaPrimaryApplyable(v, mode)) return;
         setValue("searchType", v, "auto");
       };
       const primaryValue = exaPrimaryMode(mode);
+
+      const exaNativeItems: MenuItem[] = EXA_SEARCH_TYPE_OPTIONS.map((m) => {
+        const keyHint: Record<string, string> = {
+          auto: "Auto",
+          fast: "Fast",
+          instant: "Instant",
+          "deep-lite": "DeepLite",
+          deep: "Deep",
+          "deep-reasoning": "DeepReasoning",
+        };
+        return {
+          id: m,
+          label: t(`prefsExaNative${keyHint[m]}`),
+        };
+      });
+
+      const currentNativeLabel = (() => {
+        const keyHint: Record<string, string> = {
+          auto: "Auto",
+          fast: "Fast",
+          instant: "Instant",
+          "deep-lite": "DeepLite",
+          deep: "Deep",
+          "deep-reasoning": "DeepReasoning",
+        };
+        return t(`prefsExaNative${keyHint[mode] ?? "Auto"}`);
+      })();
+
       return (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsExaModeLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsExaAuto") },
                 { value: "fast", label: t("prefsFast") },
@@ -219,14 +318,14 @@ function ProviderControls(props: {
               value={primaryValue}
               onChange={handlePrimaryMode}
             />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {isCustomMode && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsExaAuto") })}</span>}
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsExaFreshnessLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsFreshnessAuto") },
                 { value: "live", label: t("prefsFreshnessLive") },
@@ -239,39 +338,26 @@ function ProviderControls(props: {
                 else setValue("maxAgeHours", -1, undefined);
               }}
             />
-            <AdvancedDelay t={t}>
-              {/* Native mode picker: 无损精确档位 */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <SectionLabel>{t("prefsExaNativeLabel")}</SectionLabel>
-                <SegmentedControl
-                  style={{ width: "100%", display: "flex" }}
-                  options={EXA_SEARCH_TYPE_OPTIONS.map((m) => {
-                    const keyHint: Record<string, string> = {
-                      auto: "Auto",
-                      fast: "Fast",
-                      instant: "Instant",
-                      "deep-lite": "DeepLite",
-                      deep: "Deep",
-                      "deep-reasoning": "DeepReasoning",
-                    };
-                    return { value: m, label: t(`prefsExaNative${keyHint[m]}`) };
-                  })}
-                  value={mode}
-                  onChange={(v) => setValue("searchType", v, "auto")}
-                />
-              </div>
-              <NumberField
-                label={t("prefsExaFreshnessLabel") + " (h)"}
-                hint={t("prefsExaMaxAgeHint")}
-                value={typeof draft.maxAgeHours === "number" ? String(draft.maxAgeHours) : ""}
-                onChange={(v) => {
-                  const n = Number(v);
-                  if (v === "" || Number.isNaN(n)) setValue("maxAgeHours", undefined, undefined);
-                  else setValue("maxAgeHours", Math.round(n), undefined);
-                }}
-              />
-            </AdvancedDelay>
           </div>
+          <AdvancedDelay t={t}>
+            <DropdownSelect
+              label={t("prefsExaNativeLabel")}
+              valueLabel={currentNativeLabel}
+              items={exaNativeItems}
+              onSelect={(id) => setValue("searchType", id, "auto")}
+            />
+            <SettingInputRow
+              label={t("prefsExaMaxAgeLabel")}
+              unit={t("prefsHoursUnit")}
+              value={typeof draft.maxAgeHours === "number" && draft.maxAgeHours > 0 ? String(draft.maxAgeHours) : ""}
+              placeholder="24"
+              onChange={(v) => {
+                const n = Number(v);
+                if (v === "" || Number.isNaN(n)) setValue("maxAgeHours", undefined, undefined);
+                else setValue("maxAgeHours", Math.round(n), undefined);
+              }}
+            />
+          </AdvancedDelay>
         </>
       );
     }
@@ -280,7 +366,6 @@ function ProviderControls(props: {
     case "tavily": {
       const autoParams = raw("autoParameters", false) === true;
       const depth = String(raw("searchDepth", "basic"));
-      const isCustomDepth = depth !== "basic";
       const desc = depth === "advanced" ? t("prefsTavilyAdvancedDesc") : depth === "fast" ? t("prefsTavilyFastDesc") : depth === "ultra-fast" ? t("prefsTavilyUltraFastDesc") : t("prefsTavilyBasicDesc");
       return (
         <>
@@ -288,6 +373,7 @@ function ProviderControls(props: {
             <SectionLabel>{t("prefsTavilyDepthLabel")}</SectionLabel>
             <SegmentedControl
               disabled={autoParams}
+              style={{ width: "100%" }}
               options={[
                 { value: "basic", label: t("prefsTavilyBasic") },
                 { value: "advanced", label: t("prefsTavilyAdvanced") },
@@ -298,9 +384,8 @@ function ProviderControls(props: {
               onChange={(v) => setValue("searchDepth", v, "basic")}
             />
             {!autoParams && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+              <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
                 <span>{desc}</span>
-                {isCustomDepth && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsTavilyBasic") })}</span>}
               </div>
             )}
           </div>
@@ -316,6 +401,7 @@ function ProviderControls(props: {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <SectionLabel>{t("prefsTavilyChunksPerSource")}</SectionLabel>
                 <SegmentedControl
+                  style={{ width: "100%" }}
                   options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }]}
                   value={typeof draft.chunksPerSource === "number" ? String(draft.chunksPerSource) : "auto"}
                   onChange={(v) => { if (v === "auto") setValue("chunksPerSource", undefined, undefined); else setValue("chunksPerSource", Number(v), undefined); }}
@@ -325,6 +411,7 @@ function ProviderControls(props: {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsTavilyExtractDepth")}</SectionLabel>
               <SegmentedControl
+                style={{ width: "100%" }}
                 options={[{ value: "basic", label: t("prefsExtractBasic") }, { value: "advanced", label: t("prefsExtractAdvanced") }]}
                 value={String(raw("fetchExtractDepth", "basic"))}
                 onChange={(v) => setValue("fetchExtractDepth", v, "basic")}
@@ -338,13 +425,13 @@ function ProviderControls(props: {
     // ---------------------------------------------------------------- Brave
     case "brave": {
       const pref = String(raw("endpointPreference", "auto"));
-      const isCustomPref = pref !== "auto";
       const desc = pref === "llm-context" ? t("prefsBraveLlmContextDesc") : pref === "web-search" ? t("prefsBraveWebSearchDesc") : t("prefsBraveAutoDesc");
       return (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsBraveModeLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsBraveAuto") },
                 { value: "llm-context", label: t("prefsBraveLlmContext") },
@@ -353,15 +440,15 @@ function ProviderControls(props: {
               value={pref}
               onChange={(v) => setValue("endpointPreference", v, "auto")}
             />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {isCustomPref && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsBraveAuto") })}</span>}
             </div>
           </div>
           <AdvancedDelay t={t}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsBraveThreshold")}</SectionLabel>
               <SegmentedControl
+                style={{ width: "100%" }}
                 options={[
                   { value: "balanced", label: t("prefsBraveThresholdBalanced") },
                   { value: "strict", label: t("prefsBraveThresholdStrict") },
@@ -375,10 +462,12 @@ function ProviderControls(props: {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsBraveTokenBudget")}</SectionLabel>
               <SegmentedControl
+                style={{ width: "100%" }}
                 options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "4000", label: "4K" }, { value: "8000", label: "8K" }, { value: "16000", label: "16K" }, { value: "32000", label: "32K" }]}
                 value={typeof draft.contextTokenBudget === "number" ? String(draft.contextTokenBudget) : "auto"}
                 onChange={(v) => { if (v === "auto") setValue("contextTokenBudget", undefined, undefined); else setValue("contextTokenBudget", Number(v), undefined); }}
               />
+              <span style={{ fontSize: 11, color: text.tertiary }}>{t("prefsBraveTokenBudgetAutoDesc")}</span>
             </div>
           </AdvancedDelay>
         </>
@@ -388,13 +477,13 @@ function ProviderControls(props: {
     // ---------------------------------------------------------------- You.com
     case "you": {
       const ext = String(raw("extractionMode", "highlights"));
-      const isCustomExt = ext !== "highlights";
       const desc = ext === "none" ? t("prefsYouSummaryDesc") : t("prefsYouHighlightsDesc");
       return (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsYouResultsLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "highlights", label: t("prefsYouHighlights") },
                 { value: "none", label: t("prefsYouSummary") },
@@ -402,24 +491,27 @@ function ProviderControls(props: {
               value={ext}
               onChange={(v) => setValue("extractionMode", v, "highlights")}
             />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {isCustomExt && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsYouHighlights") })}</span>}
             </div>
           </div>
           <AdvancedDelay t={t}>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <NumberField
-                label={t("prefsYouTimeoutSec")}
-                value={typeof draft.fetchCrawlTimeoutSec === "number" ? String(draft.fetchCrawlTimeoutSec) : ""}
-                onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchCrawlTimeoutSec", undefined, undefined); else setValue("fetchCrawlTimeoutSec", Math.round(n), undefined); }}
-              />
-              <NumberField
-                label={t("prefsYouFreshnessSec")}
-                value={typeof draft.fetchMaxAgeSec === "number" ? String(draft.fetchMaxAgeSec) : ""}
-                onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchMaxAgeSec", undefined, undefined); else setValue("fetchMaxAgeSec", Math.round(n), undefined); }}
-              />
-            </div>
+            <SettingInputRow
+              label={t("prefsYouTimeoutSec")}
+              hint={t("prefsYouTimeoutSecDesc")}
+              unit={t("prefsSecondsUnit")}
+              value={typeof draft.fetchCrawlTimeoutSec === "number" ? String(draft.fetchCrawlTimeoutSec) : ""}
+              placeholder="10"
+              onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchCrawlTimeoutSec", undefined, undefined); else setValue("fetchCrawlTimeoutSec", Math.round(n), undefined); }}
+            />
+            <SettingInputRow
+              label={t("prefsYouFreshnessSec")}
+              hint={t("prefsYouFreshnessSecDesc")}
+              unit={t("prefsSecondsUnit")}
+              value={typeof draft.fetchMaxAgeSec === "number" ? String(draft.fetchMaxAgeSec) : ""}
+              placeholder="0"
+              onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchMaxAgeSec", undefined, undefined); else setValue("fetchMaxAgeSec", Math.round(n), undefined); }}
+            />
           </AdvancedDelay>
         </>
       );
@@ -442,6 +534,7 @@ function ProviderControls(props: {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsPageCache")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsFreshnessAuto") },
                 { value: "live", label: t("prefsFreshnessLive") },
@@ -472,6 +565,21 @@ function ProviderControls(props: {
         : isExperimental
           ? t("prefsParallelExperimentalDesc")
           : t("prefsParallelAdvancedDesc");
+
+      const parallelExpItems: MenuItem[] = [
+        { id: "off", label: t("prefsParallelExperimentalOff") },
+        ...PARALLEL_EXPERIMENTAL_MODES.map((m) => ({
+          id: m,
+          label: m === "fast" ? t("prefsParallelFast") : t("prefsParallelTurbo"),
+        })),
+      ];
+
+      const currentExpLabel = expMode === "off"
+        ? t("prefsParallelExperimentalOff")
+        : expMode === "fast"
+          ? t("prefsParallelFast")
+          : t("prefsParallelTurbo");
+
       return (
         <>
           {isExperimental && (
@@ -482,30 +590,26 @@ function ProviderControls(props: {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsParallelQualityLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={PARALLEL_PRIMARY_MODES.map((m) => ({ value: m, label: m === "advanced" ? t("prefsParallelAdvanced") : t("prefsParallelBasic") }))}
               value={primaryMode}
               onChange={(v) => setValue("mode", v, "advanced")}
             />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {mode !== "advanced" && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsParallelAdvanced") })}</span>}
             </div>
           </div>
           <AdvancedDelay t={t}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <SectionLabel>{t("prefsParallelExperimental")}</SectionLabel>
-              <SegmentedControl
-                options={[
-                  { value: "off", label: t("prefsParallelExperimentalOff") },
-                  ...PARALLEL_EXPERIMENTAL_MODES.map((m) => ({ value: m, label: m === "fast" ? t("prefsParallelFast") : t("prefsParallelTurbo") })),
-                ]}
-                value={expMode}
-                onChange={(v) => setValue("mode", v === "off" ? "advanced" : v, "advanced")}
-              />
-            </div>
+            <DropdownSelect
+              label={t("prefsParallelExperimental")}
+              valueLabel={currentExpLabel}
+              items={parallelExpItems}
+              onSelect={(id) => setValue("mode", id === "off" ? "advanced" : id, "advanced")}
+            />
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <SectionLabel>{t("prefsParallelCharsLabel")}</SectionLabel>
               <SegmentedControl
+                style={{ width: "100%" }}
                 options={[{ value: "auto", label: t("prefsAutoLabel") }, { value: "10000", label: t("prefsParallelCharsCompact") }, { value: "25000", label: t("prefsParallelCharsStandard") }, { value: "50000", label: t("prefsParallelCharsMore") }]}
                 value={typeof draft.maxCharsTotal === "number" ? String(draft.maxCharsTotal) : "auto"}
                 onChange={(v) => { if (v === "auto") setValue("maxCharsTotal", undefined, undefined); else setValue("maxCharsTotal", Number(v), undefined); }}
@@ -519,7 +623,6 @@ function ProviderControls(props: {
     // ------------------------------------------------------------------ Jina
     case "jina": {
       const engine = String(raw("fetchEngine", "auto"));
-      const isCustomEngine = engine !== "auto";
       const desc = engine === "curl" ? t("prefsJinaModeDirectDesc") : engine === "browser" ? t("prefsJinaModeBrowserDesc") : t("prefsJinaModeAutoDesc");
       const readerLm = raw("fetchReaderLmV2", false) === true;
       const cacheTolerance = raw("fetchCacheToleranceSec", undefined);
@@ -529,6 +632,7 @@ function ProviderControls(props: {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsJinaModeLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsJinaModeAuto") },
                 { value: "curl", label: t("prefsJinaModeDirect") },
@@ -537,9 +641,8 @@ function ProviderControls(props: {
               value={engine}
               onChange={(v) => setValue("fetchEngine", v, "auto")}
             />
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, color: text.secondary, minHeight: 18 }}>
+            <div style={{ fontSize: 12, color: text.secondary, minHeight: 18 }}>
               <span>{desc}</span>
-              {isCustomEngine && <span style={{ color: text.tertiary }}>{t("prefsDefaultValueHint", { v: t("prefsJinaModeAuto") })}</span>}
             </div>
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -552,6 +655,7 @@ function ProviderControls(props: {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <SectionLabel>{t("prefsJinaCacheLabel")}</SectionLabel>
             <SegmentedControl
+              style={{ width: "100%" }}
               options={[
                 { value: "auto", label: t("prefsJinaCacheAuto") },
                 { value: "live", label: t("prefsJinaCacheLive") },
@@ -568,16 +672,20 @@ function ProviderControls(props: {
             />
           </div>
           <AdvancedDelay t={t}>
-            <NumberField
+            <SettingInputRow
               label={t("prefsJinaMaxTokens")}
               hint={t("prefsJinaMaxTokensDesc")}
+              unit={t("prefsTokensUnit")}
               value={typeof draft.fetchMaxTokens === "number" ? String(draft.fetchMaxTokens) : ""}
+              placeholder="e.g. 8000"
               onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchMaxTokens", undefined, undefined); else setValue("fetchMaxTokens", Math.round(n), undefined); }}
             />
-            <NumberField
+            <SettingInputRow
               label={t("prefsJinaTokenBudget")}
               hint={t("prefsJinaTokenBudgetDesc")}
+              unit={t("prefsTokensUnit")}
               value={typeof draft.fetchTokenBudget === "number" ? String(draft.fetchTokenBudget) : ""}
+              placeholder="e.g. 100000"
               onChange={(v) => { const n = Number(v); if (v === "" || Number.isNaN(n)) setValue("fetchTokenBudget", undefined, undefined); else setValue("fetchTokenBudget", Math.round(n), undefined); }}
             />
           </AdvancedDelay>
@@ -591,21 +699,51 @@ function ProviderControls(props: {
 }
 
 function SectionLabel(props: { children: ReactNode }) {
-  return <span style={{ fontSize: 12, fontWeight: 600, color: text.secondary }}>{props.children}</span>;
+  return <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{props.children}</span>;
 }
 
 function AdvancedDelay(props: { t: TFunc; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <button type="button" onClick={() => setOpen(!open)}
-        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 0", fontSize: 12, border: "none", background: "transparent", color: text.secondary, cursor: "pointer", fontFamily: "inherit" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          alignSelf: "flex-start",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "2px 0",
+          fontSize: 12,
+          fontWeight: 500,
+          border: "none",
+          background: "transparent",
+          color: text.secondary,
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
         <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s ease", display: "inline-flex" }}>
           <IconChevronRightOutline14 size={12} />
         </span>
-        {props.t("moreSettings")}
+        {props.t("advancedParamsTitle")}
       </button>
-      {open && <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 8, borderRadius: 8, background: surface.layer1 }}>{props.children}</div>}
+      {open && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            padding: "12px",
+            borderRadius: 8,
+            background: surface.layer2,
+            border: `1px solid ${surface.border}`,
+          }}
+        >
+          {props.children}
+        </div>
+      )}
     </div>
   );
 }

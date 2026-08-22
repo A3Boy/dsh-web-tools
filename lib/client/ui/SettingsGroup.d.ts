@@ -7,7 +7,7 @@ export declare function SettingsGroup(props: {
 }): import("react").JSX.Element;
 export declare function SettingsRow(props: {
     icon?: React.ReactNode;
-    title: string;
+    title: React.ReactNode;
     subtitle?: React.ReactNode;
     trailing?: React.ReactNode;
     chevron?: boolean;

@@ -8,6 +8,17 @@
 import type { ProviderView, QuotaView } from "../shared/api-types.ts";
 /** t() bound to the dsh-web-tools namespace (injected into the section). */
 export type TFunc = (key: string, ...args: unknown[]) => string;
+/** Explicit mapping from QuotaSource enum to translation dictionary keys (never dynamic concatenation). */
+export declare const QUOTA_SOURCE_LABEL_KEY: {
+    readonly api: "quotaSourceApi";
+    readonly response_header: "quotaSourceResponseHeader";
+    readonly best_effort_api: "quotaSourceBestEffortApi";
+    readonly local_estimate: "quotaSourceLocalEstimate";
+    readonly dashboard: "quotaSourceDashboard";
+    readonly self_hosted: "quotaSourceSelfHosted";
+};
+/** Resolve human label for any QuotaSource safely. */
+export declare function quotaSourceLabel(t: TFunc, source?: string): string;
 /** Page language preference: follow the DSH UI language, or force one. */
 export type UiLangPref = "auto" | "zh" | "en";
 /**

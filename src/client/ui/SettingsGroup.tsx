@@ -66,7 +66,7 @@ export function SettingsGroup(props: {
 
 export function SettingsRow(props: {
   icon?: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   subtitle?: React.ReactNode;
   trailing?: React.ReactNode;
   chevron?: boolean;
