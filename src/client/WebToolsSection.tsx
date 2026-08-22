@@ -3,10 +3,10 @@
  *
  * Information architecture: a one-level Settings page.
  *   - header row: title + enabled switch
- *   - search order summary + edit entry (RoutingModal)
+ *   - search order summary + "编辑" entry (in-place edit mode: drag to reorder,
+ *     pick the routing policy, add/remove providers — no separate dialog)
  *   - Providers: one unified list surface (row per provider → ProviderModal)
- *   - Test Search (real run through the Host chain, human-readable timeline)
- *   - Advanced: collapsible low-frequency knobs (timeout)
+ *   - More settings: collapsible low-frequency knobs (timeout, test search)
  *
  * Credentials are NEVER shown as plaintext: the page shows masked hints and
  * manages keys one at a time through Host add/remove endpoints; the Host
@@ -17,24 +17,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   IconChevronRightOutline14,
-  IconEditOutline16,
   IconSearchOutline16,
+  IconEditOutline16,
+  IconSettingsOutline16,
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView } from "./api.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView } from "./api.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
-import { RoutingModal } from "./RoutingModal.tsx";
+import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
 import type { UiFace } from "./registration.ts";
+import { PROVIDER_BRAND } from "./brand.ts";
 import {
   providerStatusOf,
   testOutcomeStatus,
   quotaSummary,
-  quotaFraction,
-  quotaDisplayKind,
-  quotaRemainingLabel,
-  quotaMetaLine,
   outcomeLabel,
   resolveUiLanguage,
   translateDict,
@@ -42,19 +40,23 @@ import {
   type TFunc,
   type ProviderStatus,
 } from "./logic.ts";
+import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
+import { QuotaInline } from "./ui/QuotaInline.tsx";
+import { SegmentedControl } from "./ui/SegmentedControl.tsx";
 
 export type { TFunc, ProviderStatus };
 export { providerStatusOf, quotaSummary, outcomeLabel };
 
 /** Local switch (DSH primitives ship no toggle; role=switch keeps it accessible). */
-export function Switch(props: { checked: boolean; onChange: (next: boolean) => void; label: string }) {
-  const { checked, onChange, label } = props;
+export function Switch(props: { checked: boolean; onChange: (next: boolean) => void; label: string; disabled?: boolean }) {
+  const { checked, onChange, label, disabled } = props;
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       style={{
         position: "relative",
@@ -63,9 +65,10 @@ export function Switch(props: { checked: boolean; onChange: (next: boolean) => v
         borderRadius: 10,
         border: "1px solid " + (checked ? "transparent" : surface.border),
         background: checked ? buttonColor.primaryFill : surface.layer2,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         flex: "none",
         padding: 0,
+        opacity: disabled ? 0.6 : 1,
         transition: "background .15s ease",
       }}
     >
@@ -91,169 +94,174 @@ interface SectionProps {
   ui?: UiFace;
 }
 
-/** One provider card in the providers list (click → ProviderModal).
- *  Cards in the search chain are draggable to reorder; cards outside the
- *  chain render non-draggable with a "not in chain" tag. */
-function ProviderCard(props: {
+/** 6-dot grip icon for drag handle. */
+function GripIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.35, flexShrink: 0, cursor: "grab" }}>
+      <circle cx="5" cy="3" r="1.5" />
+      <circle cx="11" cy="3" r="1.5" />
+      <circle cx="5" cy="8" r="1.5" />
+      <circle cx="11" cy="8" r="1.5" />
+      <circle cx="5" cy="13" r="1.5" />
+      <circle cx="11" cy="13" r="1.5" />
+    </svg>
+  );
+}
+
+/** One provider row inside the unified SettingsGroup list. */
+function ProviderRow(props: {
   t: TFunc;
   p: ProviderView;
   quota?: QuotaView;
-  /** Last connection-test result (drives the row status when it overrides). */
   testResult?: TestProviderView;
-  orderRank?: number;
-  isDefault: boolean;
-  draggable: boolean;
-  isDragOver: boolean;
+  /** Whether this provider is in the routing order (default + fallback). */
+  inOrder: boolean;
+  /** Show the "首选" text — only for the first entry in ordered policy. */
+  showPreferred: boolean;
+  isLast: boolean;
+  /** In-place ordering edit mode (grip + remove), replacing the drag handle. */
+  editMode?: boolean;
+  isDragging?: boolean;
+  isOver?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: () => void;
+  onRemove?: () => void;
+  onAdd?: () => void;
   onClick: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent) => void;
-  onDragEnd: () => void;
 }) {
-  const { t, p, quota, testResult, orderRank, isDefault, draggable, isDragOver, onClick, onDragStart, onDragOver, onDrop, onDragEnd } = props;
-  const inChain = orderRank !== undefined;
-  // A connection test can only refine a "ready" guess — it must never flip
-  // "not configured" / "not in chain" to auth-error, and a stale failure
-  // (key since removed) must not keep a provider red forever.
-  const base = providerStatusOf(p, quota, inChain);
+  const {
+    t, p, quota, testResult, inOrder, showPreferred, isLast,
+    editMode, isDragging, isOver,
+    onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onRemove, onAdd,
+    onClick,
+  } = props;
+  // Status: "ready" is the quiet default — only anomalies get a label.
+  const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
-    ready: t("ready"),
     "rate-limited": t("rateLimited"),
     "auth-error": t("authError"),
     "unreachable": t("unreachable"),
     "not-configured": t("notConfigured"),
-    "not-in-chain": t("notInChain"),
+    "disabled": t("disabled"),
+    "not-in-order": t("notInOrder"),
   }[status];
-  const selfHosted = p.name === "searxng";
-  // Gray hollow dot for "not configured" / "not in chain"; colored dots only
-  // for real states (green ready / amber rate-limited & unreachable / red auth error).
-  const dotState: "done" | "warning" | "error" | "ongoing" | "hollow" =
-    status === "ready" ? "done" : status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "hollow";
-  const statusColor = status === "ready" ? stateColor.success : status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
+  const dotState: "warning" | "error" | "none" =
+    status === "rate-limited" || status === "unreachable" ? "warning" : status === "auth-error" ? "error" : "none";
+  const statusColor = status === "auth-error" ? stateColor.danger : status === "rate-limited" || status === "unreachable" ? stateColor.warning : text.tertiary;
+
+  const brandIcon = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      {editMode && (
+        <span
+          draggable
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          title={t("editOrder")}
+          style={{ display: "inline-flex", alignItems: "center", padding: "2px 0", cursor: "grab" }}
+        >
+          <GripIcon />
+        </span>
+      )}
+      {PROVIDER_BRAND[p.name] && (
+        <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
+      )}
+    </div>
+  );
+
+  const trailing = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+      {status !== "ready" ? (
+        <div style={{ width: 220, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+          {dotState !== "none" && <StateDot state={dotState} size={8} />}
+          <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
+            {statusText}
+          </span>
+        </div>
+      ) : (
+        <QuotaInline quota={quota} providerName={p.name} t={t} />
+      )}
+      {editMode && inOrder && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+          aria-label={t("removeFromChain")}
+          title={t("removeFromChain")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            borderRadius: 5,
+            border: "none",
+            background: stateColor.danger,
+            color: "#fff",
+            cursor: "pointer",
+            padding: 0,
+            flex: "none",
+            transition: "opacity .15s ease",
+            outline: "none",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          <svg width="10" height="2" viewBox="0 0 10 2" fill="currentColor">
+            <rect width="10" height="2" rx="0.5" />
+          </svg>
+        </button>
+      )}
+      {editMode && !inOrder && (
+        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onAdd?.(); }} style={{ padding: "0 8px", height: 24 }}>
+          {t("addToChain")}
+        </Button>
+      )}
+    </div>
+  );
+
+  const titleWithBadge = (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span>{p.label}</span>
+      {showPreferred && (
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 400,
+            color: text.tertiary,
+            lineHeight: "16px",
+          }}
+        >
+          {t("preferredProviderLabel")}
+        </span>
+      )}
+    </div>
+  );
 
   return (
     <div
-      draggable={draggable}
-      onDragStart={onDragStart}
       onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={onDrop}
-      onDragEnd={onDragEnd}
-      onClick={onClick}
-      className="wt-provider-row"
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        width: "100%",
-        padding: "12px 14px",
-        background: isDragOver ? surface.hover : surface.layer1,
-        border: `1px solid ${isDragOver ? "var(--dsw-alias-brand-primary)" : surface.border}`,
-        borderRadius: 12,
-        cursor: draggable ? "grab" : "pointer",
-        fontFamily: "inherit",
-        fontSize: 14,
-        color: text.primary,
-        textAlign: "left",
-        boxSizing: "border-box",
+        background: isOver ? surface.hover : isDragging ? surface.layer2 : undefined,
+        opacity: isDragging ? 0.4 : 1,
+        transition: "background .12s ease",
       }}
-      onMouseEnter={(e) => { if (!isDragOver) e.currentTarget.style.background = surface.hover; }}
-      onMouseLeave={(e) => { if (!isDragOver) e.currentTarget.style.background = surface.layer1; }}
     >
-      {draggable && (
-        <span aria-hidden style={{ color: text.tertiary, fontSize: 14, cursor: "grab", userSelect: "none", flex: "none" }}>
-          ⠿
-        </span>
-      )}
-      {dotState === "hollow" ? (
-        <span
-          aria-hidden
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: "50%",
-            border: `1.5px solid ${text.tertiary}`,
-            flex: "none",
-            boxSizing: "border-box",
-          }}
-        />
-      ) : (
-        <StateDot state={dotState} />
-      )}
-      <span style={{ fontWeight: 500, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.label}</span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }} className="wt-provider-meta">
-        <span
-          style={{
-            color: statusColor,
-            fontSize: 12,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {statusText}
-        </span>
-        {selfHosted && (
-          <span style={{ color: text.tertiary, fontSize: 12, whiteSpace: "nowrap", border: `1px solid ${surface.border}`, borderRadius: 4, padding: "0 6px" }}>
-            {t("selfHosted")}
-          </span>
-        )}
-      </span>
-      {/* Compact quota: label + conditional progress bar (only when a ratio
-          honestly exists), then a quiet meta line. */}
-      {quota && quota.supported && (
-        <ProviderQuotaInline t={t} quota={quota} />
-      )}
-      {isDefault && (
-        <span style={{ color: accentText(), fontSize: 11, fontWeight: 600, border: "1px solid currentColor", borderRadius: 4, padding: "0 6px", whiteSpace: "nowrap" }}>
-          {t("defaultProviderLabel")}
-        </span>
-      )}
-      {orderRank !== undefined && !isDefault && (
-        <span style={{ color: text.tertiary, fontSize: 12, whiteSpace: "nowrap" }}>#{orderRank}</span>
-      )}
-      <IconChevronRightOutline14 size={14} />
+      <SettingsRow
+        icon={brandIcon}
+        title={titleWithBadge}
+        subtitle={t(PROVIDER_CAPABILITY_KEY[p.name] ?? "capability.search")}
+        trailing={trailing}
+        chevron={!editMode}
+        isLast={isLast}
+        insetDivider
+        onClick={!editMode ? onClick : undefined}
+      />
     </div>
-  );
-}
-
-/** Inline quota summary for the provider card: label + bar when computable. */
-function ProviderQuotaInline(props: { t: TFunc; quota: QuotaView }) {
-  const { t, quota } = props;
-  const kind = quotaDisplayKind(quota);
-  const fraction = quotaFraction(quota);
-
-  // Unsupported / self-hosted / unlimited: one quiet line, nothing else.
-  if (kind === "unavailable") {
-    return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnavailable")}</span>;
-  }
-  if (kind === "self_hosted") {
-    return <span style={{ color: text.tertiary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaSelfHostedShort")}</span>;
-  }
-  if (kind === "unlimited") {
-    return <span style={{ color: text.secondary, fontSize: 11, whiteSpace: "nowrap" }}>{t("quotaUnlimited")}</span>;
-  }
-
-  const label = quotaRemainingLabel(t, quota) || quotaSummary(t, quota) || t("quotaUnavailable");
-  const meta = quotaMetaLine(t, quota);
-  // Fill stays GREEN = remaining share; the gray track under it = used share.
-  const fillColor = stateColor.success;
-  return (
-    <span style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 120, alignItems: "flex-end", textAlign: "right" }} className="wt-provider-quota">
-      <span style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-        <span style={{ color: text.secondary, fontSize: 12, whiteSpace: "nowrap" }}>{label}</span>
-        {fraction !== undefined && (
-          <span style={{ color: fillColor, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{Math.round(fraction * 100)}%</span>
-        )}
-      </span>
-      {fraction !== undefined && (
-        <span style={{ width: 140, height: 4, borderRadius: 2, background: surface.layer2, overflow: "hidden", display: "block" }}>
-          <span style={{ width: `${fraction * 100}%`, height: "100%", background: fillColor, display: "block" }} />
-        </span>
-      )}
-      {meta && <span style={{ color: text.tertiary, fontSize: 10, whiteSpace: "nowrap" }}>{meta}</span>}
-    </span>
   );
 }
 
@@ -310,7 +318,7 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: stateColor.success, fontSize: 13 }}>
               <StateDot state="done" size={8} />
               <span style={{ fontWeight: 600 }}>
-                {label(result.backend ?? "")} · {result.latencyMs}ms · {t("resultCount", { n: result.resultCount ?? 0 })}
+                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {(result.latencyMs / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
               </span>
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
@@ -328,19 +336,22 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 
           {/* Human-readable attempts timeline */}
           {attempts.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: text.secondary }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: text.secondary }}>
               {attempts.map((a, i) => {
                 const ok = a.outcome === "success";
                 const skipped = a.outcome.startsWith("skipped-");
                 return (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ width: 14, color: text.tertiary }}>{i + 1}.</span>
-                    <span style={{ color: text.primary, fontWeight: 500 }}>{label(a.provider)}</span>
-                    <span style={{ color: ok ? stateColor.success : skipped ? text.tertiary : stateColor.danger }}>
+                    <span style={{ color: text.primary, fontWeight: 500, minWidth: 60 }}>{label(a.provider)}</span>
+                    <span style={{ color: ok ? stateColor.success : skipped ? text.tertiary : stateColor.danger, minWidth: 70 }}>
                       {outcomeLabel(t, a.outcome)}
                     </span>
-                    {a.latencyMs !== undefined && <span style={{ color: text.tertiary }}>{a.latencyMs}ms</span>}
-                    {i < attempts.length - 1 && <span style={{ marginLeft: "auto", color: text.tertiary }}>↓</span>}
+                    {a.latencyMs !== undefined && (
+                      <span style={{ color: text.tertiary, marginLeft: "auto" }}>
+                        {(a.latencyMs / 1000).toFixed(1)} {t("secondsUnit")}
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -372,22 +383,14 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 export function WebToolsSection(props: SectionProps) {
   const { t: baseT, ui } = props;
   const [config, setConfig] = useState<ConfigView | null>(null);
-  // Independent page language: "auto" follows the DSH UI language, "zh"/"en"
-  // force the page — persisted in the plugin's own config, never the DSH-wide
-  // preference. The local `t` shadows props.t so every child translation
-  // (ProviderModal/RoutingModal included) rides the effective language.
-  const [uiPref, setUiPref] = useState<UiLangPref>("auto");
   const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
-  // Follow DSH-wide locale switches while the preference is "auto".
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  // Follow DSH-wide locale switches directly — the page always mirrors DSH.
   useEffect(() => {
     if (!ui) return;
     return ui.subscribeLocale(() => setDshActive(ui.getActiveLocale()));
   }, [ui]);
-  // Adopt the persisted preference once the config loads (and after saves).
-  useEffect(() => {
-    if (config) setUiPref(config.uiLanguage ?? "auto");
-  }, [config]);
-  const effectiveLang = resolveUiLanguage(uiPref, dshActive);
+  const effectiveLang = dshActive === "en" ? "en" : "zh";
   const t: TFunc = useMemo(() => {
     if (!ui) return baseT;
     const dict = effectiveLang === "en" ? ui.enDict : ui.zhDict;
@@ -398,21 +401,25 @@ export function WebToolsSection(props: SectionProps) {
     };
   }, [ui, effectiveLang, baseT]);
   const [quotas, setQuotas] = useState<Record<string, QuotaView> | null>(null);
+  const [versionInfo, setVersionInfo] = useState<VersionCheckView | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [detailFor, setDetailFor] = useState<string | null>(null);
-  const [routingOpen, setRoutingOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
-  // Main-page drag-to-reorder over the search chain (HTML5 DnD).
-  const dragName = useRef<string | null>(null);
-  const [dragOverName, setDragOverName] = useState<string | null>(null);
-  // Optimistic chain order while a drag-save is in flight; cleared once the
-  // persisted config reload lands so the server truth takes over.
-  const [localProviderOrder, setLocalProviderOrder] = useState<string[] | null>(null);
+  const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
+  const dragProvider = useRef<string | null>(null);
+  const [overProvider, setOverProvider] = useState<string | null>(null);
   const loadToken = useRef(0);
   const mounted = useRef(true);
+
+  useEffect(() => {
+    if (config?.providerAttemptTimeoutMs !== undefined) {
+      setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
+    }
+  }, [config?.providerAttemptTimeoutMs]);
 
   const load = async () => {
     const token = ++loadToken.current;
@@ -420,7 +427,6 @@ export function WebToolsSection(props: SectionProps) {
       const cfg = await api.configGet();
       if (token !== loadToken.current) return;
       setConfig(cfg);
-      setLocalProviderOrder(null); // persisted truth confirmed → drop optimism
       setError("");
     } catch (e) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
@@ -440,6 +446,7 @@ export function WebToolsSection(props: SectionProps) {
   useEffect(() => {
     void load();
     void loadQuotas();
+    void api.versionCheck().then(setVersionInfo).catch(() => {});
     return () => {
       loadToken.current += 1;
       mounted.current = false;
@@ -478,7 +485,19 @@ export function WebToolsSection(props: SectionProps) {
     providerBaseUrls[name] = baseUrl;
     void save({ providerBaseUrls });
   };
-  const setAttemptTimeout = (v: number) => void save({ providerAttemptTimeoutMs: Math.min(60000, Math.max(1000, v)) });
+
+  const commitTimeoutSec = (secStr: string) => {
+    const num = Number(secStr);
+    if (!Number.isFinite(num) || num <= 0) {
+      if (config) setTimeoutDraftSec(String(Math.round(config.providerAttemptTimeoutMs / 1000)));
+      return;
+    }
+    const ms = Math.min(60000, Math.max(1000, Math.round(num * 1000)));
+    setTimeoutDraftSec(String(Math.round(ms / 1000)));
+    if (!config || ms !== config.providerAttemptTimeoutMs) {
+      void save({ providerAttemptTimeoutMs: ms });
+    }
+  };
 
   // One ordered list: [defaultProvider, ...fallbackOrder] — Host schema unchanged.
   const orderedProviders = [
@@ -486,42 +505,17 @@ export function WebToolsSection(props: SectionProps) {
     ...config.fallbackOrder.filter((n) => n !== config.defaultProvider),
   ];
   const providerOf = (name: string) => config.providers.find((p) => p.name === name);
-  const enabledNames = new Set(config.providers.filter((p) => p.enabled).map((p) => p.name));
-  const saveOrder = (ordered: string[]) => {
+  const saveOrder = (ordered: string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
-    const first = next[0] ?? config.defaultProvider;
-    void save({ defaultProvider: first, fallbackOrder: next.slice(1) });
+    void api.routingSet(policy, next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
-  // Drag-to-reorder on the main page: only chain members are draggable; a
-  // drop reorders within the chain (fallbackOrder stays [default, ...rest]).
-  const reorderOnDrop = (dragged: string, over: string) => {
-    if (dragged === over) return;
-    const next = [...orderedProviders];
-    const from = next.indexOf(dragged);
-    const to = next.indexOf(over);
-    if (from < 0 || to < 0) return;
-    next.splice(from, 1);
-    next.splice(to, 0, dragged);
-    // Optimistic local order so cards re-render instantly; the persisted
-    // config reload confirms it (or reverts on failure).
-    setLocalProviderOrder(next);
-    saveOrder(next);
-  };
-
-  // Rendering order: chain members first (in search order), then providers
-  // outside the chain (registry order). Falls back to the persisted chain
-  // while no drag is in flight.
-  const renderedProviders = (localProviderOrder ?? orderedProviders)
+  // Rendering order: providers are listed in the routing order (default +
+  // fallback), then providers outside the chain (registry order).
+  const renderedProviders = orderedProviders
     .map((name) => providerOf(name))
     .filter((x): x is ProviderView => x !== undefined)
     .concat(config.providers.filter((p) => !orderedProviders.includes(p.name)));
-
-  const readyCount = config.providers.filter((p) => {
-    if (!p.enabled) return false;
-    const inChain = orderedProviders.includes(p.name);
-    return providerStatusOf(p, quotas?.[p.name], inChain) === "ready";
-  }).length;
 
   const testProvider = async (provider: string) => {
     setBusyProviders((b) => ({ ...b, [provider]: true }));
@@ -538,10 +532,15 @@ export function WebToolsSection(props: SectionProps) {
     }
   };
 
+  // "首选" is only meaningful when the policy is ordered — round-robin and
+  // random have no fixed first entry.
+  const showPreferredFor = (name: string) =>
+    (config.searchRoutingPolicy ?? "ordered") === "ordered" && name === config.defaultProvider;
+
   const detailProvider = detailFor !== null ? providerOf(detailFor) : undefined;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 720, padding: "4px 0 24px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720, padding: "4px 0 24px" }}>
       {/* Narrow-width responsive rules: provider rows wrap to two lines. */}
       <style>{`
         @media (max-width: 640px) {
@@ -552,44 +551,28 @@ export function WebToolsSection(props: SectionProps) {
       {/* Header: title + enabled switch */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, lineHeight: "28px", color: text.primary }}>{t("title")}</h2>
-          <p style={{ margin: "4px 0 0", fontSize: 14, lineHeight: "22px", color: text.secondary }}>{t("tagline")}</p>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500, lineHeight: "24px", color: text.primary }}>{t("title")}</h2>
+          <p style={{ margin: "2px 0 0", fontSize: 14, lineHeight: "22px", color: text.tertiary }}>{t("tagline")}</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {/* Page language: independent of the DSH-wide locale (persisted in
-              the plugin config; "auto" follows the DSH UI language). */}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: text.secondary, whiteSpace: "nowrap" }}>
-            <span>{t("uiLanguage")}</span>
-            <select
-              value={uiPref}
-              onChange={(e) => {
-                const v = e.target.value as UiLangPref;
-                setUiPref(v);
-                void save({ uiLanguage: v });
-              }}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 8,
-                border: `1px solid ${surface.border}`,
-                background: surface.layer2,
-                color: text.primary,
-                fontFamily: "inherit",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              <option value="auto">{t("uiLangAuto")}</option>
-              <option value="zh">中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <Switch checked={config.enabled} onChange={setEnabled} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
-          {saving && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
-          {saved && !saving && <span style={{ color: stateColor.success, fontSize: 12 }}>{t("saved")}</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Switch checked={config.enabled} onChange={setEnabled} disabled={saving} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
         </div>
       </div>
 
       {error && <div style={{ color: stateColor.danger, fontSize: 13 }}>{error}</div>}
+
+      {versionInfo?.updateAvailable && versionInfo.latestVersion && versionInfo.releaseUrl && (
+        <div className="dswt-update-banner" role="status">
+          <div className="dswt-update-copy">
+            <strong>{t("updateAvailableTitle", { version: versionInfo.latestVersion })}</strong>
+            <span>{t("updateAvailableBody", { current: versionInfo.currentVersion })}</span>
+          </div>
+          <a className="dswt-update-link" href={versionInfo.releaseUrl} target="_blank" rel="noreferrer">
+            {t("viewUpdate")}
+            <ExternalLinkIcon size={12} />
+          </a>
+        </div>
+      )}
 
       {/* Proxy degraded warning: a proxy is configured but undici is missing,
           so provider calls fall back to direct fetch and may time out. */}
@@ -612,164 +595,200 @@ export function WebToolsSection(props: SectionProps) {
         </div>
       )}
 
-      {/* Summary strip */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-          padding: "10px 14px",
-          borderRadius: 12,
-          background: surface.layer1,
-          border: `1px solid ${surface.border}`,
-          fontSize: 13,
-          color: text.secondary,
-          flexWrap: "wrap",
-        }}
-      >
-        <span>
-          {t("readySummary", { n: readyCount, total: config.providers.length })}
-        </span>
-        <span style={{ color: surface.border }}>|</span>
-        <span>
-          {t("defaultProviderLabel")}: <strong style={{ color: text.primary }}>{providerOf(config.defaultProvider)?.label ?? config.defaultProvider}</strong>
-        </span>
-      </div>
-
-      {/* Search order summary + edit */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("orderLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("orderHint")}</span>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-              {t("editOrder")}
-            </Button>
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flexWrap: "wrap",
-            padding: "10px 14px",
-            borderRadius: 12,
-            background: surface.layer1,
-            border: `1px solid ${surface.border}`,
-            fontSize: 13,
-          }}
-        >
-          {orderedProviders.length === 0 && <span style={{ color: text.tertiary }}>{t("notConfigured")}</span>}
-          {orderedProviders.map((name, i) => {
-            const p = providerOf(name);
-            const ok = p !== undefined && enabledNames.has(name);
-            return (
-              <span key={name} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                {i > 0 && <span style={{ color: text.tertiary }}>→</span>}
-                <span style={{ color: ok ? text.primary : text.tertiary, fontWeight: i === 0 ? 600 : 400 }}>
-                  {p?.label ?? name}
-                </span>
-                {i === 0 && (
-                  <span style={{ color: accentText(), fontSize: 11, fontWeight: 600 }}>{t("defaultProviderLabel")}</span>
-                )}
+      {/* 搜索顺序 summary + Edit (in-place ordering edit mode) */}
+      <section>
+        <SettingsGroup>
+          <SettingsRow
+            icon={
+              <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                  <path d="M2 4h7M13 4h1M2 8h3M9 8h5M2 12h8M14 12h0" />
+                  <circle cx="11" cy="4" r="1.5" />
+                  <circle cx="7" cy="8" r="1.5" />
+                  <circle cx="12" cy="12" r="1.5" />
+                </svg>
+              </div>
+            }
+            title={t("routingLabel")}
+            subtitle={
+              <span>
+                {(() => {
+                  const names = orderedProviders.map((name) => providerOf(name)?.label ?? name);
+                  const separator = (config.searchRoutingPolicy ?? "ordered") === "random" ? (dshActive === "zh" ? "、" : ", ") : " → ";
+                  if (names.length <= 3) {
+                    return names.join(separator);
+                  }
+                  const head = names.slice(0, 3).join(separator);
+                  return `${head} · +${names.length - 3}`;
+                })()}
               </span>
-            );
-          })}
-        </div>
+            }
+            trailing={
+              <Button size="sm" variant={editingOrder ? "primary" : "outline"} icon={!editingOrder ? <IconEditOutline16 size={13} /> : undefined} onClick={() => setEditingOrder(!editingOrder)}>
+                {editingOrder ? t("done") : t("editOrder")}
+              </Button>
+            }
+            isLast
+          />
+        </SettingsGroup>
       </section>
 
-      {/* Providers: card list, chain members drag-to-reorder */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("providersLabel")}</h3>
-          <span style={{ color: text.tertiary, fontSize: 12 }}>{t("orderHint")}</span>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="sm" variant="ghost" icon={<IconEditOutline16 size={14} />} onClick={() => setRoutingOpen(true)}>
-              {t("editOrder")}
-            </Button>
-          </span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {renderedProviders.map((p) => {
-            const inChain = orderedProviders.includes(p.name);
+      {/* Ordering edit mode: policy + in-place drag/reorder + add/remove */}
+      {editingOrder && (
+        <section>
+          <SettingsGroup title={t("routingPolicySection")}>
+            <div style={{ padding: "10px 14px" }}>
+              <SegmentedControl
+                style={{ display: "flex", width: "100%" }}
+                options={[
+                  { value: "ordered", label: t("routingPolicy.ordered") },
+                  { value: "round-robin", label: t("routingPolicy.round-robin") },
+                  { value: "random", label: t("routingPolicy.random") },
+                ]}
+                value={config.searchRoutingPolicy ?? "ordered"}
+                onChange={(v) => saveOrder(orderedProviders, v as SearchRoutingPolicy)}
+              />
+              <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
+                {t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}
+              </div>
+            </div>
+          </SettingsGroup>
+        </section>
+      )}
+
+      {/* Providers: unified group container */}
+      <section>
+        <SettingsGroup title={t("providersLabel")} dividers="inset">
+          {renderedProviders.map((p, idx) => {
             const testResult = providerTestResults[p.name];
+            const isDragging = editingOrder && dragProvider.current === p.name;
+            const isOver = editingOrder && overProvider === p.name && dragProvider.current !== null && dragProvider.current !== p.name;
             return (
-              <ProviderCard
+              <ProviderRow
                 key={p.name}
                 t={t}
                 p={p}
                 quota={quotas?.[p.name]}
                 testResult={testResult}
-                orderRank={inChain ? orderedProviders.indexOf(p.name) + 1 : undefined}
-                isDefault={p.name === config.defaultProvider}
-                draggable={inChain}
-                isDragOver={dragOverName === p.name && dragName.current !== null && dragName.current !== p.name}
-                onClick={() => setDetailFor(p.name)}
+                inOrder={orderedProviders.includes(p.name)}
+                showPreferred={showPreferredFor(p.name)}
+                isLast={idx === renderedProviders.length - 1}
+                editMode={editingOrder}
+                isDragging={isDragging}
+                isOver={isOver}
                 onDragStart={(e) => {
-                  dragName.current = p.name;
+                  dragProvider.current = p.name;
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", p.name);
                 }}
                 onDragOver={(e) => {
-                  if (!inChain || dragName.current === null) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
-                  if (dragOverName !== p.name) setDragOverName(p.name);
+                  if (overProvider !== p.name) setOverProvider(p.name);
+                }}
+                onDragLeave={() => {
+                  if (overProvider === p.name) setOverProvider(null);
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
-                  const dragged = dragName.current;
-                  dragName.current = null;
-                  setDragOverName(null);
-                  if (dragged !== null) reorderOnDrop(dragged, p.name);
+                  const fromName = dragProvider.current;
+                  dragProvider.current = null;
+                  setOverProvider(null);
+                  if (!fromName || fromName === p.name) return;
+
+                  // Compute next order
+                  const currentOrderList = [...orderedProviders];
+                  const fromIdx = currentOrderList.indexOf(fromName);
+                  const toIdx = currentOrderList.indexOf(p.name);
+
+                  if (fromIdx !== -1 && toIdx !== -1) {
+                    currentOrderList.splice(fromIdx, 1);
+                    currentOrderList.splice(toIdx, 0, fromName);
+                    saveOrder(currentOrderList);
+                  } else if (fromIdx === -1 && toIdx !== -1) {
+                    currentOrderList.splice(toIdx, 0, fromName);
+                    saveOrder(currentOrderList);
+                  }
                 }}
                 onDragEnd={() => {
-                  dragName.current = null;
-                  setDragOverName(null);
+                  dragProvider.current = null;
+                  setOverProvider(null);
                 }}
+                onRemove={() => {
+                  const next = orderedProviders.filter((n) => n !== p.name);
+                  if (next.length > 0) saveOrder(next);
+                }}
+                onAdd={() => {
+                  if (!orderedProviders.includes(p.name)) saveOrder([...orderedProviders, p.name]);
+                }}
+                onClick={() => setDetailFor(p.name)}
               />
             );
           })}
-        </div>
+        </SettingsGroup>
       </section>
 
-      {/* Test search */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: text.primary }}>{t("testSearchTitle")}</h3>
-        <TestSearchBlock t={t} config={config} onError={(msg) => setError(msg)} />
-      </section>
+      {/* 诊断与高级设置 */}
+      <section style={{ marginTop: 4 }}>
+        <SettingsGroup>
+          <SettingsRow
+            icon={
+              <div style={{ display: "inline-flex", alignItems: "center", color: text.secondary }}>
+                <IconSettingsOutline16 size={16} />
+              </div>
+            }
+            title={t("diagnosticsAndMore")}
+            chevron
+            isLast
+            onClick={() => setDiagnosticsOpen(!diagnosticsOpen)}
+          />
+        </SettingsGroup>
+        {diagnosticsOpen && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8, padding: "14px", borderRadius: 12, background: surface.layer1, border: `1px solid ${surface.border}` }}>
+            {/* Timeout */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("attemptTimeoutLabel")}</span>
+                <span style={{ fontSize: 12, color: text.tertiary }}>{t("attemptTimeoutHint")}</span>
+              </div>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={timeoutDraftSec}
+                  onChange={(e) => setTimeoutDraftSec(e.target.value)}
+                  onBlur={() => commitTimeoutSec(timeoutDraftSec)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      (e.currentTarget as HTMLInputElement).blur();
+                    }
+                  }}
+                  style={{
+                    width: 54,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: `1px solid ${surface.border}`,
+                    background: surface.layer2,
+                    color: text.primary,
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    textAlign: "center",
+                  }}
+                />
+                <span style={{ color: text.secondary, fontSize: 13 }}>{t("secondsUnit")}</span>
+              </div>
+            </div>
 
-      {/* Advanced */}
-      <details style={{ fontSize: 13 }}>
-        <summary style={{ cursor: "pointer", color: text.secondary, fontSize: 13, padding: "4px 0" }}>
-          {t("advanced")}
-        </summary>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 0 0" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <label style={{ color: text.secondary }}>{t("attemptTimeoutLabel")}</label>
-            <input
-              type="number"
-              min={1000}
-              max={60000}
-              step={1000}
-              value={config.providerAttemptTimeoutMs}
-              onChange={(e) => setAttemptTimeout(Number(e.target.value))}
-              style={{
-                width: 90,
-                padding: "4px 8px",
-                borderRadius: 6,
-                border: `1px solid ${surface.border}`,
-                background: surface.layer2,
-                color: text.primary,
-                fontFamily: "inherit",
-                fontSize: 13,
-              }}
-            />
-            <span style={{ color: text.tertiary, fontSize: 12 }}>{t("attemptTimeoutHint")} ({t("seconds", { n: Math.round(config.providerAttemptTimeoutMs / 1000) })})</span>
+            {/* Test search */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("testSearchTitle")}</span>
+              <TestSearchBlock t={t} config={config} onError={(msg) => setError(msg)} />
+            </div>
           </div>
-        </div>
-      </details>
+        )}
+      </section>
 
       {/* Provider detail dialog */}
       {detailProvider && (
@@ -779,30 +798,19 @@ export function WebToolsSection(props: SectionProps) {
           quota={quotas?.[detailProvider.name]}
           testResult={providerTestResults[detailProvider.name]}
           busy={!!busyProviders[detailProvider.name]}
-          isDefault={detailProvider.name === config.defaultProvider}
+          showPreferred={showPreferredFor(detailProvider.name)}
           inChain={orderedProviders.includes(detailProvider.name)}
           onClose={() => { setDetailFor(null); setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; }); }}
           onToggle={(enabled) => toggleProvider(detailProvider.name, enabled)}
           onBaseUrl={(url) => setBaseUrl(detailProvider.name, url)}
           onTest={() => testProvider(detailProvider.name)}
           onRefreshQuota={() => void loadQuotas(true)}
-          onConfigChanged={() => {
-            // Credentials changed (add/remove key): drop the stale probe so a
+          onConfigChanged={async () => {
+            // Credentials or preferences changed: drop the stale probe so a
             // previous "no key" / auth error does not linger after the edit.
             setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; });
-            void load();
+            await load();
           }}
-        />
-      )}
-
-      {/* Routing dialog */}
-      {routingOpen && (
-        <RoutingModal
-          t={t}
-          providers={config.providers}
-          ordered={orderedProviders}
-          onClose={() => setRoutingOpen(false)}
-          onSave={saveOrder}
         />
       )}
     </div>

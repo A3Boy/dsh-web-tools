@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf } from "./pool.ts";
+import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth, hintOf, reserveKey, releaseKey } from "./pool.ts";
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { parseJinaBalance, parseJinaSearchJson } from "./providers/jina.ts";
 import {
@@ -17,6 +17,7 @@ import {
 import { braveQuotaFromHeaders } from "./providers/brave.ts";
 import { classifyHttpStatus } from "./providers/types.ts";
 import { mergePoolQuota } from "./quota.ts";
+import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -224,16 +225,36 @@ test("normalizeParallelQuery: collapses whitespace and caps at 200 chars", () =>
   assert.equal(normalizeParallelQuery(long).length, 200);
 });
 
-test("buildParallelSearchBody: objective + one query + mode basic + clamped max_results", () => {
+test("buildParallelSearchBody: objective + one query + mode advanced + clamped max_results", () => {
   const body = buildParallelSearchBody("  DeepSeek   Harness \n release ", 10);
   assert.deepEqual(body, {
     objective: "  DeepSeek   Harness \n release ",
     search_queries: ["DeepSeek Harness release"],
-    mode: "basic",
+    mode: "advanced",
     advanced_settings: { max_results: 10 },
   });
   // objective keeps the raw query verbatim — only search_queries is normalized
   assert.equal((body as { objective: string }).objective.includes("  "), true);
+});
+
+test("buildParallelSearchBody: max_chars_total at top level when set, never in advanced_settings", () => {
+  const body = buildParallelSearchBody("test", 5, { mode: "advanced", maxCharsTotal: 50000 });
+  assert.deepEqual(body, {
+    objective: "test",
+    search_queries: ["test"],
+    mode: "advanced",
+    max_chars_total: 50000,
+    advanced_settings: { max_results: 5 },
+  });
+  // No max_chars_total inside advanced_settings — that would cause HTTP 422.
+  const adv = body.advanced_settings as Record<string, unknown>;
+  assert.equal(adv.max_chars_total, undefined);
+});
+
+test("buildParallelSearchBody: max_chars_total omitted when not set", () => {
+  const body = buildParallelSearchBody("test", 5, { mode: "basic" });
+  assert.equal(body.max_chars_total, undefined);
+  assert.deepEqual(body.advanced_settings, { max_results: 5 });
 });
 
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {
@@ -312,4 +333,65 @@ test("classifyHttpStatus: Parallel's documented codes map onto the closed union"
   assert.equal(classifyHttpStatus(500), "server");
   assert.equal(classifyHttpStatus(502), "server");
   assert.equal(classifyHttpStatus(503), "server");
+});
+
+test("pool inFlight allocation & reserve/release concurrency control", () => {
+  const p = buildPool("k1,k2");
+  // initially both inFlight=0, uses=0 -> picks k1 (index 0)
+  assert.equal(selectIndex(p), 0);
+
+  // simulate reserving k1 for in-flight request
+  reserveKey(p, 0);
+  assert.equal(p[0].inFlight, 1);
+
+  // next concurrent request should pick k2 (inFlight=0 < inFlight=1)
+  assert.equal(selectIndex(p), 1);
+  reserveKey(p, 1);
+  assert.equal(p[1].inFlight, 1);
+
+  // when both have inFlight=1, ties break on uses (both 0), then order (0)
+  assert.equal(selectIndex(p), 0);
+
+  // simulate request 0 finishes successfully
+  releaseKey(p, 0);
+  markUsed(p, 0);
+  assert.equal(p[0].inFlight, 0);
+  assert.equal(p[0].uses, 1);
+
+  // next request picks k1 (inFlight 0 < inFlight 1)
+  assert.equal(selectIndex(p), 0);
+
+  // release k2
+  releaseKey(p, 1);
+  assert.equal(p[1].inFlight, 0);
+
+  // clamp protection: releasing below 0 never produces negative inFlight
+  releaseKey(p, 1);
+  assert.equal(p[1].inFlight, 0);
+});
+
+test("P4 providerOptions: resolveEffectiveOptions returns default when no overrides", () => {
+  const exaEff = resolveEffectiveOptions("exa", undefined);
+  assert.equal(exaEff.searchType, "auto");
+  assert.equal(exaEff.maxAgeHours, undefined);
+
+  const view = buildProviderOptionView("exa", undefined);
+  assert.equal(view?.isDefault, true);
+  assert.equal(view?.customized, false);
+});
+
+test("P4 providerOptions: sanitizeProviderOptions filters invalid enums and values", () => {
+  const sanitized = sanitizeProviderOptions("exa", { searchType: "invalid-type", maxAgeHours: 0 } as any);
+  assert.deepEqual(sanitized, { maxAgeHours: 0 });
+
+  const tavily = sanitizeProviderOptions("tavily", { searchDepth: "ultra-fast", autoParameters: true } as any);
+  assert.deepEqual(tavily, { searchDepth: "ultra-fast", autoParameters: true });
+});
+
+test("P4 providerOptions: buildProviderOptionView accurately merges overrides and detects customized state", () => {
+  const view = buildProviderOptionView("tavily", { searchDepth: "advanced" });
+  assert.equal(view?.customized, true);
+  assert.equal(view?.isDefault, false);
+  assert.equal(view?.effective.searchDepth, "advanced");
+  assert.equal(view?.overrides.searchDepth, "advanced");
 });

@@ -30,6 +30,8 @@ interface Props {
   sessionId: string;
   label?: string;
   unavailableLabel?: string;
+  autoTooltip?: string;
+  requiredTooltip?: string;
 }
 
 /** Revalidation cadence while the page is visible. */
@@ -39,6 +41,8 @@ export function SearchModeButton({
   sessionId,
   label = "联网搜索",
   unavailableLabel = "没有可用的搜索源",
+  autoTooltip = "自动联网：Agent 会在需要时使用联网搜索",
+  requiredTooltip = "已要求联网：回答前必须完成一次联网搜索",
 }: Props) {
   const [mode, setMode] = useState<SearchMode>();
   const [available, setAvailable] = useState(true);
@@ -134,6 +138,12 @@ export function SearchModeButton({
     }
   };
 
+  const tooltip = !available
+    ? unavailableLabel
+    : required
+      ? requiredTooltip
+      : autoTooltip;
+
   return (
     <button
       type="button"
@@ -145,7 +155,7 @@ export function SearchModeButton({
       aria-busy={loading || pending || undefined}
       aria-pressed={required}
       aria-label={label}
-      title={available ? label : unavailableLabel}
+      title={tooltip}
       disabled={!available || loading || pending}
       onMouseDown={(event) => {
         // Keep the textarea caret: toggling a mode must not steal compose focus.

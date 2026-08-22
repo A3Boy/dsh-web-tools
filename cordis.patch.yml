@@ -15,6 +15,7 @@
   config:
     search: true
     fetch: true
+    searchMaxQueries: 4
     searchMaxResults: 8
     searchTimeoutMs: 60000
     fetchTimeoutMs: 30000

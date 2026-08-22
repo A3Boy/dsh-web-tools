@@ -16,8 +16,7 @@
  *   - REST only — the anonymous Search MCP endpoint is intentionally NOT
  *     wired into the provider (two auth semantics in one adapter would be
  *     confusing);
- *   - mode fixed to "basic" (low latency for foreground agent tools, the
- *     same mode Parallel's own Search MCP uses);
+ *   - mode set to "advanced" (deep agent-optimized retrieval, official default);
  *   - no session_id (optional upstream; correlating search→extract runs
  *     would need per-run state this plugin deliberately avoids);
  *   - quota is dashboard-only — Parallel exposes usage/spend in its
@@ -26,6 +25,7 @@
  * @module
  */
 import { type ProviderAdapter, type Source } from "./types.ts";
+import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
 export declare const PARALLEL_META: {
     readonly name: "parallel";
     readonly label: "Parallel";
@@ -48,7 +48,7 @@ export declare function normalizeParallelQuery(query: string): string;
  * docs recommend 2–3 but accept one). Mode is pinned to "basic" — see the
  * module doc. Count is the ALREADY clamped value.
  */
-export declare function buildParallelSearchBody(query: string, count: number): Record<string, unknown>;
+export declare function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown>;
 /**
  * Parse Parallel's search envelope ({ results: [...] }) into normalized
  * sources. `url` is required per item; `excerpts` (an array of LLM-ranked

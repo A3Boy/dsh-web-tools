@@ -14,8 +14,6 @@ import {
   searchModeStepMessage,
   webResearchCompleted,
   REQUIRED_SEARCH_TEXT,
-  REQUIRED_SEARCH_REMINDER,
-  REQUIRED_SEARCH_GROUNDING,
   REQUIRED_SEARCH_CORRECTION_TEXT,
   type TurnState,
 } from "../src/host/search-mode-runtime.ts";
@@ -169,10 +167,11 @@ test("required message is a plugin snapshot section carrying REQUIRED_SEARCH_TEX
   assert.equal(input.source.form, "snapshot");
   assert.equal(input.source.sections[0].name, "web-search-mode");
   assert.equal(input.source.sections[0].text, REQUIRED_SEARCH_TEXT);
-  assert.ok(REQUIRED_SEARCH_TEXT.includes("complete at least one appropriate web tool call"));
-  assert.ok(REQUIRED_SEARCH_TEXT.includes("use web_fetch on that URL directly"),
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("complete at least one web_search or web_fetch call"),
+    "the one-shot notice must state the hard research requirement");
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("Use web_fetch for a specific URL"),
     "URL routing guidance must mention web_fetch");
-  assert.ok(REQUIRED_SEARCH_TEXT.includes("use web_search to discover relevant sources"),
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("otherwise use web_search"),
     "non-URL routing guidance must mention web_search");
 });
 
@@ -189,23 +188,7 @@ test("correction message is a one-shot plugin notice (not a snapshot)", () => {
   assert.equal(input.source.summary, "Web Search required");
 });
 
-test("reminder and grounding are plugin snapshot sections (not notices)", () => {
-  const { calls, createUserMessage } = captureFactory();
-  const messages = createSearchModeMessages(createUserMessage);
-  messages.reminder();
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].source.kind, "plugin");
-  assert.equal(calls[0].source.form, "snapshot");
-  assert.equal(calls[0].content[0].text, REQUIRED_SEARCH_REMINDER);
-
-  messages.grounding();
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].source.kind, "plugin");
-  assert.equal(calls[1].source.form, "snapshot");
-  assert.equal(calls[1].content[0].text, REQUIRED_SEARCH_GROUNDING);
-});
-
-// ---- three-phase pre-step message policy -----------------------------------
+// ---- one-shot pre-step message policy --------------------------------------
 
 function turnState(overrides: Partial<TurnState> = {}): TurnState {
   return {
@@ -225,23 +208,28 @@ test("pre-step step 1 injects the compact research policy (required)", () => {
   assert.equal(searchModeStepMessage(turnState(), 1, messages), "M");
 });
 
-test("pre-step later step before search completes injects the short reminder", () => {
-  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
+test("pre-step later steps inject NOTHING (before search completes)", () => {
+  const messages = createSearchModeMessages(() => "M");
   const out = searchModeStepMessage(turnState({ webSearchCompleted: false }), 2, messages);
-  assert.equal(out, `built:${REQUIRED_SEARCH_REMINDER}`);
+  assert.equal(out, undefined, "no reminder before research — enforcement is turn-stopping");
 });
 
-test("pre-step later step after search completes injects the grounding reminder", () => {
-  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
-  const out = searchModeStepMessage(turnState({ webSearchCompleted: true }), 3, messages);
-  assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+test("pre-step later steps inject NOTHING (after search succeeds)", () => {
+  const messages = createSearchModeMessages(() => "M");
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: true, webSearchSucceeded: true }), 3, messages);
+  assert.equal(out, undefined, "no grounding after success — tool result is the freshest context");
 });
 
-test("pre-step later step after a FETCH completes also injects grounding (fetch counts as research)", () => {
-  const messages = createSearchModeMessages((input: any) => `built:${input.content[0].text}`);
-  // no search at all, only a fetch — research is still complete
-  const out = searchModeStepMessage(turnState({ webFetchCompleted: true }), 3, messages);
-  assert.equal(out, `built:${REQUIRED_SEARCH_GROUNDING}`);
+test("pre-step later steps inject NOTHING (after a fetch succeeds)", () => {
+  const messages = createSearchModeMessages(() => "M");
+  const out = searchModeStepMessage(turnState({ webFetchCompleted: true, webFetchSucceeded: true }), 3, messages);
+  assert.equal(out, undefined);
+});
+
+test("pre-step later steps inject NOTHING (after search attempted and FAILED)", () => {
+  const messages = createSearchModeMessages(() => "M");
+  const out = searchModeStepMessage(turnState({ webSearchCompleted: true, webSearchSucceeded: false }), 3, messages);
+  assert.equal(out, undefined, "no failed notice — the failure is already a tool result");
 });
 
 test("webResearchCompleted is true when EITHER search or fetch completed", () => {

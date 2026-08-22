@@ -50,8 +50,13 @@ export interface QuotaProvider {
 export declare function selfHostedQuota(note: string): QuotaSnapshot;
 /** A snapshot for providers whose balance is only in their dashboard. */
 export declare function dashboardOnlyQuota(note: string): QuotaSnapshot;
-/** A local-usage estimate (never authoritative, never used by the router). */
-export declare function localEstimateQuota(estimatedUsdCents: number, note: string): QuotaSnapshot;
+/**
+ * A local-usage REQUEST-COUNT snapshot for providers whose actual balance
+ * is only available in their dashboard (Exa, Parallel). Shows the number
+ * of locally-observed searches, not a dollar amount — the audit concluded
+ * that dollar estimates without mode/result-count tracking are misleading.
+ */
+export declare function localUsageQuota(count: number, note: string): QuotaSnapshot;
 /** True when a snapshot says the provider is effectively exhausted. */
 export declare function isExhausted(snapshot: QuotaSnapshot | undefined): boolean;
 /** True when a snapshot is below the given fraction of its limit (router hint). */

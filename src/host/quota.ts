@@ -81,13 +81,18 @@ export function dashboardOnlyQuota(note: string): QuotaSnapshot {
   };
 }
 
-/** A local-usage estimate (never authoritative, never used by the router). */
-export function localEstimateQuota(estimatedUsdCents: number, note: string): QuotaSnapshot {
+/**
+ * A local-usage REQUEST-COUNT snapshot for providers whose actual balance
+ * is only available in their dashboard (Exa, Parallel). Shows the number
+ * of locally-observed searches, not a dollar amount — the audit concluded
+ * that dollar estimates without mode/result-count tracking are misleading.
+ */
+export function localUsageQuota(count: number, note: string): QuotaSnapshot {
   return {
     supported: true,
     authoritative: false,
-    unit: "usd_cents",
-    remaining: estimatedUsdCents,
+    unit: "requests",
+    used: count,
     source: "local_estimate",
     fetchedAt: Date.now(),
     note,

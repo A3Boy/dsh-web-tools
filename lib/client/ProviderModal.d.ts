@@ -6,15 +6,15 @@ interface Props {
     quota?: QuotaView;
     testResult?: TestProviderView;
     busy: boolean;
-    isDefault: boolean;
+    /** Show the "首选" badge — only when the routing policy is "ordered". */
+    showPreferred: boolean;
     inChain: boolean;
     onClose: () => void;
     onToggle: (enabled: boolean) => void;
     onBaseUrl: (url: string) => void;
     onTest: () => Promise<void>;
     onRefreshQuota: () => void;
-    /** Reload config after credential edits (key list changes). */
-    onConfigChanged: () => void;
+    onConfigChanged: () => Promise<void> | void;
 }
 export declare function ProviderModal(props: Props): import("react").JSX.Element;
 export {};

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — SearXNG provider adapter (self-hosted, keyless option).
  * Queries the local instance's JSON output (GET {baseUrl}/search?format=json).
  * SSRF guard: refuses private/loopback targets unless the operator explicitly
@@ -7,7 +7,7 @@
  * operator-configured and trusted by definition).
  * @module
  */
-import { providerError, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 
 export const SEARXNG_META = {
@@ -23,7 +23,8 @@ export const SEARXNG_META = {
 export const SearxngProvider: ProviderAdapter = {
   ...SEARXNG_META,
 
-  async search(query, maxResults, apiKey, baseUrl, signal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
     const instance = (baseUrl ?? SEARXNG_META.defaultBaseUrl).replace(/\/$/, "");
     if (!instance) throw providerError("config", "SearXNG base URL is not configured");
     const url = new URL(`${instance}/search`);

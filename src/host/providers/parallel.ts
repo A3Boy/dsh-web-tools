@@ -16,8 +16,7 @@
  *   - REST only — the anonymous Search MCP endpoint is intentionally NOT
  *     wired into the provider (two auth semantics in one adapter would be
  *     confusing);
- *   - mode fixed to "basic" (low latency for foreground agent tools, the
- *     same mode Parallel's own Search MCP uses);
+ *   - mode set to "advanced" (deep agent-optimized retrieval, official default);
  *   - no session_id (optional upstream; correlating search→extract runs
  *     would need per-run state this plugin deliberately avoids);
  *   - quota is dashboard-only — Parallel exposes usage/spend in its
@@ -25,8 +24,9 @@
  *     key can call.
  * @module
  */
-import { providerError, throwIfHttp, type ProviderAdapter, type Source } from "./types.ts";
+import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
@@ -52,13 +52,15 @@ export const PARALLEL_META = {
 export const ParallelProvider: ProviderAdapter = {
   ...PARALLEL_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Parallel API key is not configured");
+  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Parallel API key is not configured");
+    const { signal, options } = resolveContext<ParallelProviderOptions>(contextOrSignal);
     const count = clampParallelCount(maxResults);
     const res = await fetchWithProxy(PARALLEL_SEARCH_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
-      body: JSON.stringify(buildParallelSearchBody(query, count)),
+      headers: { "content-type": "application/json", "x-api-key": token },
+      body: JSON.stringify(buildParallelSearchBody(query, count, options)),
       signal,
     });
     throwIfHttp("Parallel", res);
@@ -71,14 +73,16 @@ export const ParallelProvider: ProviderAdapter = {
     return { sources: parseParallelSearchResults(raw, count) };
   },
 
-  async fetch(url, apiKey, _baseUrl, signal) {
-    if (!apiKey) throw providerError("config", "Parallel API key is not configured");
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Parallel API key is not configured");
     // full_content must be explicitly requested — Extract defaults to
     // excerpts-only, which would return a snippet where web_fetch wants the
     // page body.
     const res = await fetchWithProxy(PARALLEL_EXTRACT_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": apiKey },
+      headers: { "content-type": "application/json", "x-api-key": token },
       body: JSON.stringify({ urls: [url], advanced_settings: { full_content: true } }),
       signal,
     });
@@ -114,13 +118,20 @@ export function normalizeParallelQuery(query: string): string {
  * docs recommend 2–3 but accept one). Mode is pinned to "basic" — see the
  * module doc. Count is the ALREADY clamped value.
  */
-export function buildParallelSearchBody(query: string, count: number): Record<string, unknown> {
-  return {
+export function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown> {
+  const body: Record<string, unknown> = {
     objective: query,
     search_queries: [normalizeParallelQuery(query)],
-    mode: "basic",
+    mode: options?.mode ?? "advanced",
     advanced_settings: { max_results: count },
   };
+  // max_chars_total is a top-level /v1/search field (docs.parallel.ai).
+  // Putting it in advanced_settings — as the original code did — causes
+  // HTTP 422. Only send it when the user explicitly overrides it.
+  if (typeof options?.maxCharsTotal === "number") {
+    body.max_chars_total = options.maxCharsTotal;
+  }
+  return body;
 }
 
 /**

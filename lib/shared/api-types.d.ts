@@ -5,6 +5,9 @@
  * shapes and Client consumption cannot drift apart.
  * @module
  */
+import type { ProviderOptionView } from "./provider-options.ts";
+/** Search routing policy — how the host picks which provider to try first. */
+export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {
     name: string;
@@ -27,6 +30,8 @@ export interface ProviderView {
         hint: string;
         healthy: boolean;
     }>;
+    /** Provider-native execution settings (effective values + user overrides). */
+    options?: ProviderOptionView;
 }
 /** Full config snapshot for the card. */
 export interface ConfigView {
@@ -46,11 +51,8 @@ export interface ConfigView {
         /** Proxy desired but undici unavailable → degraded to direct fetch. */
         degraded: boolean;
     };
-    /**
-     * Page UI language: "auto" follows the DSH UI language, "zh"/"en" force the
-     * page to that language regardless of the DSH-wide preference.
-     */
-    uiLanguage?: "auto" | "zh" | "en";
+    /** Search routing policy (ordered/round-robin/random). */
+    searchRoutingPolicy?: SearchRoutingPolicy;
 }
 /** One quota snapshot for the card (display only). */
 export interface QuotaView {
@@ -124,4 +126,13 @@ export interface SearchModeView {
 /** The full quota/describe response. */
 export interface QuotaDescribeView {
     quotas: Record<string, QuotaView>;
+}
+/** Non-blocking release check surfaced by the settings page. */
+export interface VersionCheckView {
+    currentVersion: string;
+    latestVersion?: string;
+    updateAvailable: boolean;
+    releaseUrl?: string;
+    releaseName?: string;
+    publishedAt?: string;
 }

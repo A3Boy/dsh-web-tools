@@ -11,7 +11,7 @@ import { SearxngProvider } from "./searxng.ts";
 import { TavilyProvider } from "./tavily.ts";
 import { YouProvider, youQuota } from "./you.ts";
 import type { QuotaProvider, QuotaSnapshot } from "../quota.ts";
-import { dashboardOnlyQuota, localEstimateQuota, selfHostedQuota } from "../quota.ts";
+import { dashboardOnlyQuota, localUsageQuota, selfHostedQuota } from "../quota.ts";
 import { tavilyQuota } from "./tavily-quota.ts";
 import { firecrawlQuota } from "./firecrawl-quota.ts";
 import type { ProviderAdapter, ProviderError } from "./types.ts";
@@ -27,14 +27,7 @@ export const PROVIDERS: Record<string, ProviderWithQuota> = {
   tavily: { ...TavilyProvider, quota: (key, _base, signal) => tavilyQuota(key, signal) },
   exa: ExaProvider,
   firecrawl: { ...FirecrawlProvider, quota: (key, _base, signal) => firecrawlQuota(key, signal) },
-  // Parallel has no balance endpoint a normal API key can call — usage and
-  // spend live in the Platform dashboard. An explicit dashboard-only
-  // reporter keeps quotaOf() from falling back to the generic local USD
-  // estimate (which is priced for Exa and would be wrong for Parallel).
-  parallel: {
-    ...ParallelProvider,
-    quota: () => Promise.resolve(dashboardOnlyQuota("Usage and spend live in the Parallel Platform dashboard")),
-  },
+  parallel: ParallelProvider,
   brave: { ...BraveProvider, quota: (key, _base, signal) => braveQuota(key, _base, signal) },
   you: { ...YouProvider, quota: (key, _base, signal) => youQuota(key, signal) },
   jina: { ...JinaProvider, quota: (key, _base, signal) => jinaQuota(key, signal) },
@@ -68,7 +61,7 @@ export async function quotaOf(
   providerName: string,
   apiKey: string,
   baseUrl: string | undefined,
-  localUsdCents?: number,
+  localCount?: number,
   signal?: AbortSignal,
 ): Promise<QuotaSnapshot> {
   const p = getProvider(providerName);
@@ -77,8 +70,8 @@ export async function quotaOf(
     return p.quota(apiKey, baseUrl, signal);
   }
   if (p.needsBaseUrl) return selfHostedQuota("Self-hosted — no platform quota");
-  if (localUsdCents !== undefined) {
-    return localEstimateQuota(localUsdCents, "Estimated local usage — official balance lives in the provider dashboard");
+  if (localCount !== undefined && localCount > 0) {
+    return localUsageQuota(localCount, "Estimated local usage — official balance lives in the provider dashboard");
   }
   return dashboardOnlyQuota("Balance is available in the provider dashboard only");
 }

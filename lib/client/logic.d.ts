@@ -8,6 +8,17 @@
 import type { ProviderView, QuotaView } from "../shared/api-types.ts";
 /** t() bound to the dsh-web-tools namespace (injected into the section). */
 export type TFunc = (key: string, ...args: unknown[]) => string;
+/** Explicit mapping from QuotaSource enum to translation dictionary keys (never dynamic concatenation). */
+export declare const QUOTA_SOURCE_LABEL_KEY: {
+    readonly api: "quotaSourceApi";
+    readonly response_header: "quotaSourceResponseHeader";
+    readonly best_effort_api: "quotaSourceBestEffortApi";
+    readonly local_estimate: "quotaSourceLocalEstimate";
+    readonly dashboard: "quotaSourceDashboard";
+    readonly self_hosted: "quotaSourceSelfHosted";
+};
+/** Resolve human label for any QuotaSource safely. */
+export declare function quotaSourceLabel(t: TFunc, source?: string): string;
 /** Page language preference: follow the DSH UI language, or force one. */
 export type UiLangPref = "auto" | "zh" | "en";
 /**
@@ -22,7 +33,7 @@ export declare function resolveUiLanguage(pref: UiLangPref | undefined, dshActiv
  */
 export declare function translateDict(dict: Record<string, string>, fallback: Record<string, string>, key: string, params?: Record<string, unknown>): string | undefined;
 /** Provider page status model (drives the row dot + detail Status block). */
-export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
+export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "unreachable" | "not-configured" | "disabled" | "not-in-order";
 /**
  * Status override from a connection-test result. A test that failed is NOT
  * automatically an auth error — `fetch failed` is usually a network problem.
@@ -35,7 +46,7 @@ export declare function testOutcomeStatus(testResult?: {
         code?: string;
     };
 }): ProviderStatus | undefined;
-export declare function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain?: boolean): ProviderStatus;
+export declare function providerStatusOf(p: ProviderView, quota?: QuotaView, inOrder?: boolean): ProviderStatus;
 /**
  * Quota display model — five kinds, each rendered honestly:
  *  - remaining_of_limit : countable remaining+limit (credits/requests/tokens)
@@ -58,7 +69,7 @@ export declare function quotaSummary(t: TFunc, quota?: QuotaView): string;
  * @returns fraction 0..1, or undefined when no bar should be drawn.
  */
 export declare function quotaFraction(q: QuotaView | undefined): number | undefined;
-/** Bar color tier: ok (≥30%), warn (10–30%), danger (<10%). */
+/** Bar color tier: ok (neutral, ≥20%), warn (5–20%), danger (<5%). */
 export declare function quotaTier(fraction: number | undefined): "ok" | "warn" | "danger";
 /** Human "remaining" label, e.g. "823 / 1,000 credits". */
 export declare function quotaRemainingLabel(t: TFunc, q: QuotaView | undefined): string;
@@ -66,3 +77,9 @@ export declare function quotaRemainingLabel(t: TFunc, q: QuotaView | undefined):
 export declare function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string;
 /** Human-readable attempt outcome (from Host `attempts[].outcome`). */
 export declare function outcomeLabel(t: TFunc, outcome: string): string;
+/**
+ * Format a human-friendly summary of the currently resolved provider execution
+ * options for the collapsed Search Experience section.
+ * Accepts optional t() for i18n; falls back to Chinese when no t is provided.
+ */
+export declare function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined, t?: (key: string) => string): string;

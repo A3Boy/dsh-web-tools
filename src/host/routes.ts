@@ -15,7 +15,8 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
@@ -42,6 +43,8 @@ export interface RouteDeps {
   poolEntries?: (provider: string) => Promise<PoolEntry[]>;
   /** Proxy support status (configured + whether undici is loadable). */
   proxyStatus?: () => Promise<{ configured: boolean; degraded: boolean }>;
+  /** Cached, failure-tolerant GitHub release check. */
+  checkVersion?: () => Promise<VersionCheckView>;
   /** Search-Mode runtime access (see search-mode-runtime.ts). */
   searchMode?: {
     view(sessionId: string): SearchModeView;
@@ -149,6 +152,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const defaultProvider = (cfg.defaultProvider as string) ?? "tavily";
   const enabledMap = (cfg.providerEnabled as Record<string, boolean>) ?? {};
   const baseUrls = (cfg.providerBaseUrls as Record<string, string>) ?? {};
+  const providerOpts = (cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {};
 
   const providers: ProviderView[] = [];
   for (const meta of PROVIDER_LIST) {
@@ -171,6 +175,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
       keyHint: pool.length > 0 ? poolSummary(pool)[0].hint : undefined,
       poolSize: pool.length,
       keys: pool.map((e) => ({ id: keyIdOf(e.key), hint: hintOf(e.key), healthy: e.healthy })),
+      options: buildProviderOptionView(meta.name, providerOpts[meta.name]),
     });
   }
 
@@ -180,7 +185,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     providerAttemptTimeoutMs: (cfg.providerAttemptTimeoutMs as number) ?? 10000,
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
-    uiLanguage: (cfg.uiLanguage as "auto" | "zh" | "en") ?? "auto",
+    searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
     providers,
   };
 }
@@ -194,9 +199,39 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
-  if (p.uiLanguage === "auto" || p.uiLanguage === "zh" || p.uiLanguage === "en") patch.uiLanguage = p.uiLanguage;
+  if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
+}
+
+/** Dedicated routing edit: policy + ordered provider list in ONE atomic write. */
+async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown };
+  const policy = p.policy;
+  if (policy !== "ordered" && policy !== "round-robin" && policy !== "random") {
+    throw new Error("invalid routing policy");
+  }
+  if (!Array.isArray(p.orderedProviders) || p.orderedProviders.length === 0) {
+    throw new Error("orderedProviders required");
+  }
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const raw of p.orderedProviders) {
+    const name = String(raw).trim().toLowerCase();
+    if (name === "" || seen.has(name)) continue;
+    // Validate against the registry before persisting.
+    getProvider(name);
+    seen.add(name);
+    ordered.push(name);
+  }
+  if (ordered.length === 0) throw new Error("no valid providers");
+
+  await deps.writeConfig({
+    searchRoutingPolicy: policy,
+    defaultProvider: ordered[0],
+    fallbackOrder: ordered.slice(1),
+  });
+  return { saved: true, policy, defaultProvider: ordered[0], fallbackOrder: ordered.slice(1) };
 }
 
 async function handleCredentialSet(deps: RouteDeps, payload: unknown) {
@@ -270,6 +305,11 @@ async function handleQuotaDescribe(deps: RouteDeps, payload: unknown) {
   return { quotas: await deps.describeQuotas(force) };
 }
 
+async function handleVersionCheck(deps: RouteDeps): Promise<VersionCheckView> {
+  if (!deps.checkVersion) throw new Error("version check unavailable");
+  return deps.checkVersion();
+}
+
 async function handleSearchModeGet(deps: RouteDeps, payload: unknown) {
   const sessionId = String((payload as { sessionId?: unknown })?.sessionId ?? "");
   if (!sessionId) throw new Error("missing sessionId");
@@ -287,6 +327,79 @@ async function handleSearchModeSet(deps: RouteDeps, payload: unknown) {
   return deps.searchMode.set(sessionId, mode);
 }
 
+async function handleProviderOptionsSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: unknown; options?: unknown };
+  const provider = String(p.provider ?? "").trim().toLowerCase();
+  if (!provider) throw new Error("missing provider");
+  const meta = PROVIDER_LIST.find((m) => m.name === provider);
+  if (!meta) throw new Error(`unknown provider: ${provider}`);
+
+  const rawOpts = (p.options && typeof p.options === "object") ? (p.options as Record<string, unknown>) : {};
+  const cleaned = sanitizeProviderOptions(provider, rawOpts);
+
+  const cfg = deps.readConfig();
+  const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  currentMerged[provider] = cleaned;
+
+  await deps.writeConfig({ providerOptions: currentMerged });
+  return buildProviderOptionView(provider, cleaned);
+}
+
+async function handleProviderOptionsBatchSet(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { providers?: Record<string, Record<string, unknown> | null> };
+  if (!p.providers || typeof p.providers !== "object") throw new Error("missing providers");
+
+  // Validate all provider names first (atomic: reject the whole batch if any
+  // name is unknown) then sanitize every option payload.
+  const sanitized = new Map<string, Record<string, unknown> | null>();
+  for (const [rawName, rawOptions] of Object.entries(p.providers)) {
+    const provider = rawName.trim().toLowerCase();
+    const meta = PROVIDER_LIST.find((m) => m.name === provider);
+    if (!meta) throw new Error(`unknown provider: ${provider}`);
+    if (rawOptions === null) {
+      sanitized.set(provider, null);
+    } else if (typeof rawOptions === "object") {
+      sanitized.set(provider, sanitizeProviderOptions(provider, rawOptions));
+    } else {
+      throw new Error(`invalid options for ${provider}`);
+    }
+  }
+
+  // Single read + mutate + write: atomic.
+  const cfg = deps.readConfig();
+  const current = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  for (const [provider, options] of sanitized) {
+    if (options === null) {
+      delete current[provider];
+    } else {
+      current[provider] = options;
+    }
+  }
+  await deps.writeConfig({ providerOptions: current });
+
+  return Object.fromEntries(
+    [...sanitized.keys()].map((provider) => [
+      provider,
+      buildProviderOptionView(provider, current[provider]),
+    ]),
+  );
+}
+
+async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
+  const p = (payload ?? {}) as { provider?: unknown };
+  const provider = String(p.provider ?? "").trim().toLowerCase();
+  if (!provider) throw new Error("missing provider");
+  const meta = PROVIDER_LIST.find((m) => m.name === provider);
+  if (!meta) throw new Error(`unknown provider: ${provider}`);
+
+  const cfg = deps.readConfig();
+  const currentMerged = { ...((cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {}) };
+  delete currentMerged[provider];
+
+  await deps.writeConfig({ providerOptions: currentMerged });
+  return buildProviderOptionView(provider, undefined);
+}
+
 // ---------------------------------------------------------------------------
 // route registration
 // ---------------------------------------------------------------------------
@@ -301,8 +414,13 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "test/provider": (deps, payload) => handleTestProvider(deps, payload),
   "test/search": (deps, payload) => handleTestSearch(deps, payload),
   "quota/describe": (deps, payload) => handleQuotaDescribe(deps, payload),
+  "version/check": (deps) => handleVersionCheck(deps),
   "search-mode/get": (deps, payload) => handleSearchModeGet(deps, payload),
   "search-mode/set": (deps, payload) => handleSearchModeSet(deps, payload),
+  "provider-options/set": (deps, payload) => handleProviderOptionsSet(deps, payload),
+  "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
+  "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
+  "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

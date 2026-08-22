@@ -15,8 +15,8 @@ export declare class WebToolsApiError extends Error {
 }
 /** Call one API method; throws WebToolsApiError on failure. */
 export declare function call<T>(method: string, payload?: unknown): Promise<T>;
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
+import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 export declare const api: {
     configGet: () => Promise<ConfigView>;
     configSave: (payload: Record<string, unknown>) => Promise<{
@@ -38,6 +38,22 @@ export declare const api: {
     testProvider: (provider: string, query?: string) => Promise<TestProviderView>;
     testSearch: (query: string) => Promise<TestSearchView>;
     quotaDescribe: (force?: boolean) => Promise<QuotaDescribeView>;
+    versionCheck: () => Promise<VersionCheckView>;
     searchModeGet: (sessionId: string) => Promise<SearchModeView>;
     searchModeSet: (sessionId: string, mode: SearchMode) => Promise<SearchModeView>;
+    providerOptionsSet: (provider: string, options: Record<string, unknown>) => Promise<{
+        saved: true;
+        options: any;
+    }>;
+    providerOptionsReset: (provider: string) => Promise<{
+        reset: true;
+        options: any;
+    }>;
+    providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) => Promise<Record<string, any>>;
+    routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) => Promise<{
+        saved: true;
+        policy: SearchRoutingPolicy;
+        defaultProvider: string;
+        fallbackOrder: string[];
+    }>;
 };

@@ -7,6 +7,7 @@ export declare function Switch(props: {
     checked: boolean;
     onChange: (next: boolean) => void;
     label: string;
+    disabled?: boolean;
 }): import("react").JSX.Element;
 interface SectionProps {
     t: TFunc;

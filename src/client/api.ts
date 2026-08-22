@@ -49,9 +49,9 @@ export async function call<T>(method: string, payload?: unknown): Promise<T> {
 // typed endpoint wrappers (wire types shared with the Host — see shared/api-types)
 // ---------------------------------------------------------------------------
 
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
+import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView } from "../shared/api-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
@@ -63,6 +63,15 @@ export const api = {
   testProvider: (provider: string, query?: string) => call<TestProviderView>("test/provider", { provider, query }),
   testSearch: (query: string) => call<TestSearchView>("test/search", { query }),
   quotaDescribe: (force = false) => call<QuotaDescribeView>("quota/describe", { force }),
+  versionCheck: () => call<VersionCheckView>("version/check"),
   searchModeGet: (sessionId: string) => call<SearchModeView>("search-mode/get", { sessionId }),
   searchModeSet: (sessionId: string, mode: SearchMode) => call<SearchModeView>("search-mode/set", { sessionId, mode }),
+  providerOptionsSet: (provider: string, options: Record<string, unknown>) =>
+    call<{ saved: true; options: any }>("provider-options/set", { provider, options }),
+  providerOptionsReset: (provider: string) =>
+    call<{ reset: true; options: any }>("provider-options/reset", { provider }),
+  providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) =>
+    call<Record<string, any>>("provider-options/batch", { providers }),
+  routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
+    call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
 };

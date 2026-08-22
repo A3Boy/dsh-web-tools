@@ -14,6 +14,7 @@
  */
 import { type ProviderAdapter, type Source } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import type { JinaProviderOptions } from "../../shared/provider-options.ts";
 export declare const JINA_META: {
     readonly name: "jina";
     readonly label: "Jina";
@@ -22,6 +23,16 @@ export declare const JINA_META: {
     readonly fetchCapable: true;
     readonly needsBaseUrl: false;
 };
+/**
+ * Build Reader request headers from user-configured options.
+ * Pure function (no side effects) for testability.
+ * - X-Engine: auto | curl | browser (NOT direct — deprecated upstream).
+ * - X-Cache-Tolerance: seconds; 0 = force fresh.
+ * - X-Max-Tokens: trim output guard.
+ * - X-Token-Budget: hard budget guard (rejects on overage).
+ * - X-Respond-With: readerlm-v2 for higher-quality HTML→Markdown conversion.
+ */
+export declare function buildJinaReaderHeaders(token: string, options?: Readonly<JinaProviderOptions>): Record<string, string>;
 export declare const JinaProvider: ProviderAdapter;
 /**
  * Parse Jina's official JSON search envelope into normalized sources.

@@ -10,10 +10,17 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+/** Persistent search routing policy id (shared with the client card). */
+export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
 /** Settings namespace for this plugin. */
 export declare const SETTINGS_NS = "dsh-web-tools";
-/** Default provider when nothing is configured. */
-export declare const DEFAULT_PROVIDER = "tavily";
+/** Default provider when nothing is configured. Changed from tavily to exa
+ *  based on P5 evaluation: Exa achieves 72.2% Top-1, 97.2% Top-3 evidence,
+ *  75% official source hit, 0% generic, 0% error across 36 tasks.
+ *  This only affects new installs — existing users keep their saved provider. */
+export declare const DEFAULT_PROVIDER = "exa";
 /**
  * Explicit defaults. The resolved settings type is `WebToolsSettings` (below);
  * `Config` is the schemastery schema annotated the official way
@@ -27,8 +34,9 @@ export declare const DEFAULT_SETTINGS: {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
-    uiLanguage: "auto" | "zh" | "en";
+    searchRoutingPolicy: ToolSearchRoutingPolicy;
 };
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
@@ -38,10 +46,11 @@ export interface WebToolsSettings {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    providerOptions: StoredProviderOptions;
     /** Brave per-key quota snapshots captured from search response headers. */
     braveQuotaCache: Record<string, QuotaSnapshot>;
-    /** Page UI language: "auto" follows the DSH UI language, "zh"/"en" force it. */
-    uiLanguage: "auto" | "zh" | "en";
+    /** Search routing policy (see shared api-types). */
+    searchRoutingPolicy: ToolSearchRoutingPolicy;
 }
 /** The schema object for settings registration (official z<T> annotation). */
 export declare const Config: z<WebToolsSettings>;

@@ -10,9 +10,10 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 const TAVILY_USAGE_URL = "https://api.tavily.com/usage";
 
 export async function tavilyQuota(apiKey: string, signal?: AbortSignal): Promise<QuotaSnapshot> {
-  if (!apiKey) throw providerError("config", "Tavily API key is not configured");
+  const token = (apiKey ?? "").trim();
+  if (!token) throw providerError("config", "Tavily API key is not configured");
   const res = await fetchWithProxy(TAVILY_USAGE_URL, {
-    headers: { authorization: `Bearer ${apiKey}` },
+    headers: { authorization: `Bearer ${token}` },
     signal,
   });
   if (!res.ok) {

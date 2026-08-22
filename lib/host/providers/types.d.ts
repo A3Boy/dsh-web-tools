@@ -26,6 +26,10 @@ export interface ProviderError extends Error {
     code: ProviderErrorCode;
     /** Original HTTP status when applicable. */
     status?: number;
+    /** Server-requested cooldown in ms (from Retry-After header, 429 only). */
+    retryAfterMs?: number;
+    /** Upstream request ID for diagnostics. */
+    requestId?: string;
 }
 /**
  * Classify an HTTP status uniformly across every adapter. Single source of
@@ -48,36 +52,59 @@ export interface ProviderMeta {
     /** Default base URL when self-hosted. */
     defaultBaseUrl?: string;
 }
+/**
+ * Per-execution context passed to provider search / fetch adapters.
+ * Encapsulates the cancellation signal and any user-configured options
+ * for this specific provider (no universal cross-provider parameters).
+ */
+export interface ProviderExecutionContext<TOptions = unknown> {
+    readonly signal?: AbortSignal;
+    readonly options?: Readonly<TOptions>;
+}
 /** One configured adapter instance. */
 export interface ProviderAdapter extends ProviderMeta {
     /**
      * Run one search through this backend.
      * @param query
      * @param maxResults
-     * @param apiKeyPool the pool entries for this provider (may be empty for keyless self-hosted).
+     * @param apiKey
      * @param baseUrl
-     * @param signal
+     * @param contextOrSignal optional execution context with typed options and signal, or bare signal
      */
-    search(query: string, maxResults: number, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<SearchOutcome>;
+    search(query: string, maxResults: number, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | ProviderExecutionContext): Promise<SearchOutcome>;
     /**
      * Fetch one URL's text content through this backend (when fetchCapable).
      * @throws ProviderError when unsupported.
      */
-    fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{
+    fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | ProviderExecutionContext): Promise<{
         text: string;
     }>;
 }
+/** Helper to extract signal and typed options from an execution context or bare signal. */
+export declare function resolveContext<T = unknown>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
+    signal?: AbortSignal;
+    options?: Readonly<T>;
+};
+export declare const extractContext: typeof resolveContext;
 /**
  * Self-hosted provider that needs a base URL and has no Fetch API — and
  * therefore works WITHOUT an API key (currently only SearXNG). Keyed-hosted
  * providers always require a key.
  */
 export declare function isKeylessSelfHosted(meta: Pick<ProviderMeta, "needsBaseUrl" | "fetchCapable">): boolean;
-/** Build a ProviderError with a classification code. */
-export declare function providerError(code: ProviderErrorCode, message: string, status?: number): ProviderError;
+/** Build a ProviderError with a classification code and optional retry-after metadata. */
+export declare function providerError(code: ProviderErrorCode, message: string, status?: number, retryAfterMs?: number): ProviderError;
+/**
+ * Parse the `Retry-After` response header into milliseconds from now.
+ * Supports:
+ *  - `Retry-After: 30` (delta-seconds)
+ *  - `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT` (HTTP-date)
+ * Returns undefined when the header is absent or unparseable.
+ */
+export declare function parseRetryAfter(res: Response, now?: number): number | undefined;
 /**
  * Throw a classified ProviderError from a non-OK HTTP response, with a
  * provider label for the message. Every adapter uses this — no per-adapter
- * status mapping.
+ * status mapping. Retry-After header is parsed and attached to rate-limit errors.
  */
 export declare function throwIfHttp(label: string, res: Response): void;

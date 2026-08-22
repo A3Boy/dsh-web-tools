@@ -1,4 +1,7 @@
+import { type SearchRoutingPolicy } from "./routing-policy.ts";
 import { type PoolEntry } from "./pool.ts";
+import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import type { ProviderHealthStore } from "./provider-health.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export declare const PROVIDER_ID = "dsh-web-tools";
 /** Structural mirror of the seam's WebSearchProvider contract. */
@@ -51,8 +54,11 @@ export interface WebToolsRuntimeConfig {
     /** Per-attempt budget for ONE provider call (the DSH tool owns the overall timeout). */
     providerAttemptTimeoutMs: number;
     fallbackOrder: string[];
+    /** Search routing policy — how the runtime picks the starting provider per query. */
+    searchRoutingPolicy?: SearchRoutingPolicy;
     providerBaseUrls: Record<string, string>;
     enabledProviders: Record<string, boolean>;
+    providerOptions?: StoredProviderOptions;
 }
 /** Live per-provider key pools, keyed by provider name. */
 export type Pools = Record<string, PoolEntry[]>;
@@ -75,7 +81,10 @@ export interface ProviderAdapterLike {
     name: string;
     needsBaseUrl: boolean;
     fetchCapable: boolean;
-    search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{
+    search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | {
+        signal?: AbortSignal;
+        options?: unknown;
+    }): Promise<{
         sources: Array<{
             url: string;
             title?: string;
@@ -83,7 +92,10 @@ export interface ProviderAdapterLike {
             publishedAt?: string;
         }>;
     }>;
-    fetch(url: string, apiKey: string, baseUrl: string | undefined, signal?: AbortSignal): Promise<{
+    fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | {
+        signal?: AbortSignal;
+        options?: unknown;
+    }): Promise<{
         text: string;
     }>;
 }
@@ -96,10 +108,10 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
         outcome: string;
         latencyMs: number;
     }) => void;
-}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore): WebSearchProviderLike;
+}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebSearchProviderLike;
 /**
  * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`. V1 routes
  * fetch through the default provider's native extract endpoint; providers
  * without native fetch fail with a classified error.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebFetchProviderLike;

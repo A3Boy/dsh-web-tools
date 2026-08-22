@@ -6,9 +6,31 @@
  * @module
  */
 import type { ProviderView, QuotaView } from "../shared/api-types.ts";
+import type { QuotaSource } from "../host/quota.ts";
 
 /** t() bound to the dsh-web-tools namespace (injected into the section). */
 export type TFunc = (key: string, ...args: unknown[]) => string;
+
+/** Explicit mapping from QuotaSource enum to translation dictionary keys (never dynamic concatenation). */
+export const QUOTA_SOURCE_LABEL_KEY = {
+  api: "quotaSourceApi",
+  response_header: "quotaSourceResponseHeader",
+  best_effort_api: "quotaSourceBestEffortApi",
+  local_estimate: "quotaSourceLocalEstimate",
+  dashboard: "quotaSourceDashboard",
+  self_hosted: "quotaSourceSelfHosted",
+} as const satisfies Record<QuotaSource, string>;
+
+/** Resolve human label for any QuotaSource safely. */
+export function quotaSourceLabel(t: TFunc, source?: string): string {
+  if (!source) return "";
+  const key = QUOTA_SOURCE_LABEL_KEY[source as QuotaSource];
+  if (key) {
+    const val = t(key);
+    if (val && val !== key) return val;
+  }
+  return t("quotaSource", { s: source });
+}
 
 // ---------------------------------------------------------------------------
 // page UI language (independent of the DSH-wide locale)
@@ -44,7 +66,14 @@ export function translateDict(
 }
 
 /** Provider page status model (drives the row dot + detail Status block). */
-export type ProviderStatus = "ready" | "rate-limited" | "auth-error" | "not-configured" | "not-in-chain" | "unreachable";
+export type ProviderStatus =
+  | "ready"
+  | "rate-limited"
+  | "auth-error"
+  | "unreachable"
+  | "not-configured"
+  | "disabled"
+  | "not-in-order";
 
 /**
  * Status override from a connection-test result. A test that failed is NOT
@@ -62,8 +91,10 @@ export function testOutcomeStatus(testResult?: { ok: boolean; error?: { code?: s
   return "unreachable";
 }
 
-export function providerStatusOf(p: ProviderView, quota?: QuotaView, inChain = true): ProviderStatus {
-  if (!inChain) return "not-in-chain";
+export function providerStatusOf(p: ProviderView, quota?: QuotaView, inOrder = true): ProviderStatus {
+  // Disabled providers are OFF regardless of credentials or order.
+  if (p.enabled === false) return "disabled";
+  if (!inOrder) return "not-in-order";
   const selfHosted = p.name === "searxng";
   // Self-hosted providers (SearXNG) are configured by an explicit instance
   // base URL, NOT by an API key — the adapter default URL does not count.
@@ -128,6 +159,7 @@ export function quotaSummary(t: TFunc, quota?: QuotaView): string {
   if (q.limit !== undefined && q.limit === 0 && q.remaining === undefined) return t("quotaUnlimited");
   if (q.unit === "credits" && q.remaining !== undefined) return t("quotaCredits", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? q.limit : "?" });
   if (q.unit === "requests" && q.remaining !== undefined) return t("quotaRequests", { r: q.remaining, l: q.limit !== undefined && q.limit > 0 ? ` / ${q.limit}` : "" });
+  if (q.source === "local_estimate" && q.unit === "requests" && q.used !== undefined) return t("quotaMetered", { n: q.used.toLocaleString() });
   if (q.unit === "usd_cents" && q.used !== undefined) return t("quotaUsd", { amount: (q.used / 100).toFixed(2) });
   if (q.unit === "usd_cents" && q.remaining !== undefined) return t("quotaUsdRemaining", { amount: (q.remaining / 100).toFixed(2) });
   if (q.unit === "tokens" && q.remaining !== undefined) return t("quotaTokens", { n: q.remaining.toLocaleString() });
@@ -152,11 +184,11 @@ export function quotaFraction(q: QuotaView | undefined): number | undefined {
   return Math.min(1, Math.max(0, remaining / limit));
 }
 
-/** Bar color tier: ok (≥30%), warn (10–30%), danger (<10%). */
+/** Bar color tier: ok (neutral, ≥20%), warn (5–20%), danger (<5%). */
 export function quotaTier(fraction: number | undefined): "ok" | "warn" | "danger" {
   if (fraction === undefined) return "ok";
-  if (fraction < 0.1) return "danger";
-  if (fraction < 0.3) return "warn";
+  if (fraction < 0.05) return "danger";
+  if (fraction < 0.2) return "warn";
   return "ok";
 }
 
@@ -175,8 +207,10 @@ export function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string {
   if (kind === "remaining_of_limit" && q.remaining !== undefined && q.limit !== undefined && q.remaining > q.limit) {
     return t("quotaOverPlan", { r: q.remaining.toLocaleString(), l: q.limit.toLocaleString() });
   }
-  if (kind === "observed_usage" && q.remaining !== undefined) {
-    return t("quotaSince", { amount: (q.remaining / 100).toFixed(2) });
+  if (kind === "observed_usage" && q.used !== undefined) {
+    // Local metered usage (Exa/Parallel): count, not a dollar estimate.
+    if (q.unit === "requests") return t("quotaSinceRequests", { n: q.used.toLocaleString() });
+    return t("quotaSince", { amount: (q.used / 100).toFixed(2) });
   }
   // rate_limit / balance: the kind already says it; keep the line clean.
   return "";
@@ -203,4 +237,58 @@ export function outcomeLabel(t: TFunc, outcome: string): string {
   }
   if (outcome.startsWith("skipped-")) return t("unknownOutcome");
   return t("unknownOutcome");
+}
+
+/**
+ * Format a human-friendly summary of the currently resolved provider execution
+ * options for the collapsed Search Experience section.
+ * Accepts optional t() for i18n; falls back to Chinese when no t is provided.
+ */
+export function formatProviderOptionsSummary(providerName: string, effective: Record<string, unknown> | undefined, t?: (key: string) => string): string {
+  if (!effective) return t ? t("prefsDefault") : "默认设置";
+  switch (providerName) {
+    case "exa": {
+      const type = String(effective.searchType ?? "auto");
+      const typeLabel = type === "fast" ? (t ? t("prefsFast") : "快速") : type === "instant" ? (t ? t("prefsInstant") : "极速") : type.startsWith("deep") ? (t ? t("prefsDeep") : "深入") : (t ? t("prefsAutoLabel") : "自动");
+      const freshness = effective.maxAgeHours === 0 ? (t ? t("prefsFreshnessLive") : "每次刷新") : effective.maxAgeHours === -1 ? (t ? t("prefsFreshnessCache") : "仅缓存") : (t ? t("prefsFreshnessAuto") : "缓存自动");
+      return `${typeLabel} · ${freshness}`;
+    }
+    case "tavily": {
+      if (effective.autoParameters) return t ? t("prefsTavilyAutoParams") : "自动调节";
+      const depth = String(effective.searchDepth ?? "basic");
+      if (depth === "advanced") return `${t ? t("prefsTavilyAdvanced") : "深入"} · 2 credits`;
+      if (depth === "fast") return `${t ? t("prefsTavilyFast") : "快速"} · 1 credit`;
+      if (depth === "ultra-fast") return `${t ? t("prefsTavilyUltraFast") : "极速"} · 1 credit`;
+      return `${t ? t("prefsTavilyBasic") : "标准"} · 1 credit`;
+    }
+    case "brave": {
+      const pref = String(effective.endpointPreference ?? "auto");
+      if (pref === "web-search") return t ? t("prefsBraveWebSearch") : "Web Search";
+      if (pref === "llm-context") return t ? t("prefsBraveLlmContext") : "LLM Context";
+      return t ? t("prefsBraveAuto") : "自动";
+    }
+    case "you": {
+      const ext = String(effective.extractionMode ?? "highlights");
+      return ext === "none" ? (t ? t("prefsYouSummary") : "搜索摘要") : (t ? t("prefsYouHighlights") : "重点片段");
+    }
+    case "firecrawl": {
+      const fresh = effective.fetchMaxAgeMs === 0 ? (t ? t("prefsFreshnessLive") : "每次刷新") : (t ? t("prefsFreshnessAuto") : "自动缓存");
+      return `${t ? t("prefsFirecrawlOnlyMain") : "仅正文"} · ${fresh}`;
+    }
+    case "parallel": {
+      const mode = String(effective.mode ?? "advanced");
+      if (mode === "basic") return t ? t("prefsParallelBasic") : "标准";
+      if (mode === "fast") return t ? t("prefsParallelFast") : "快速";
+      if (mode === "turbo") return t ? t("prefsParallelTurbo") : "极速";
+      return t ? t("prefsParallelAdvanced") : "深入";
+    }
+    case "jina": {
+      const engine = String(effective.fetchEngine ?? "auto");
+      const readerLm = effective.fetchReaderLmV2 === true;
+      const engineLabel = engine === "curl" ? (t ? t("prefsJinaModeDirect") : "直接读取") : engine === "browser" ? (t ? t("prefsJinaModeBrowser") : "浏览器") : (t ? t("prefsJinaModeAuto") : "自动");
+      return readerLm ? `${engineLabel} · ${t ? t("prefsJinaReaderLmLabel") : "ReaderLM-v2"}` : engineLabel;
+    }
+    default:
+      return t ? t("prefsDefault") : "默认设置";
+  }
 }

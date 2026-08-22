@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-08-20T09:59:30.463Z",
+  "nodeVersion": "v22.22.1",
+  "platform": "win32",
+  "dshWebTools": {
+    "commit": "7ac1700",
+    "branch": "feat/provider-capability-runtime-v2",
+    "repo": "D:\\web\\dsh-plugins\\dsh-web-tools"
+  },
+  "dsh": {
+    "version": "0.1.0-rc.8",
+    "host": "127.0.0.1:3080",
+    "build": "built from repo"
+  },
+  "config": {
+    "enabled": true,
+    "defaultProvider": "firecrawl",
+    "providerAttemptTimeoutMs": 10000,
+    "fallbackOrder": ["tavily", "exa", "brave", "jina", "parallel", "you"],
+    "searchMaxQueries": 4,
+    "searchMaxResults": 8,
+    "proxyConfigured": true,
+    "proxyDegraded": false
+  },
+  "providers": {
+    "tavily": { "keys": 2, "defaultOptions": { "searchDepth": "basic", "chunksPerSource": 3, "autoParameters": false } },
+    "exa": { "keys": 2, "defaultOptions": { "searchType": "auto", "maxAgeHours": 0 } },
+    "firecrawl": { "keys": 1, "defaultOptions": { "fetchOnlyMainContent": true, "fetchMaxAgeMs": 172800000 } },
+    "brave": { "keys": 1, "defaultOptions": { "endpointPreference": "auto", "contextThresholdMode": "balanced", "contextTokenBudget": 8192 } },
+    "you": { "keys": 1, "defaultOptions": { "extractionMode": "highlights", "fetchCrawlTimeoutSec": 10, "fetchMaxAgeSec": 0 } },
+    "parallel": { "keys": 1, "defaultOptions": { "mode": "advanced", "maxCharsTotal": 25000 } },
+    "jina": { "keys": 1, "defaultOptions": {} },
+    "searxng": { "keys": 0, "enabled": false, "defaultOptions": {} }
+  }
+}

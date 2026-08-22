@@ -6,11 +6,9 @@
 
 # dsh-web-tools
 
-Multi-provider Web Search / Fetch plugin for DeepSeek Harness.
+A unified multi-provider Web Runtime for DeepSeek Harness.
 
-Supports Tavily, Exa, Firecrawl, Parallel, Brave, You.com, Jina, and SearXNG with provider ordering, automatic fallback, multiple API keys, and quota display.
-
-Uses the native DSH `web_search` / `web_fetch` tools.
+It keeps the native DSH `web_search` / `web_fetch` model contract while adding provider fallback, multi-key pools, quota and health state, provider-native execution profiles, page extraction, Search Mode, proxy support, and self-hosted SearXNG.
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -20,7 +18,7 @@ Uses the native DSH `web_search` / `web_fetch` tools.
     <img src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square" alt="MIT License" />
   </a>
   <a href="https://github.com/deepseek-ai/deepseek-harness">
-    <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.6-4D6BFE?style=flat-square" alt="DeepSeek Harness" />
+    <img src="https://img.shields.io/badge/DeepSeek%20Harness-Web%20Runtime-4D6BFE?style=flat-square" alt="DeepSeek Harness" />
   </a>
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
 </p>
@@ -33,17 +31,23 @@ Uses the native DSH `web_search` / `web_fetch` tools.
   <img src="assets/overview.png" width="900" alt="dsh-web-tools settings" />
 </p>
 
-## Features
+## More than eight API adapters
 
-- Tavily, Exa, Firecrawl, Parallel, Brave, You.com, Jina, SearXNG
-- Configurable provider order and fallback
-- Multiple API keys per provider
-- Quota, key health, and connection test
-- Native `web_search` / `web_fetch`
-- Per-session "Web Search" toggle
-- System proxy and self-hosted SearXNG
+The current branch puts search, page reading and runtime policy behind one stable DSH-native Web contract:
 
-The plugin does not provide shared API keys or a proxy service. Requests go directly from the local DSH Host to each provider.
+- **8 search providers**: Exa, Tavily, Firecrawl, Parallel, Brave, You.com, Jina and SearXNG
+- **Native DSH tools**: no provider-specific model tools; the Agent continues to use only `web_search` and `web_fetch`
+- **Bounded multi-query**: works with DSH `queries[]`; one precise query is preferred, with parallel queries reserved for genuinely independent unknowns/source angles
+- **Multi-key pools**: in-flight reservation plus same-provider auth failover
+- **Deterministic provider fallback**: timeout, network, 5xx, rate-limit and quota failures can fall through to the next configured provider
+- **Retry-After cooldown**: a rate-limited provider can be skipped with zero HTTP calls until the server-requested cooldown expires
+- **Deeply adapted to each source's native strength**: Exa smart search, Tavily deep retrieval, Brave fast search, Jina reader, Firecrawl extraction — more than plain API calls, each provider runs on its official capability; the settings page presents them as human-readable preferences, never parameter names
+- **Global Search Mode**: one-click 推荐 / 快速 / 精准 / 节省 that applies the right native options and order per provider — or switch to 自定义 and tune the order yourself
+- **Native page / extract backends**: provider-specific Contents / Extract / Scrape / Reader APIs power `web_fetch`
+- **Per-session Search Mode**: force web research before answering, without changing the native DSH tool schema
+- **Proxy and self-hosting**: `HTTP(S)_PROXY`, Windows system proxy, `NO_PROXY`, and keyless self-hosted SearXNG
+
+The project does not provide shared API keys or operate a relay service. Requests go directly from the local DSH Host to each configured provider.
 
 ## Installation
 
@@ -63,135 +67,186 @@ Update:
 dsh plugin --profile web update dsh-web-tools
 ```
 
+The Settings page checks GitHub Releases in the background. When a newer stable version is available, it shows an update notice with a link to the release notes. Check failures never block search or plugin startup.
+
 Remove:
 
 ```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
 
-**For contributors**: this repo has no `prepare` script. After changing `src/`, run `npm run build` manually and commit the compiled `lib/` together with your change (otherwise installs fetch stale artifacts). CI also runs `npm run build` to enforce consistency.
+The current development branch completed P5 live evaluation on a DSH rc.8 runtime. `package.json` still keeps the rc.6-compatible peer range.
 
-Currently developed and tested against DeepSeek Harness `0.1.0-rc.6`.
+## Provider capabilities
 
-## Providers
+| Provider | Search | Page / Extract | Main integration |
+| --- | :---: | :---: | --- |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | auto/fast/deep modes, query-aware highlights, content freshness |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | basic/advanced/fast/ultra-fast, auto parameters |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | discovery search, clean main-content scraping, cache controls |
+| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | advanced/basic/turbo, LLM-ranked excerpts, `max_chars_total` |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context first, Classic Web Search fallback |
+| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | Search highlights, Markdown contents, crawl timeout/cache |
+| [Jina](https://jina.ai) | ✅ | ✅ Reader | Search + Reader, LLM-friendly page content |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | keyless self-hosted meta-search |
 
-| Provider | Search | Fetch | Quota |
-| --- | :---: | :---: | :---: |
-| [Tavily](https://tavily.com) | ✅ | ✅ | ✅ |
-| [Exa](https://exa.ai) | ✅ | ✅ | — |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ | ✅ |
-| [Parallel](https://parallel.ai) | ✅ | ✅ | Dashboard only |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | ✅ |
-| [You.com](https://you.com) | ✅ | — | ✅ |
-| [Jina](https://jina.ai) | ✅ | ✅ | Best effort |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | Self-hosted |
+> Parallel's current public Search documentation lists `turbo`, `basic`, and `advanced`. Turbo is currently documented for English and Japanese queries, so dsh-web-tools does not make it the global default.
 
 <p align="center">
-  <img src="assets/providerDetail.png" width="900" alt="Provider settings and quota" />
+  <img src="assets/providerDetail.png" width="900" alt="Provider settings and search preferences" />
 </p>
 
-A simple starting point:
+## Recommended starting point
 
-| Use case | Try |
+New installations now default to **Exa**. This is a product default derived from this repository's own P5 fixed-corpus evaluation; it is not a universal ranking of search providers.
+
+| Use case | Try first |
 | --- | --- |
-| General search | Tavily |
-| Semantic / technical search | Exa |
-| Search + page content | Firecrawl / Parallel / Jina |
-| General Web search | Brave |
+| Default / technical search | **Exa** |
+| Low-latency Agent grounding | Brave LLM Context |
+| Search + Extract | Tavily / Parallel |
+| Page extraction | Firecrawl / Jina / You.com |
 | Web / News | You.com |
 | Self-hosted | SearXNG |
 
-You do not need to configure every provider.
+One provider is enough to use the plugin. Multiple configured providers enable fallback.
 
-One provider is enough to use the plugin. Multiple providers enable fallback.
+## P5: data-backed defaults
 
-## Free tier reference
+The current branch includes a reproducible evaluation run:
 
-<details>
-<summary>Free / signup credits (check upstream for current details)</summary>
+- 7 providers × 36 fixed tasks
+- 252 default-profile searches
+- 132 provider-profile A/B searches
+- multi-query, fallback, key trimming and provider-option isolation checks
 
-| Provider | Free / signup credits |
-| --- | --- |
-| Tavily | 1,000 credits / month |
-| Exa | $20 on signup + $10 / month |
-| Firecrawl | 1,000 credits / month |
-| Parallel | Up to $80 on signup + $5 / month |
-| Brave Search | $5 credits / month |
-| You.com | $100 for new accounts |
-| Jina | 10M tokens for a new API key |
-| SearXNG | Self-hosted, no platform quota |
+Default-profile results:
 
-</details>
+| Provider | Top-1 | Top-3 | Official source | Generic rate | Median latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Exa** | **72.2%** | **97.2%** | **75.0%** | **0%** | 1.35s |
+| Brave | 50.0% | 94.4% | 50.0% | 2.8% | **0.90s** |
+| You.com | 55.6% | 91.7% | 55.6% | **0%** | 1.26s |
+| Parallel | 52.8% | 88.9% | 58.3% | 5.6% | 1.95s |
+| Tavily | 47.2% | 88.9% | 47.2% | 5.6% | 2.18s |
 
-Some free tiers require account registration or a payment method. Check the upstream provider rules.
-
-Parallel and You.com also offer separate free MCP Search endpoints. The providers in this plugin currently use their REST APIs and therefore still use API keys.
-
-## Provider order
-
-Set the order in which providers are used:
+Raw reports are committed under:
 
 ```text
-Tavily → Firecrawl → Exa → Parallel → Brave
+reports/p5/
 ```
 
-The first provider is the default.
+Key decisions from the run:
 
-Providers in the search chain can be reordered by dragging.
+- Exa became the new-install default because it had the strongest overall evidence profile in this corpus
+- Exa `fast` is a strong latency profile, but `auto` remains the recommended default because the evaluation did not prove a quality advantage for `fast`
+- Tavily `basic` stays recommended; `advanced` did not justify its extra cost in this corpus
+- two genuinely independent queries were the clearest multi-query sweet spot; four mostly increased source diversity and cost
+- the Search Mode prompt explicitly rejects paraphrase spam in `queries[]`
+- Firecrawl is better positioned as a page-extraction/fallback provider than as the primary search provider
 
-Removing a provider from the chain does not delete its configuration, so it can still be tested manually.
+These numbers describe this repository's fixed corpus and the upstream API/account state at the time of the run. They are not a general-purpose third-party leaderboard.
 
-## Fallback
+## Human-friendly provider profiles
 
-The plugin tries the next provider when the current one has problems such as:
+Provider-native parameters stay native in storage and adapters, but the UI exposes human-readable choices rather than raw API knobs.
+
+Examples:
+
+```text
+Exa
+Balanced / Fast / Deep
+
+Tavily
+Balanced / Quality / Fast / Ultra-fast
+
+Brave
+Smart Context / Classic Web Search
+
+You.com
+AI Highlights / Short Snippets
+
+Parallel
+Quality / Balanced / Turbo
+```
+
+Only user overrides are persisted. “Restore recommended” removes the override so future plugin defaults can evolve cleanly.
+
+## Search + Extract / Fetch
+
+Search is only half of the retrieval pipeline. Several providers already use native content/extraction endpoints behind `web_fetch`:
+
+```text
+Exa        /contents
+Tavily     /extract
+Firecrawl  /scrape
+Parallel   /v1/extract
+You.com    /v1/contents
+Jina       Reader
+```
+
+Typical flow:
+
+```text
+web_search
+    ↓
+relevant URL
+    ↓
+web_fetch
+    ↓
+page / extracted content
+```
+
+Search and Fetch do not have to use the same provider. For example:
+
+```text
+Brave LLM Context
+    ↓
+URL
+    ↓
+Parallel Extract
+```
+
+A future research track will evaluate query-aware focused extraction rather than simply adding more Search knobs.
+
+## Provider order and fallback
+
+Providers can be reordered by drag-and-drop. The first provider is the default search backend.
+
+Example:
+
+```text
+Exa → Brave → You.com → Tavily → Parallel → Firecrawl → Jina
+```
+
+The runtime can continue to the next provider on:
 
 ```text
 rate limit
 timeout
 network error
-service error
-quota exhausted
+5xx
+quota exhaustion
 ```
 
-Example:
+If one API key fails authentication and a provider has multiple keys, another healthy key is tried inside the same provider first.
 
-```text
-Tavily
-   ↓ timeout
-Firecrawl
-   ↓
-success
-```
+### Retry-After cooldown
 
-<p align="center">
-  <img src="assets/searchfallback.png" width="850" alt="Provider fallback" />
-</p>
-
-If an API key fails authentication and the provider has multiple keys, another available key is tried first.
+When a provider returns HTTP 429 with `Retry-After`, the provider is placed into a temporary cooldown. During the cooldown, later searches skip it with zero HTTP calls and continue through the configured chain.
 
 ## Multiple API keys
 
-Each provider can have multiple API keys:
+Hosted providers can use multiple API keys:
 
 ```text
-Tavily
+Exa
 ├── Key A
 ├── Key B
 └── Key C
 ```
 
-The plugin automatically selects an available key.
-
-Keys can be separated by:
-
-```text
-newlines
-commas
-spaces
-semicolons
-```
-
-Full API keys are never returned to the browser. The Settings page only receives masked credential information.
+Concurrent searches prefer low-`inFlight` healthy keys. Full API keys are never returned to the browser.
 
 ## Quota
 
@@ -201,169 +256,75 @@ Current quota support:
 | --- | :---: |
 | Tavily | ✅ |
 | Firecrawl | ✅ |
-| Brave | ✅ |
+| Brave | ✅ via Search response headers |
 | You.com | ✅ |
-| Jina | ✅ |
+| Jina | Best effort |
 | Exa | — |
 | Parallel | Dashboard only |
 | SearXNG | Self-hosted |
 
-For supported providers, quota from multiple API keys is combined.
-
-Example:
-
-```text
-Key A: 950 / 1000
-Key B: 982 / 1000
-
-Pool: 1932 / 2000
-```
-
-Quota is refreshed in the background with a default 5-minute cache.
-
-Brave quota is read from the `X-RateLimit-*` information returned by Search and the latest result is saved.
-
-Quota information is only used for display and does not block Search.
+Quota is primarily a settings/diagnostics signal. Estimated values do not silently rewrite provider order.
 
 ## Test Search
 
-The Settings page can run a real search through the configured provider chain.
-
-It shows:
+The Settings page can run a real request through the same Registry and provider profiles used by the Agent. It shows:
 
 - final provider
 - total latency
 - result count
 - provider attempts
 - success / timeout / rate limit / authentication failure
-- search results
+- returned sources
 
 <p align="center">
   <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search" />
 </p>
 
-Test Search uses the same provider chain as normal agent searches.
+## Per-session Web Search mode
 
-## Web Fetch
+The input-row “Web Search” toggle controls research behavior for the current conversation:
 
-Providers with page-content support:
-
-```text
-Tavily
-Exa
-Firecrawl
-Parallel
-Jina
-```
-
-A normal flow can be:
-
-```text
-web_search
-    ↓
-URL
-    ↓
-web_fetch
-    ↓
-page content
-```
-
-Search and Fetch do not have to use the same provider.
-
-For example:
-
-```text
-Brave Search
-    ↓
-Parallel Fetch
-```
-
-## Proxy
-
-Supports:
-
-```text
-HTTPS_PROXY
-HTTP_PROXY
-Windows system proxy
-```
-
-Local addresses bypass the proxy by default:
-
-```text
-localhost
-127.0.0.1
-::1
-*.local
-```
-
-`NO_PROXY` is also supported.
-
-## SearXNG
-
-SearXNG does not require an API key.
-
-Configure only the instance URL:
-
-```text
-http://127.0.0.1:8080
-```
-
-It can be used alone:
-
-```text
-SearXNG
-```
-
-or as part of the fallback chain:
-
-```text
-Tavily → Exa → Brave → SearXNG
-```
-
-## UI language
-
-The Web Search page supports:
-
-```text
-Follow system
-中文
-English
-```
-
-The language setting only affects this plugin page.
-
-## Per-session "Web Search" toggle
-
-A small "Web Search" toggle sits at the left end of the input row. Click it to
-turn it on or off; once on, it stays on until you click again.
-
-- **off** — lets the AI decide on its own whether a question needs the web
-- **on** — completes at least one web research action before answering each
-  turn: if you give a specific URL it fetches that page directly (`web_fetch`),
-  otherwise it searches (`web_search`) and fetches on demand; when research
-  can't complete, the agent is asked to say which parts were not web-verified
-- the state follows the current conversation: refreshing the page or switching
-  conversations doesn't lose it
-- the button grays out when there is no usable search source (the plugin is
-  disabled, or no search source is available)
-- you can also use `/search` to toggle the same switch
-
-It works with the 8 search sources: when on, the search automatically falls
-back through the sources in the order you've configured.
+- **off** — let the Agent decide whether web access is needed
+- **on** — complete at least one web research action before answering; fetch a provided URL directly, otherwise search first
+- one concrete fact starts with one precise query
+- two queries are for two independent unknowns or genuinely different source angles
+- 3–4 are reserved for tasks that truly contain that many distinct facts
+- paraphrase spam is explicitly discouraged
+- one precise reformulation is allowed when the first search is generic
+- if web research fails, the Agent is asked to disclose which current facts could not be verified
 
 <p align="center">
   <img src="assets/searchMode.png" width="480" alt="Web Search toggle" />
 </p>
 
+## Proxy and SearXNG
+
+Supported proxy sources:
+
+```text
+HTTPS_PROXY
+HTTP_PROXY
+Windows system proxy
+NO_PROXY
+```
+
+Local addresses (`localhost`, `127.0.0.1`, `::1`, `*.local`) bypass the proxy by default.
+
+SearXNG requires no API key; configure only your own instance URL, for example:
+
+```text
+http://127.0.0.1:8080
+```
+
 ## Security
 
-- API keys are used only on the DSH Host
-- full API keys are never returned to the browser
-- logs do not contain full API keys
-- requests do not pass through a server operated by this project
+- API keys stay on the DSH Host
+- full keys are never returned to the browser
+- logs do not include full credentials
+- requests are not relayed through a server operated by this project
 - no search usage telemetry is uploaded
-- SearXNG can be used as a fully self-hosted search option
+- SearXNG can be used as a fully self-hosted search backend
+- runtime/provider errors must not expose Authorization or API key material
 
 ## Development
 
@@ -382,8 +343,7 @@ npm test
 Type-check:
 
 ```bash
-npx tsc -p tsconfig.json --noEmit
-npx tsc -p tsconfig.client.json --noEmit
+npm run typecheck
 ```
 
 Build:
@@ -392,34 +352,36 @@ Build:
 npm run build
 ```
 
-After changing `src/`, run `npm run build` and commit the resulting `lib/` too. The package has no `prepare` script, so GitHub installs use the committed `lib/` directly — keep it in sync with `src/`.
+After changing `src/`, rebuild and commit the generated `lib/` artifacts too. This package intentionally has no `prepare` script; GitHub installs use the committed build output.
 
-Provider adapters are in:
+Provider adapters:
 
 ```text
 src/host/providers/
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for more information.
+P5 evaluation artifacts:
+
+```text
+reports/p5/
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development details.
 
 ## Update still showing old code?
 
-If the plugin still behaves like an older version after updating and restarting:
+If an update still behaves like an older snapshot after restarting:
 
 ```bash
 cd ~/.dsh/profiles/web
 pnpm install
 ```
 
-For local development, `file:` may use a copied snapshot.
-
-Using `link:` is usually more convenient.
+For local development, prefer `link:` over `file:` to avoid copied stale snapshots.
 
 ## Contributing
 
-Issues and pull requests are welcome.
-
-New Search Provider suggestions are welcome too.
+Issues and pull requests are welcome, including new providers, extraction capabilities, and reproducible benchmark data.
 
 ## License
 

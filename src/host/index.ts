@@ -15,16 +15,19 @@ import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./
 import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
-import { buildPool, selectIndex, markUsed, markUnhealthy } from "./pool.ts";
+import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
+import type { VersionCheckView } from "../shared/api-types.ts";
+import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { proxyStatus } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { createProviderHealthStore } from "./provider-health.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -38,6 +41,67 @@ export const inject = ["webServer", "webRuntime", "settings", "credentials", "we
  * resolving plugin config); an empty object would crash at load.
  */
 export const Config = PluginConfig;
+
+const RELEASES_API = "https://api.github.com/repos/A3Boy/dsh-web-tools/releases/latest";
+const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
+const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
+let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
+
+/** Release lookup is best-effort: startup and settings must work offline. */
+async function checkVersion(): Promise<VersionCheckView> {
+  if (versionCache && Date.now() - versionCache.fetchedAt < VERSION_CACHE_MS) return versionCache.value;
+
+  const fallback: VersionCheckView = { currentVersion: CURRENT_VERSION, updateAvailable: false };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    timer.unref?.();
+    let response: Response;
+    try {
+      response = await fetchWithProxy(RELEASES_API, {
+        signal: controller.signal,
+        headers: {
+          accept: "application/vnd.github+json",
+          "user-agent": `dsh-web-tools/${CURRENT_VERSION}`,
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // A repository without releases is a valid "no update" state.
+    if (response.status === 404) {
+      versionCache = { fetchedAt: Date.now(), value: fallback };
+      return fallback;
+    }
+    if (!response.ok) throw new Error(`GitHub releases returned HTTP ${response.status}`);
+
+    const release = await response.json() as {
+      tag_name?: unknown;
+      name?: unknown;
+      html_url?: unknown;
+      published_at?: unknown;
+      draft?: unknown;
+      prerelease?: unknown;
+    };
+    const latestVersion = typeof release.tag_name === "string" ? release.tag_name.replace(/^v/i, "") : "";
+    if (!latestVersion || release.draft === true || release.prerelease === true) return fallback;
+
+    const value: VersionCheckView = {
+      currentVersion: CURRENT_VERSION,
+      latestVersion,
+      updateAvailable: compareVersions(latestVersion, CURRENT_VERSION) > 0,
+      releaseUrl: typeof release.html_url === "string" ? release.html_url : RELEASES_URL,
+      releaseName: typeof release.name === "string" && release.name.trim() ? release.name : `v${latestVersion}`,
+      publishedAt: typeof release.published_at === "string" ? release.published_at : undefined,
+    };
+    versionCache = { fetchedAt: Date.now(), value };
+    return value;
+  } catch {
+    // Do not cache transient network failures; the next settings open can retry.
+    return fallback;
+  }
+}
 
 /** Resolve one credential ref's state + optional value (Host side only). */
 async function readCredential(ctx: WebToolsContext, ref: string): Promise<{ configured: boolean; source?: string; writable: boolean; value?: string }> {
@@ -85,8 +149,10 @@ export function apply(ctx: WebToolsContext) {
       defaultProvider: cfg.defaultProvider,
       providerAttemptTimeoutMs: cfg.providerAttemptTimeoutMs,
       fallbackOrder: cfg.fallbackOrder,
+      searchRoutingPolicy: cfg.searchRoutingPolicy,
       providerBaseUrls: cfg.providerBaseUrls,
       enabledProviders: cfg.providerEnabled,
+      providerOptions: cfg.providerOptions,
     };
   };
   const resolveKeys = async (providerName: string) => {
@@ -99,12 +165,15 @@ export function apply(ctx: WebToolsContext) {
   // and health, and rebuild only when a credential actually changes.
   const poolStore = createPoolStore(resolveKeys);
 
+  // ONE shared health store so search + fetch respect the same cooldowns.
+  const healthStore = createProviderHealthStore();
+
   const provider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
-  }, undefined, poolStore);
+  }, undefined, poolStore, healthStore);
   ctx.web.registerSearchProvider(provider as never);
 
-  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore);
+  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
   ctx.web.registerFetchProvider(fetchProvider as never);
 
   /** Run one real minimal search through a single provider (test connection). */
@@ -120,12 +189,14 @@ export function apply(ctx: WebToolsContext) {
         // fresh pool where every key always looks healthy.
         const entries = await poolStore.poolOf(providerName);
         if (entries.length === 0) throw Object.assign(new Error("no API key configured"), { code: "config" });
+        if (!entries.some((e) => e.healthy)) resetHealth(entries);
         const index = selectIndex(entries);
         const entry = entries[index];
-        key = entry?.key ?? "";
+        key = (entry?.key ?? "").trim();
         try {
           const outcome = await adapter.search(query, 1, key, readConfig().providerBaseUrls[providerName]);
           markUsed(entries, index);
+          if (!entry.healthy) entry.healthy = true;
           const latencyMs = Date.now() - started;
           return {
             ok: true,
@@ -185,16 +256,10 @@ export function apply(ctx: WebToolsContext) {
     }
   }
 
-  /** Quota snapshots for every provider (authoritative where available). */
   /** Quota cache: { fetchedAt, per provider snapshot }. */
   let quotaCache: { fetchedAt: number; quotas: Record<string, QuotaSnapshot> } | null = null;
   const QUOTA_CACHE_MS = 5 * 60 * 1000; // 5 min — quota is display-only, no 30s polling
   const QUOTA_TIMEOUT_MS = 8000;
-  // Brave probe cooldown: Brave bills per search, so a failed probe must not
-  // retry on every 5-minute refresh. 30 minutes between failed probes; a
-  // successful capture persists and never probes again.
-  let lastBraveProbeAt = 0;
-  const BRAVE_PROBE_COOLDOWN_MS = 30 * 60 * 1000;
 
   async function describeQuotas(force = false): Promise<Record<string, QuotaSnapshot>> {
     if (!force && quotaCache && Date.now() - quotaCache.fetchedAt < QUOTA_CACHE_MS) return quotaCache.quotas;
@@ -218,21 +283,20 @@ export function apply(ctx: WebToolsContext) {
         const ref = credRefOf(meta.name);
         const cred = await readCredential(ctx, ref);
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
-        const localUsdCents = localSearches > 0 ? Math.max(1, Math.round((localSearches * 700) / 1000)) : undefined;
         // Multi-key pool: query EVERY key and merge — the card shows the
         // TOTAL pool balance, not one key's. Each key is authenticated
         // separately (never join the raw string).
         const keys = buildPool(cred.value ?? "").map((e) => e.key);
         if (keys.length === 0) {
           const snapshot = await withTimeoutMs(
-            quotaOf(meta.name, "", cfg.providerBaseUrls[meta.name], localUsdCents),
+            quotaOf(meta.name, "", cfg.providerBaseUrls[meta.name], localSearches),
             QUOTA_TIMEOUT_MS,
           );
           return [meta.name, snapshot];
         }
         const perKey = await Promise.allSettled(
           keys.map((k) =>
-            withTimeoutMs(quotaOf(meta.name, k, cfg.providerBaseUrls[meta.name], localUsdCents), QUOTA_TIMEOUT_MS),
+            withTimeoutMs(quotaOf(meta.name, k, cfg.providerBaseUrls[meta.name], localSearches), QUOTA_TIMEOUT_MS),
           ),
         );
         const fulfilled = perKey.filter((p): p is PromiseFulfilledResult<QuotaSnapshot> => p.status === "fulfilled").map((p) => p.value);
@@ -241,31 +305,6 @@ export function apply(ctx: WebToolsContext) {
           throw Object.assign(new Error(`quota check failed: ${first?.reason instanceof Error ? first.reason.message : String(first?.reason)}`), {
             provider: meta.name,
           });
-        }
-        // Brave has no quota endpoint — its only quota signal is the
-        // X-RateLimit-* header captured during a real search. If the pool has
-        // NO captured snapshot (fresh boot / never searched), do ONE minimal
-        // probe search to populate it. A successful capture persists
-        // immediately, so later refreshes already have data and never probe
-        // again; a failed probe waits for the cooldown before retrying
-        // (Brave bills per search — never poll aggressively).
-        if (meta.name === "brave" && fulfilled.every((s) => !s.supported)) {
-          const key = keys[0];
-          const now = Date.now();
-          if (key && now - lastBraveProbeAt > BRAVE_PROBE_COOLDOWN_MS) {
-            lastBraveProbeAt = now;
-            try {
-              await getProvider("brave").search("quota probe", 1, key, undefined);
-              // The probe search captured fresh X-RateLimit-* headers — read
-              // them back so THIS call returns the real snapshot, not the
-              // pre-probe "unsupported" placeholder.
-              const fresh = await withTimeoutMs(quotaOf(meta.name, key, cfg.providerBaseUrls[meta.name], localUsdCents), QUOTA_TIMEOUT_MS);
-              return [meta.name, fresh];
-            } catch {
-              // probe failed (network/auth) — keep the unsupported snapshot;
-              // a real search later captures it
-            }
-          }
         }
         return [meta.name, mergePoolQuota(fulfilled)];
       }),
@@ -292,27 +331,6 @@ export function apply(ctx: WebToolsContext) {
     quotaCache = { fetchedAt: Date.now(), quotas };
     return quotas;
   }
-
-  // ---- background quota refresh -------------------------------------------
-  // Quota should stay fresh even when the settings page is not open: refresh
-  // the cache every few minutes in the background (silent — display data
-  // only, failures never surface). The card's quota/describe then reads the
-  // warm cache instead of querying on open.
-  const QUOTA_REFRESH_MS = 5 * 60 * 1000; // same cadence as the cache TTL
-  ctx.effect(() => {
-    const timer = setInterval(() => {
-      void describeQuotas(true).catch(() => {});
-    }, QUOTA_REFRESH_MS);
-    // Refresh once shortly after startup too, so a freshly booted profile
-    // shows quota without waiting for the page to open.
-    const boot = setTimeout(() => {
-      void describeQuotas(true).catch(() => {});
-    }, 3_000);
-    return () => {
-      clearInterval(timer);
-      clearTimeout(boot);
-    };
-  }, "dsh-web-tools: background quota refresh");
 
   // ---- Brave quota persistence --------------------------------------------
   // Brave has no quota endpoint; its only quota signal is the X-RateLimit-*
@@ -370,6 +388,7 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
+        checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,
         searchMode,

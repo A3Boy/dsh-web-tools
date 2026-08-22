@@ -12,6 +12,8 @@
  */
 /** Settings page nav id (drives the Settings section key). */
 export declare const SECTION_ID = "web-tools";
+/** Locale namespace for the settings page. */
+export declare const NS = "dsh-web-tools";
 /** Nav position: after Agent Presets (20), before Plugin Market (40). */
 export declare const SECTION_ORDER = 30;
 /** Minimal client ctx surface this registration needs. */
