@@ -186,9 +186,34 @@ function ProviderRow(props: {
         <QuotaInline quota={quota} providerName={p.name} t={t} />
       )}
       {editMode && inOrder && (
-        <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-label={t("removeFromChain")} style={{ padding: "0 6px", height: 24, color: stateColor.danger }}>
-          {t("removeFromChain")}
-        </Button>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
+          aria-label={t("removeFromChain")}
+          title={t("removeFromChain")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            border: "none",
+            background: stateColor.danger,
+            color: "#fff",
+            cursor: "pointer",
+            padding: 0,
+            flex: "none",
+            transition: "opacity .15s ease",
+            outline: "none",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        >
+          <svg width="10" height="2" viewBox="0 0 10 2" fill="currentColor">
+            <rect width="10" height="2" rx="1" />
+          </svg>
+        </button>
       )}
       {editMode && !inOrder && (
         <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onAdd?.(); }} style={{ padding: "0 8px", height: 24 }}>
