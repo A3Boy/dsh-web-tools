@@ -499,15 +499,15 @@ export function WebToolsSection(props: SectionProps) {
       const timer = setTimeout(() => {
         window.removeEventListener("message", onMessage);
         resolve(false);
-      }, 4000);
+      }, 5000);
 
       const onMessage = (event: MessageEvent) => {
-        if (event.source !== window) return;
+        if (event.source !== window || event.origin !== window.location.origin) return;
         const data = event.data;
         if (data && data.type === "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK") {
           clearTimeout(timer);
           window.removeEventListener("message", onMessage);
-          resolve(Boolean(data.ok));
+          resolve(Boolean(data.ok && data.res?.ok !== false));
         }
       };
 
@@ -516,7 +516,7 @@ export function WebToolsSection(props: SectionProps) {
         type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
         ticket,
         port: window.location.port ? Number(window.location.port) : 3080,
-      }, "*");
+      }, window.location.origin);
     });
   };
 

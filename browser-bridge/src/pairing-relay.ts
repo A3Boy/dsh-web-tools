@@ -7,8 +7,8 @@
  */
 
 window.addEventListener("message", (event) => {
-  // Ensure message comes from same window
-  if (event.source !== window) return;
+  // Ensure message comes from same window and origin
+  if (event.source !== window || event.origin !== window.location.origin) return;
 
   const data = event.data;
   if (data && data.type === "DSH_WEB_TOOLS_BRIDGE_PAIR") {
@@ -17,11 +17,11 @@ window.addEventListener("message", (event) => {
       chrome.runtime.sendMessage({
         type: "DSH_BRIDGE_CONNECT",
         ticket,
-        port: port || window.location.port || 3080,
+        port: port || (window.location.port ? Number(window.location.port) : 3080),
       }).then((res) => {
-        window.postMessage({ type: "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK", ok: true, res }, "*");
+        window.postMessage({ type: "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK", ok: true, res }, window.location.origin);
       }).catch((err) => {
-        window.postMessage({ type: "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK", ok: false, error: String(err) }, "*");
+        window.postMessage({ type: "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK", ok: false, error: String(err) }, window.location.origin);
       });
     }
   }

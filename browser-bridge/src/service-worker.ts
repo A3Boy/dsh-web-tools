@@ -446,15 +446,19 @@ class ConnectionAttempt {
       }
       currentAttempt = null;
 
-      // Auto-reconnect after 3s
+      // Auto-reconnect after 3s ONLY if already paired with a valid bridgeKey
       setTimeout(() => {
-        connectToHost().catch(() => {});
+        reconnectFromStorage().catch(() => {});
       }, 3000);
     };
 
     socket.onerror = () => {
       this.fail(new Error("WebSocket connection error"), true);
     };
+  }
+
+  public cancel(): void {
+    this.fail(new Error("Connection attempt preempted by new pairing ticket"), true);
   }
 
   private async succeed(newBridgeKey?: string): Promise<void> {
@@ -488,10 +492,28 @@ class ConnectionAttempt {
 let currentAttempt: ConnectionAttempt | null = null;
 
 /**
+ * Reconnect to DSH Host only if a durable pairing bridgeKey already exists.
+ */
+export async function reconnectFromStorage(): Promise<void> {
+  const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
+  if (!stored.bridgeKey) {
+    // Unpaired extension must NOT spam unauthenticated handshakes
+    return;
+  }
+  return connectToHost(stored.dshPort, undefined);
+}
+
+/**
  * Connect to DSH Local WebSocket Server and await verified handshake.
  */
 export async function connectToHost(port?: number, ticket?: string): Promise<void> {
-  if (currentAttempt) return currentAttempt.promise;
+  // If a ticket is provided for pairing, it takes precedence over any pending idle reconnect
+  if (ticket && currentAttempt) {
+    currentAttempt.cancel();
+    currentAttempt = null;
+  } else if (currentAttempt) {
+    return currentAttempt.promise;
+  }
 
   const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
   const activePort = port || stored.dshPort || 3080;
@@ -519,8 +541,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-// Auto-connect on Service Worker boot & startup
+// Auto-connect on Service Worker boot & startup ONLY if already paired
 chrome.runtime.onStartup.addListener(() => {
-  connectToHost().catch(() => {});
+  reconnectFromStorage().catch(() => {});
 });
-connectToHost().catch(() => {});
+reconnectFromStorage().catch(() => {});

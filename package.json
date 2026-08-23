@@ -70,7 +70,7 @@
     "bundle": "tsdown",
     "test": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts test/runtime-wiring.test.ts src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/provider-contracts.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
     "smoke": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts test/runtime-wiring.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p browser-bridge/tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
