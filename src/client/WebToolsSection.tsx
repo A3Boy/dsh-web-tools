@@ -492,6 +492,37 @@ export function WebToolsSection(props: SectionProps) {
   };
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
+
+  // Trigger pairing relay with Extension and connect platform
+  const connectPlatform = async (platform: "xiaohongshu" | "x") => {
+    try {
+      let currentStatus = await api.bridgeStatus().catch(() => ({ connected: false, platforms: {} }));
+      if (!currentStatus.connected) {
+        // Issue pairing ticket
+        const { ticket } = await api.bridgeBootstrap();
+
+        // Dispatch pairing relay event to content script
+        window.postMessage({
+          type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
+          ticket,
+          port: window.location.port ? Number(window.location.port) : 3080,
+        }, "*");
+
+        // Wait up to 2 seconds for pairing relay to establish
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+
+      // Trigger official connect auth endpoint
+      const res = await api.bridgeConnectAuth(platform);
+      if (res?.url) {
+        window.open(res.url, "_blank");
+      }
+    } catch {
+      // Fallback direct open
+      const fallbackUrl = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
+      window.open(fallbackUrl, "_blank");
+    }
+  };
   const toggleProvider = (name: string, enabled: boolean) => {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
@@ -725,7 +756,7 @@ export function WebToolsSection(props: SectionProps) {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      window.open("https://creator.xiaohongshu.com/", "_blank");
+                      void connectPlatform("xiaohongshu");
                     }}
                   >
                     {t("loginButton")}
@@ -757,7 +788,7 @@ export function WebToolsSection(props: SectionProps) {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      window.open("https://x.com/i/flow/login", "_blank");
+                      void connectPlatform("x");
                     }}
                   >
                     {t("loginButton")}

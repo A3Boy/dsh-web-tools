@@ -376,58 +376,127 @@ async function handleHostMessage(msg: BridgeHostMessage): Promise<void> {
   ws?.send(JSON.stringify(errRes));
 }
 
+let connectingPromise: Promise<void> | null = null;
+let currentPendingHelloId: string | null = null;
+let handshakeResolve: (() => void) | null = null;
+let handshakeReject: ((err: Error) => void) | null = null;
+
 /**
- * Connect to DSH Local WebSocket Server
+ * Connect to DSH Local WebSocket Server and await verified handshake.
  */
-export async function connectToHost(port: number = 3080, ticket?: string): Promise<void> {
-  const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
-  const activePort = port || stored.dshPort || 3080;
-  const bridgeKey = stored.bridgeKey;
+export async function connectToHost(port?: number, ticket?: string): Promise<void> {
+  if (connectingPromise) return connectingPromise;
 
-  const url = `ws://127.0.0.1:${activePort}/web-tools/bridge/ws`;
-  ws = new WebSocket(url);
+  connectingPromise = new Promise<void>(async (resolve, reject) => {
+    handshakeResolve = resolve;
+    handshakeReject = reject;
 
-  ws.onopen = () => {
-    startKeepAlive();
-    // Send hello handshake
-    const hello: BridgeExtensionMessage = {
-      id: crypto.randomUUID(),
-      kind: "hello",
-      payload: {
-        ticket,
-        bridgeKey,
-        extensionVersion: EXTENSION_VERSION,
-      },
-    };
-    ws?.send(JSON.stringify(hello));
-  };
+    const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
+    const activePort = port || stored.dshPort || 3080;
+    const bridgeKey = stored.bridgeKey;
 
-  ws.onmessage = async (event) => {
-    try {
-      const msg: any = JSON.parse(event.data);
-      if (msg.kind === "result" && msg.payload?.paired) {
-        // Pairing confirmed, save durable bridgeKey
-        if (msg.payload.bridgeKey) {
-          await chrome.storage.local.set({ bridgeKey: msg.payload.bridgeKey });
-        }
-        // Broadcast existing cookies/login status immediately
-        await broadcastInitialAuthState();
-        return;
-      }
-      await handleHostMessage(msg);
-    } catch {
-      // Malformed message
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      try { ws.close(); } catch {}
+      ws = null;
     }
-  };
 
-  ws.onclose = () => {
-    stopKeepAlive();
-    ws = null;
-    // Auto-reconnect after 3s
-    setTimeout(() => {
-      connectToHost().catch(() => {});
-    }, 3000);
-  };
+    const url = `ws://127.0.0.1:${activePort}/web-tools/bridge/ws`;
+    const socket = new WebSocket(url);
+    ws = socket;
+
+    const handshakeTimer = setTimeout(() => {
+      if (handshakeReject) {
+        handshakeReject(new Error("Handshake timeout after 8000ms"));
+        handshakeResolve = null;
+        handshakeReject = null;
+      }
+    }, 8000);
+
+    socket.onopen = () => {
+      startKeepAlive();
+      currentPendingHelloId = crypto.randomUUID();
+      const hello: BridgeExtensionMessage = {
+        id: currentPendingHelloId,
+        kind: "hello",
+        payload: {
+          ticket,
+          bridgeKey,
+          extensionVersion: EXTENSION_VERSION,
+        },
+      };
+      socket.send(JSON.stringify(hello));
+    };
+
+    socket.onmessage = async (event) => {
+      try {
+        const msg: any = JSON.parse(event.data);
+
+        // Check if this is the pending handshake reply
+        if (msg.kind === "result" && (msg.id === currentPendingHelloId || msg.payload?.paired)) {
+          clearTimeout(handshakeTimer);
+          currentPendingHelloId = null;
+
+          // Save durable bridgeKey and port together!
+          const toSave: Record<string, any> = { dshPort: activePort };
+          if (msg.payload?.bridgeKey) {
+            toSave.bridgeKey = msg.payload.bridgeKey;
+          }
+          await chrome.storage.local.set(toSave);
+
+          if (handshakeResolve) {
+            handshakeResolve();
+            handshakeResolve = null;
+            handshakeReject = null;
+          }
+
+          // Broadcast existing cookies/login status immediately
+          await broadcastInitialAuthState();
+          return;
+        }
+
+        if (msg.kind === "error" && msg.id === currentPendingHelloId) {
+          clearTimeout(handshakeTimer);
+          if (handshakeReject) {
+            handshakeReject(new Error(msg.error?.message ?? "Handshake rejected by Host"));
+            handshakeResolve = null;
+            handshakeReject = null;
+          }
+          return;
+        }
+
+        await handleHostMessage(msg);
+      } catch {
+        // Malformed message
+      }
+    };
+
+    socket.onclose = () => {
+      clearTimeout(handshakeTimer);
+      stopKeepAlive();
+      if (ws === socket) {
+        ws = null;
+      }
+      if (handshakeReject) {
+        handshakeReject(new Error("WebSocket closed before handshake"));
+        handshakeResolve = null;
+        handshakeReject = null;
+      }
+      connectingPromise = null;
+
+      // Auto-reconnect after 3s
+      setTimeout(() => {
+        connectToHost().catch(() => {});
+      }, 3000);
+    };
+
+    socket.onerror = () => {
+      clearTimeout(handshakeTimer);
+    };
+  }).finally(() => {
+    connectingPromise = null;
+  });
+
+  return connectingPromise;
 }
 
 // Listen for messages from pairing-relay content script

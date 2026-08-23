@@ -22,6 +22,8 @@ import { createHash } from "node:crypto";
 import { defaultBridgeServer } from "./sources/bridge-server.ts";
 import { defaultSourceRegistry } from "./sources/registry.ts";
 
+import { defaultBridgeClient } from "./sources/bridge-client.ts";
+
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export function keyIdOf(key: string): string {
   return createHash("sha1").update(key).digest("hex").slice(0, 8);
@@ -410,10 +412,13 @@ async function handleBridgeBootstrap(): Promise<{ ticket: string; expiresAt: num
 
 async function handleBridgeConnectAuth(payload: unknown): Promise<{ status: string; url?: string }> {
   const platform = (payload as any)?.platform;
-  if (platform === "xiaohongshu") {
-    return { status: "login_opened", url: "https://creator.xiaohongshu.com/" };
-  } else if (platform === "x") {
-    return { status: "login_opened", url: "https://x.com/i/flow/login" };
+  if (platform === "xiaohongshu" || platform === "x") {
+    if (defaultBridgeServer.isConnected()) {
+      return defaultBridgeClient.connectAuth(platform);
+    }
+    // Fallback if bridge is not yet connected
+    const url = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
+    return { status: "login_opened", url };
   }
   return { status: "unknown_platform" };
 }

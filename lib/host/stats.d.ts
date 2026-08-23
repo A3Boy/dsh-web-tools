@@ -10,8 +10,8 @@ export interface StatEntry {
 }
 /** Simple bounded in-memory ring of recent search attempts. */
 export declare class Stats {
-    private readonly max;
     private entries;
+    private readonly max;
     constructor(max?: number);
     record(entry: StatEntry): void;
     /**
