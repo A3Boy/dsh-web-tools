@@ -150,7 +150,10 @@ test("outcomeLabel maps raw Host outcomes to human copy keys", () => {
   assert.equal(outcomeLabel(t, "failed:rate-limit"), "[rateLimitedOutcome]");
   assert.equal(outcomeLabel(t, "failed:auth"), "[authOutcome]");
   assert.equal(outcomeLabel(t, "failed:timeout"), "[timeoutOutcome]");
-  assert.equal(outcomeLabel(t, "skipped-no-keys"), "[unknownOutcome]");
+  assert.equal(outcomeLabel(t, "skipped-no-keys"), "[skippedNoKeysOutcome]");
+  assert.equal(outcomeLabel(t, "skipped-no-healthy-keys"), "[skippedNoHealthyKeysOutcome]");
+  assert.equal(outcomeLabel(t, "skipped-cooldown"), "[skippedCooldownOutcome]");
+  assert.equal(outcomeLabel(t, "skipped-no-adapter"), "[skippedNoAdapterOutcome]");
   assert.equal(outcomeLabel(t, "failed:something-weird"), "something-weird");
 });
 

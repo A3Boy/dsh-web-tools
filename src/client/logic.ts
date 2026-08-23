@@ -235,7 +235,15 @@ export function outcomeLabel(t: TFunc, outcome: string): string {
       default: return code;
     }
   }
-  if (outcome.startsWith("skipped-")) return t("unknownOutcome");
+  if (outcome.startsWith("skipped-")) {
+    switch (outcome) {
+      case "skipped-no-keys": return t("skippedNoKeysOutcome");
+      case "skipped-no-healthy-keys": return t("skippedNoHealthyKeysOutcome");
+      case "skipped-cooldown": return t("skippedCooldownOutcome");
+      case "skipped-no-adapter": return t("skippedNoAdapterOutcome");
+      default: return t("unknownOutcome");
+    }
+  }
   return t("unknownOutcome");
 }
 
