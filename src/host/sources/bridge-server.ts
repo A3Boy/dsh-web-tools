@@ -13,6 +13,9 @@
 import { randomBytes, createHash } from "node:crypto";
 import type { BridgeRequest, BridgeResponse } from "./bridge-protocol.ts";
 import type { SourceAccountInfo, SpecializedPlatformId } from "./types.ts";
+import type { WebToolsWebServer } from "../context-types.ts";
+
+export const BRIDGE_WS_PATH = "/web-tools/bridge/ws";
 
 export interface PairingTicket {
   ticket: string;
@@ -78,6 +81,92 @@ export class BridgeHostServer {
     }
 
     return { success: false };
+  }
+
+  /**
+   * Register WebSocket Upgrade route on DSH webServer.
+   */
+  public registerUpgradeRoute(webServer: WebToolsWebServer): void {
+    if (typeof webServer.registerUpgrade !== "function") return;
+
+    webServer.registerUpgrade({
+      path: BRIDGE_WS_PATH,
+      handler: (req: any, socket: any, head: Buffer | Uint8Array) => {
+        // Enforce loopback check
+        const remote = socket?.remoteAddress ?? req?.socket?.remoteAddress ?? "";
+        const isLoopback = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+        if (!isLoopback) {
+          socket.destroy();
+          return;
+        }
+
+        // Dynamically load ws to avoid crashing when not installed / bundling
+        import("ws").then(({ WebSocketServer }) => {
+          const wss = new WebSocketServer({ noServer: true });
+          wss.handleUpgrade(req, socket, head as Buffer, (ws) => {
+            let isHandshakeComplete = false;
+
+            const handshakeTimeout = setTimeout(() => {
+              if (!isHandshakeComplete) {
+                try { ws.close(); } catch {}
+              }
+            }, 10000);
+
+            ws.on("message", (data: any) => {
+              try {
+                const parsed = JSON.parse(data.toString());
+                if (!isHandshakeComplete) {
+                  if (parsed.kind === "hello") {
+                    const { ticket, bridgeKey } = parsed.payload ?? {};
+                    const verify = this.verifyHandshake(ticket, bridgeKey);
+                    if (verify.success) {
+                      isHandshakeComplete = true;
+                      clearTimeout(handshakeTimeout);
+                      this.attachConnection(ws);
+
+                      // Send confirmation
+                      ws.send(JSON.stringify({
+                        id: parsed.id,
+                        kind: "result",
+                        payload: {
+                          paired: true,
+                          bridgeKey: verify.newBridgeKey,
+                        },
+                      }));
+                    } else {
+                      ws.send(JSON.stringify({
+                        id: parsed.id,
+                        kind: "error",
+                        error: { code: "AUTH_FAILED", message: "Invalid pairing ticket or bridgeKey" },
+                      }));
+                      ws.close();
+                    }
+                  }
+                  return;
+                }
+
+                // Normal message processing after handshake
+                this.handleIncomingMessage(data);
+              } catch {
+                // Ignore malformed frame
+              }
+            });
+
+            ws.on("close", () => {
+              clearTimeout(handshakeTimeout);
+              this.detachConnection(ws);
+            });
+
+            ws.on("error", () => {
+              clearTimeout(handshakeTimeout);
+              this.detachConnection(ws);
+            });
+          });
+        }).catch(() => {
+          socket.destroy();
+        });
+      },
+    });
   }
 
   /**

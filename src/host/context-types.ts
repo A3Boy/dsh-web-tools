@@ -31,9 +31,18 @@ export interface WebToolsWebRoute {
   handler: (req: WebToolsHttpRequest, res: WebToolsHttpResponse) => void | Promise<void>;
 }
 
+/** Upgrade route for WebSockets (mirror of host-webserver WebUpgradeRoute). */
+export interface WebToolsUpgradeRoute {
+  path: string;
+  handler: (req: any, socket: any, head: Buffer | Uint8Array) => void | Promise<void>;
+}
+
 /** The webServer service face this plugin uses. */
 export interface WebToolsWebServer {
   register(route: WebToolsWebRoute): () => void;
+  registerUpgrade?(route: WebToolsUpgradeRoute): () => void;
+  readonly port?: number;
+  readonly host?: string;
 }
 
 /** The web runtime face (trusted hosts list for the browser fence). */

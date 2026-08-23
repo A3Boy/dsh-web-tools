@@ -29,6 +29,9 @@ import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages }
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 
+import { defaultSourceRegistry } from "./sources/registry.ts";
+import { defaultBridgeServer } from "./sources/bridge-server.ts";
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
@@ -168,13 +171,34 @@ export function apply(ctx: WebToolsContext) {
   // ONE shared health store so search + fetch respect the same cooldowns.
   const healthStore = createProviderHealthStore();
 
-  const provider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
+  const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore);
-  ctx.web.registerSearchProvider(provider as never);
 
-  const fetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
-  ctx.web.registerFetchProvider(fetchProvider as never);
+  // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
+  const routedSearchProvider = {
+    id: PROVIDER_ID,
+    available: () => generalSearchProvider.available(),
+    search: (request: { query: string; maxResults?: number }, signal?: AbortSignal) =>
+      defaultSourceRegistry.routeSearch(request, generalSearchProvider, signal),
+  };
+  ctx.web.registerSearchProvider(routedSearchProvider as never);
+
+  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
+
+  // Wrap fetch provider with SpecializedSourceRouter
+  const routedFetchProvider = {
+    id: PROVIDER_ID,
+    available: () => generalFetchProvider.available(),
+    fetch: (request: { url: string }, signal?: AbortSignal) =>
+      defaultSourceRegistry.routeFetch(request.url, generalFetchProvider, signal),
+  };
+  ctx.web.registerFetchProvider(routedFetchProvider as never);
+
+  // Register WebSocket upgrade route for Browser Bridge if supported by host webServer
+  if (typeof ctx.webServer.registerUpgrade === "function") {
+    defaultBridgeServer.registerUpgradeRoute(ctx.webServer);
+  }
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
@@ -234,7 +258,7 @@ export function apply(ctx: WebToolsContext) {
   async function testFullSearch(query: string) {
     const started = Date.now();
     try {
-      const result = await provider.search(
+      const result = await routedSearchProvider.search(
         { query, maxResults: 5 },
         undefined, // no caller signal for a manual card test
       );
@@ -356,12 +380,12 @@ export function apply(ctx: WebToolsContext) {
   // OFFICIAL @deepseek-ai/dsh-llm createUserMessage ({ content, source }):
   // required = durable snapshot section, correction = one-shot notice.
   const searchModeMessages = createSearchModeMessages((input) => createUserMessage(input as never));
-  const searchModeRuntime = new SearchModeRuntime(() => provider.available());
+  const searchModeRuntime = new SearchModeRuntime(() => routedSearchProvider.available());
   ctx.effect(
     () =>
       installSearchModeRuntime(
         ctx,
-        { searchAvailable: () => provider.available() },
+        { searchAvailable: () => routedSearchProvider.available() },
         searchModeRuntime,
         searchModeMessages,
       ),

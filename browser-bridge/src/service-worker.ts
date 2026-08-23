@@ -5,11 +5,11 @@
  * and handles dispatch for platform search and fetch.
  */
 
-import type { BridgeHostMessage, BridgeExtensionMessage, ExtensionResultMessage, ExtensionErrorMessage } from "./protocol.ts";
-import { TabLeaseManager } from "./tab-lease.ts";
-import { BrowserAuthManager } from "./auth.ts";
-import { parseXhsSearchDom, parseXhsNoteDetailDom } from "./sites/xiaohongshu.ts";
-import { buildXSearchUrl, parseXTweetDom } from "./sites/x.ts";
+import type { BridgeHostMessage, BridgeExtensionMessage, ExtensionResultMessage, ExtensionErrorMessage } from "./protocol.js";
+import { TabLeaseManager } from "./tab-lease.js";
+import { BrowserAuthManager } from "./auth.js";
+import { parseXhsSearchDom, parseXhsNoteDetailDom } from "./sites/xiaohongshu.js";
+import { buildXSearchUrl, parseXTweetDom } from "./sites/x.js";
 
 let ws: WebSocket | null = null;
 let keepAliveTimer: ReturnType<typeof setInterval> | null = null;

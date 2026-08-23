@@ -11,6 +11,8 @@
  */
 import type { BridgeRequest } from "./bridge-protocol.ts";
 import type { SourceAccountInfo, SpecializedPlatformId } from "./types.ts";
+import type { WebToolsWebServer } from "../context-types.ts";
+export declare const BRIDGE_WS_PATH = "/web-tools/bridge/ws";
 export interface PairingTicket {
     ticket: string;
     expiresAt: number;
@@ -44,6 +46,10 @@ export declare class BridgeHostServer {
         success: boolean;
         newBridgeKey?: string;
     };
+    /**
+     * Register WebSocket Upgrade route on DSH webServer.
+     */
+    registerUpgradeRoute(webServer: WebToolsWebServer): void;
     /**
      * Register active connection
      */

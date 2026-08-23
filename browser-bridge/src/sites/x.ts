@@ -10,7 +10,17 @@
  * @module
  */
 
-import type { SearchHints } from "../../src/host/search-hints.ts";
+export interface XHintsLike {
+  topic?: string;
+  freshness?: {
+    after?: string;
+    before?: string;
+  };
+  locale?: {
+    language?: string;
+    country?: string;
+  };
+}
 
 export interface ParsedTweetItem {
   id: string;
@@ -54,7 +64,7 @@ export function parseXMetricNumber(raw: string | undefined): number | undefined 
 /**
  * Build an optimized x.com search URL using native operators and SearchHints.
  */
-export function buildXSearchUrl(query: string, options?: XSearchOptions, hints?: Readonly<SearchHints>): string {
+export function buildXSearchUrl(query: string, options?: XSearchOptions, hints?: Readonly<XHintsLike>): string {
   const parts: string[] = [query.trim()];
 
   if (options?.fromUser) {
