@@ -521,6 +521,11 @@ export function WebToolsSection(props: SectionProps) {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
   };
+  const togglePlatform = (name: "xiaohongshu" | "x", enabled: boolean) => {
+    const current = config.platformEnabled ?? { xiaohongshu: true, x: true };
+    const platformEnabled = { ...current, [name]: enabled };
+    void save({ platformEnabled });
+  };
   const setBaseUrl = (name: string, baseUrl: string) => {
     const providerBaseUrls: Record<string, string> = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
     providerBaseUrls[name] = baseUrl;
@@ -727,34 +732,43 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xiaohongshuTitle")}
             subtitle={
-              platformState?.platforms?.xiaohongshu?.authenticated
-                ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
-                : platformState?.platforms?.xiaohongshu?.sessionEstablished
-                  ? t("platformSessionSaved")
-                  : t("platformNotLoggedIn")
+              (config.platformEnabled?.xiaohongshu ?? true) === false
+                ? t("platformDisabled")
+                : platformState?.platforms?.xiaohongshu?.authenticated
+                  ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
+                  : platformState?.platforms?.xiaohongshu?.sessionEstablished
+                    ? t("platformSessionSaved")
+                    : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {platformState?.platforms?.xiaohongshu?.authenticated ? (
-                  <>
-                    <StateDot state="done" size={6} />
+                {(config.platformEnabled?.xiaohongshu ?? true) && (
+                  platformState?.platforms?.xiaohongshu?.authenticated ? (
+                    <>
+                      <StateDot state="done" size={6} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void resetPlatformSession("xiaohongshu")}
+                      >
+                        {t("clearSessionButton")}
+                      </Button>
+                    </>
+                  ) : (
                     <Button
                       size="sm"
-                      variant="ghost"
-                      onClick={() => void resetPlatformSession("xiaohongshu")}
+                      variant="outline"
+                      onClick={() => void loginPlatform("xiaohongshu")}
                     >
-                      {t("clearSessionButton")}
+                      {t("loginButton")}
                     </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void loginPlatform("xiaohongshu")}
-                  >
-                    {t("loginButton")}
-                  </Button>
+                  )
                 )}
+                <Switch
+                  checked={config.platformEnabled?.xiaohongshu ?? true}
+                  onChange={(v) => togglePlatform("xiaohongshu", v)}
+                  label={t("xiaohongshuTitle")}
+                />
               </div>
             }
           />
@@ -768,34 +782,43 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xTitle")}
             subtitle={
-              platformState?.platforms?.x?.authenticated
-                ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
-                : platformState?.platforms?.x?.sessionEstablished
-                  ? t("platformSessionSaved")
-                  : t("platformNotLoggedIn")
+              (config.platformEnabled?.x ?? true) === false
+                ? t("platformDisabled")
+                : platformState?.platforms?.x?.authenticated
+                  ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
+                  : platformState?.platforms?.x?.sessionEstablished
+                    ? t("platformSessionSaved")
+                    : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {platformState?.platforms?.x?.authenticated ? (
-                  <>
-                    <StateDot state="done" size={6} />
+                {(config.platformEnabled?.x ?? true) && (
+                  platformState?.platforms?.x?.authenticated ? (
+                    <>
+                      <StateDot state="done" size={6} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void resetPlatformSession("x")}
+                      >
+                        {t("clearSessionButton")}
+                      </Button>
+                    </>
+                  ) : (
                     <Button
                       size="sm"
-                      variant="ghost"
-                      onClick={() => void resetPlatformSession("x")}
+                      variant="outline"
+                      onClick={() => void loginPlatform("x")}
                     >
-                      {t("clearSessionButton")}
+                      {t("loginButton")}
                     </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void loginPlatform("x")}
-                  >
-                    {t("loginButton")}
-                  </Button>
+                  )
                 )}
+                <Switch
+                  checked={config.platformEnabled?.x ?? true}
+                  onChange={(v) => togglePlatform("x", v)}
+                  label={t("xTitle")}
+                />
               </div>
             }
             isLast

@@ -205,6 +205,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const enabledMap = (cfg.providerEnabled as Record<string, boolean>) ?? {};
   const baseUrls = (cfg.providerBaseUrls as Record<string, string>) ?? {};
   const providerOpts = (cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {};
+  const platformEnabled = (cfg.platformEnabled as Record<string, boolean>) ?? { xiaohongshu: true, x: true };
 
   const providers: ProviderView[] = [];
   for (const meta of PROVIDER_LIST) {
@@ -238,6 +239,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
+    platformEnabled,
     providers,
   };
 }
@@ -251,6 +253,10 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
+  if (p.platformEnabled && typeof p.platformEnabled === "object") {
+    patch.platformEnabled = p.platformEnabled;
+    defaultSourceRegistry.setPlatformEnabled(p.platformEnabled as Record<string, boolean>);
+  }
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };

@@ -156,3 +156,47 @@ test("P7.0 SpecializedSourceRegistry: routes non-platform query directly to gene
   assert.equal(outcome.retrievalMode, "general-web");
   assert.equal(outcome.items[0].title, "DeepSeek");
 });
+
+test("SpecializedSourceRegistry: platformEnabled toggle disables platform routing and falls back to general search", async () => {
+  const registry = new SpecializedSourceRegistry();
+  let nativeCalled = false;
+  const mockXhs: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => {
+      nativeCalled = true;
+      return { items: [] };
+    },
+    fetch: async () => ({ item: undefined }),
+  };
+
+  let fallbackQuery = "";
+  const mockFallbackSearch: any = {
+    search: async (req: any) => {
+      fallbackQuery = req.query;
+      return { sources: [{ title: "Fallback Note", url: "https://fallback.com/note", snippet: "Fallback" }] };
+    },
+  };
+
+  registry.registerSource(mockXhs);
+  registry.setFallbackProviders(mockFallbackSearch, undefined);
+
+  // Disable xiaohongshu platform
+  registry.setPlatformEnabled({ xiaohongshu: false });
+
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
+
+  assert.equal(nativeCalled, false, "Native source should NOT be called when platform is disabled");
+  assert.equal(fallbackQuery, "site:xiaohongshu.com 探店");
+  assert.equal(outcome.retrievalMode, "degraded-web");
+});

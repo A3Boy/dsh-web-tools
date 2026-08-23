@@ -14,9 +14,18 @@ export class SpecializedSourceRegistry {
   private sources = new Map<SpecializedPlatformId, SpecializedSource>();
   private fallbackSearchProvider?: WebSearchProviderLike;
   private fallbackFetchProvider?: WebFetchProviderLike;
+  private platformEnabled: Record<string, boolean> = { xiaohongshu: true, x: true };
 
   registerSource(source: SpecializedSource): void {
     this.sources.set(source.id, source);
+  }
+
+  setPlatformEnabled(enabledMap: Record<string, boolean>): void {
+    this.platformEnabled = { ...this.platformEnabled, ...enabledMap };
+  }
+
+  isPlatformEnabled(platform: SpecializedPlatformId): boolean {
+    return this.platformEnabled[platform] !== false;
   }
 
   unregisterSource(id: SpecializedPlatformId): void {
@@ -40,12 +49,15 @@ export class SpecializedSourceRegistry {
     for (const source of this.sources.values()) {
       try {
         const s = await source.status();
-        statuses.push(s);
+        statuses.push({
+          ...s,
+          enabled: this.isPlatformEnabled(source.id),
+        });
       } catch (err: any) {
         statuses.push({
           id: source.id,
           name: source.name,
-          enabled: false,
+          enabled: this.isPlatformEnabled(source.id),
           runtimeAvailable: false,
           runtimeState: "error",
           authenticated: false,
@@ -87,7 +99,7 @@ export class SpecializedSourceRegistry {
     }
 
     const source = this.sources.get(platform);
-    if (!source) {
+    if (!source || !this.isPlatformEnabled(platform)) {
       return fallbackSearchToGeneralWeb(
         query,
         platform,
@@ -143,7 +155,7 @@ export class SpecializedSourceRegistry {
     }
 
     const source = this.sources.get(targetPlatform);
-    if (!source) {
+    if (!source || !this.isPlatformEnabled(targetPlatform)) {
       return fallbackFetchToGeneralWeb(url, this.fallbackFetchProvider, signal);
     }
 

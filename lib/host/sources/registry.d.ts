@@ -4,7 +4,10 @@ export declare class SpecializedSourceRegistry {
     private sources;
     private fallbackSearchProvider?;
     private fallbackFetchProvider?;
+    private platformEnabled;
     registerSource(source: SpecializedSource): void;
+    setPlatformEnabled(enabledMap: Record<string, boolean>): void;
+    isPlatformEnabled(platform: SpecializedPlatformId): boolean;
     unregisterSource(id: SpecializedPlatformId): void;
     getSource(id: SpecializedPlatformId): SpecializedSource | undefined;
     setFallbackProviders(search?: WebSearchProviderLike, fetch?: WebFetchProviderLike): void;

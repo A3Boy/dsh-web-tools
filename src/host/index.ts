@@ -182,6 +182,14 @@ export function apply(ctx: WebToolsContext) {
 
   defaultSourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
+  // Sync platformEnabled from config on boot and live updates
+  configHandle.onMounted(() => {
+    const cfg = readConfig();
+    if (cfg.platformEnabled) {
+      defaultSourceRegistry.setPlatformEnabled(cfg.platformEnabled);
+    }
+  });
+
   // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
   const routedSearchProvider = {
     id: PROVIDER_ID,
