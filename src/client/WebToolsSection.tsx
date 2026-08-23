@@ -609,7 +609,25 @@ export function WebToolsSection(props: SectionProps) {
                 </svg>
               </div>
             }
-            title={t("routingLabel")}
+            title={
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span>{t("routingLabel")}</span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    padding: "2px 7px",
+                    borderRadius: 4,
+                    background: surface.layer2,
+                    color: text.secondary,
+                    border: `1px solid ${surface.border}`,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {t(`routingPolicy.${config.searchRoutingPolicy ?? "ordered"}`)}
+                </span>
+              </div>
+            }
             subtitle={
               <span>
                 {(() => {
