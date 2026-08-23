@@ -56,22 +56,25 @@ export declare const api: {
         defaultProvider: string;
         fallbackOrder: string[];
     }>;
-    bridgeStatus: () => Promise<{
-        connected: boolean;
+    platformStatus: () => Promise<{
         platforms: Record<string, {
+            id: string;
+            name: string;
             enabled: boolean;
+            runtimeAvailable: boolean;
+            runtimeState: string;
             authenticated: boolean;
-            bridgeConnected: boolean;
             account?: any;
             lastError?: string;
         }>;
     }>;
-    bridgeBootstrap: () => Promise<{
-        ticket: string;
-        expiresAt: number;
-    }>;
-    bridgeConnectAuth: (platform: string) => Promise<{
+    platformLogin: (platform: "xiaohongshu" | "x") => Promise<{
         status: string;
-        url?: string;
+    }>;
+    platformStop: (platform: "xiaohongshu" | "x") => Promise<{
+        ok: boolean;
+    }>;
+    platformReset: (platform: "xiaohongshu" | "x") => Promise<{
+        ok: boolean;
     }>;
 };

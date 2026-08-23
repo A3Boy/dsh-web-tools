@@ -423,6 +423,17 @@ export function WebToolsSection(props: SectionProps) {
     }
   }, [config?.providerAttemptTimeoutMs]);
 
+  const [platformState, setPlatformState] = useState<{ platforms: Record<string, any> } | null>(null);
+
+  const loadPlatformStatus = async () => {
+    try {
+      const p = await api.platformStatus();
+      if (mounted.current) setPlatformState(p);
+    } catch {
+      // Non-blocking
+    }
+  };
+
   const load = async () => {
     const token = ++loadToken.current;
     try {
@@ -434,12 +445,7 @@ export function WebToolsSection(props: SectionProps) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
     }
 
-    try {
-      const b = await api.bridgeStatus();
-      if (token === loadToken.current) setBridgeState(b);
-    } catch {
-      // Non-blocking bridge status
-    }
+    await loadPlatformStatus();
   };
 
   const loadQuotas = async (force = false) => {
@@ -457,10 +463,10 @@ export function WebToolsSection(props: SectionProps) {
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
 
-    // Poll bridge/platforms status periodically so login in browser reflects automatically
+    // Poll platforms status periodically so login in browser reflects automatically
     const timer = setInterval(() => {
-      api.bridgeStatus().then(setBridgeState).catch(() => {});
-    }, 2500);
+      void loadPlatformStatus();
+    }, 2000);
 
     return () => {
       clearInterval(timer);
@@ -493,50 +499,22 @@ export function WebToolsSection(props: SectionProps) {
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
 
-  // Pair extension using Promise-based window.postMessage with pairing relay ACK
-  const pairExtension = (ticket: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        window.removeEventListener("message", onMessage);
-        resolve(false);
-      }, 5000);
-
-      const onMessage = (event: MessageEvent) => {
-        if (event.source !== window || event.origin !== window.location.origin) return;
-        const data = event.data;
-        if (data && data.type === "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK") {
-          clearTimeout(timer);
-          window.removeEventListener("message", onMessage);
-          resolve(Boolean(data.ok && data.res?.ok !== false));
-        }
-      };
-
-      window.addEventListener("message", onMessage);
-      window.postMessage({
-        type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
-        ticket,
-        port: window.location.port ? Number(window.location.port) : 3080,
-      }, window.location.origin);
-    });
+  // Dedicated Browser Profile Login
+  const loginPlatform = async (platform: "xiaohongshu" | "x") => {
+    try {
+      await api.platformLogin(platform);
+      await loadPlatformStatus();
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
-  // Trigger pairing relay with Extension and connect platform
-  const connectPlatform = async (platform: "xiaohongshu" | "x") => {
+  const resetPlatformSession = async (platform: "xiaohongshu" | "x") => {
     try {
-      const currentStatus = await api.bridgeStatus().catch(() => ({ connected: false, platforms: {} }));
-      if (!currentStatus.connected) {
-        // Issue pairing ticket
-        const { ticket } = await api.bridgeBootstrap();
-        // Wait for explicit pairing relay ACK
-        await pairExtension(ticket);
-      }
-
-      // Trigger official connect auth endpoint (extension handles opening login tab)
-      await api.bridgeConnectAuth(platform);
-    } catch {
-      // Fallback direct open if extension is entirely unavailable
-      const fallbackUrl = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
-      window.open(fallbackUrl, "_blank");
+      await api.platformReset(platform);
+      await loadPlatformStatus();
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
   const toggleProvider = (name: string, enabled: boolean) => {
@@ -739,17 +717,7 @@ export function WebToolsSection(props: SectionProps) {
 
       {/* 平台搜索源 (Platform Sources) */}
       <section>
-        <SettingsGroup
-          title={
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <span>{t("platformSourcesTitle")}</span>
-              <span style={{ fontSize: 12, fontWeight: "normal", color: bridgeState?.connected ? stateColor.success : text.tertiary, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                {bridgeState?.connected ? <StateDot state="done" size={6} /> : <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />}
-                {bridgeState?.connected ? t("bridgeStatusConnected") : t("bridgeStatusDisconnected")}
-              </span>
-            </div>
-          }
-        >
+        <SettingsGroup title={t("platformSourcesTitle")}>
           {/* Xiaohongshu Row */}
           <SettingsRow
             icon={
@@ -759,21 +727,28 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xiaohongshuTitle")}
             subtitle={
-              bridgeState?.platforms?.xiaohongshu?.authenticated
-                ? `${t("platformAccountPrefix")}${bridgeState.platforms.xiaohongshu.account?.accountLabel ?? t("platformConnected")}`
-                : undefined
+              platformState?.platforms?.xiaohongshu?.authenticated
+                ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
+                : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {bridgeState?.platforms?.xiaohongshu?.authenticated ? (
-                  <StateDot state="done" size={6} />
+                {platformState?.platforms?.xiaohongshu?.authenticated ? (
+                  <>
+                    <StateDot state="done" size={6} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void resetPlatformSession("xiaohongshu")}
+                    >
+                      {t("clearSessionButton")}
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      void connectPlatform("xiaohongshu");
-                    }}
+                    onClick={() => void loginPlatform("xiaohongshu")}
                   >
                     {t("loginButton")}
                   </Button>
@@ -791,21 +766,28 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xTitle")}
             subtitle={
-              bridgeState?.platforms?.x?.authenticated
-                ? `${t("platformAccountPrefix")}${bridgeState.platforms.x.account?.accountLabel ?? t("platformConnected")}`
-                : undefined
+              platformState?.platforms?.x?.authenticated
+                ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
+                : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {bridgeState?.platforms?.x?.authenticated ? (
-                  <StateDot state="done" size={6} />
+                {platformState?.platforms?.x?.authenticated ? (
+                  <>
+                    <StateDot state="done" size={6} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void resetPlatformSession("x")}
+                    >
+                      {t("clearSessionButton")}
+                    </Button>
+                  </>
                 ) : (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => {
-                      void connectPlatform("x");
-                    }}
+                    onClick={() => void loginPlatform("x")}
                   >
                     {t("loginButton")}
                   </Button>

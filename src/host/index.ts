@@ -30,7 +30,10 @@ import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 
 import { defaultSourceRegistry } from "./sources/registry.ts";
-import { defaultBridgeServer } from "./sources/bridge-server.ts";
+import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
+import { XSource } from "./sources/x.ts";
+import { createNativeBrowserRuntime } from "./browser/index.ts";
+import { extractSearchHints } from "./search-hints.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -175,51 +178,65 @@ export function apply(ctx: WebToolsContext) {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore);
 
+  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
+
+  defaultSourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
+
   // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
   const routedSearchProvider = {
     id: PROVIDER_ID,
     available: () => generalSearchProvider.available(),
-    search: (request: { query: string; maxResults?: number }, signal?: AbortSignal) =>
-      defaultSourceRegistry.routeSearch(request, generalSearchProvider, signal),
+    search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
+      const outcome = await defaultSourceRegistry.search(
+        request.query,
+        { maxResults: request.maxResults, hints: extractSearchHints(request.query) },
+        signal,
+      );
+      return {
+        sources: outcome.items.map((item) => ({
+          url: item.url,
+          title: item.title,
+          snippet: item.snippet,
+          publishedAt: item.publishedAt,
+        })),
+        truncated: false,
+      };
+    },
   };
   ctx.web.registerSearchProvider(routedSearchProvider as never);
-
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
 
   // Wrap fetch provider with SpecializedSourceRouter
   const routedFetchProvider = {
     id: PROVIDER_ID,
     available: () => generalFetchProvider.available(),
-    fetch: (request: { url: string }, signal?: AbortSignal) =>
-      defaultSourceRegistry.routeFetch(request.url, generalFetchProvider, signal),
+    fetch: async (request: { url: string }, signal?: AbortSignal) => {
+      const outcome = await defaultSourceRegistry.fetch(request.url, signal);
+      return {
+        url: request.url,
+        statusCode: 200,
+        body: { kind: "text" as const, content: outcome.item?.text || "" },
+        truncated: false,
+      };
+    },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
 
-  // Load and persist durable bridgeKey hash via credentials service BEFORE opening upgrade route
-  const BRIDGE_HASH_REF = "dsh-web-tools:bridge_key_hash";
-  defaultBridgeServer.setPersistHook(
-    (hash) => {
-      void writeCredential(ctx, BRIDGE_HASH_REF, hash);
-    },
-  );
-  void readCredential(ctx, BRIDGE_HASH_REF).then((persisted) => {
-    if (persisted.value) {
-      defaultBridgeServer.setPersistHook(
-        (hash) => {
-          void writeCredential(ctx, BRIDGE_HASH_REF, hash);
-        },
-        [persisted.value],
-      );
-    }
-  }).catch(() => {});
+  // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
+  const nativeRuntime = createNativeBrowserRuntime();
+  const xhsSource = new XiaohongshuSource(nativeRuntime);
+  const xSource = new XSource(nativeRuntime);
+  defaultSourceRegistry.registerSource(xhsSource);
+  defaultSourceRegistry.registerSource(xSource);
 
-  // Register WebSocket upgrade route for Browser Bridge if supported by host webServer
-  if (typeof ctx.webServer.registerUpgrade === "function") {
-    ctx.effect(
-      () => defaultBridgeServer.registerUpgradeRoute(ctx.webServer),
-      "dsh-web-tools: browser-bridge websocket",
-    );
-  }
+  // Hook NativeBrowserRuntime lifecycle into Cordis effect
+  ctx.effect(
+    () => {
+      return () => {
+        nativeRuntime.dispose().catch(() => {});
+      };
+    },
+    "dsh-web-tools: native browser runtime",
+  );
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
@@ -288,7 +305,7 @@ export function apply(ctx: WebToolsContext) {
         backend: (result as unknown as { backend?: string }).backend,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
-        results: result.sources.slice(0, 5).map((s) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
+        results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
         attempts: (result as unknown as { attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }> }).attempts,
       };
     } catch (e) {

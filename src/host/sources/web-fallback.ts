@@ -1,109 +1,104 @@
-/**
- * dsh-web-tools — Specialized Source Web Fallback.
- *
- * When native browser session is not connected, authenticated, or encounters
- * rate-limits/DOM shifts, seamlessly degrade to General Web Search via the existing
- * Provider Runtime using targeted domain constraints (site:xiaohongshu.com or site:x.com).
- *
- * @module
- */
-
-import type { SpecializedPlatformId, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
+import { extractSearchHints } from "../search-hints.ts";
+import type { SpecializedPlatformId, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
 import type { WebSearchProviderLike, WebFetchProviderLike } from "../registry.ts";
 
-/**
- * Format a fallback search query targeted to the specific platform.
- */
-export function buildFallbackQuery(platform: SpecializedPlatformId, query: string): string {
-  const cleanQ = query.trim();
+export function buildFallbackQuery(query: string, platform: SpecializedPlatformId): string {
+  const hints = extractSearchHints(query);
+  const clean = hints.cleanQuery || query;
+
   if (platform === "xiaohongshu") {
-    // If the query already has site:xiaohongshu.com, keep it
-    if (/site:xiaohongshu\.com/i.test(cleanQ)) return cleanQ;
-    return `site:xiaohongshu.com ${cleanQ}`;
-  } else if (platform === "x") {
-    if (/site:(?:x\.com|twitter\.com)/i.test(cleanQ)) return cleanQ;
-    return `(site:x.com OR site:twitter.com) ${cleanQ}`;
+    return `site:xiaohongshu.com ${clean}`;
   }
-  return cleanQ;
+
+  if (platform === "x") {
+    return `(site:x.com OR site:twitter.com) ${clean}`;
+  }
+
+  return clean;
 }
 
-/**
- * Execute degraded web fallback for a platform search using the general web search provider.
- */
 export async function fallbackSearchToGeneralWeb(
+  query: string,
   platform: SpecializedPlatformId,
-  request: SourceSearchRequest,
-  generalSearch: WebSearchProviderLike,
+  generalSearch?: WebSearchProviderLike,
+  maxResults?: number,
   signal?: AbortSignal,
 ): Promise<SourceSearchOutcome> {
-  const start = Date.now();
-  const fallbackQuery = buildFallbackQuery(platform, request.query);
-
-  try {
-    const outcome = await generalSearch.search({
-      query: fallbackQuery,
-      maxResults: request.maxResults,
-    }, signal);
-
-    // Append evidence notice that this is a degraded web index fallback
-    const sources = (outcome.sources ?? []).map((s) => ({
-      ...s,
-      snippet: s.snippet ? `[Web-index fallback; not native platform search] ${s.snippet}` : undefined,
-    }));
-
+  if (!generalSearch) {
     return {
-      id: platform,
-      mode: "degraded-web",
-      sources,
-      latencyMs: Date.now() - start,
-      diagnostics: {
-        degraded: true,
-        fallbackQuery,
+      items: [],
+      error: {
+        code: "runtime-unavailable",
+        message: `Platform source ${platform} is unavailable and no general search provider is configured`,
+        retryable: false,
       },
+      retrievalMode: "degraded-web",
     };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+  }
+
+  const fallbackQuery = buildFallbackQuery(query, platform);
+  try {
+    const rawResults = await generalSearch.search({ query: fallbackQuery, maxResults }, signal);
+    const items = (rawResults.sources || []).map((r, idx) => ({
+      id: r.url || String(idx),
+      title: r.title || r.url,
+      url: r.url,
+      snippet: r.snippet,
+      platform,
+    }));
     return {
-      id: platform,
-      mode: "degraded-web",
-      sources: [],
-      latencyMs: Date.now() - start,
-      error: errorMsg,
-      diagnostics: {
-        degraded: true,
-        fallbackQuery,
+      items,
+      retrievalMode: "degraded-web",
+    };
+  } catch (err: any) {
+    return {
+      items: [],
+      error: {
+        code: "network",
+        message: err?.message || "General web search fallback failed",
+        retryable: true,
       },
+      retrievalMode: "degraded-web",
     };
   }
 }
 
-/**
- * Execute degraded web fallback for a platform fetch using the general web fetch provider.
- */
 export async function fallbackFetchToGeneralWeb(
-  platform: SpecializedPlatformId,
   url: string,
-  generalFetch: WebFetchProviderLike,
+  generalFetch?: WebFetchProviderLike,
   signal?: AbortSignal,
 ): Promise<SourceFetchOutcome> {
-  const start = Date.now();
-  try {
-    const outcome = await generalFetch.fetch({ url }, signal);
+  if (!generalFetch) {
     return {
-      id: platform,
-      mode: "degraded-web",
-      url,
-      text: outcome.body?.content,
-      latencyMs: Date.now() - start,
+      error: {
+        code: "runtime-unavailable",
+        message: "Platform fetch failed and no general fetch provider is configured",
+        retryable: false,
+      },
+      retrievalMode: "degraded-web",
     };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+  }
+
+  try {
+    const res = await generalFetch.fetch({ url }, signal);
     return {
-      id: platform,
-      mode: "degraded-web",
-      url,
-      latencyMs: Date.now() - start,
-      error: errorMsg,
+      item: {
+        id: url,
+        title: "Web Page",
+        url,
+        text: res.body?.content || "",
+        platform: "general",
+      },
+      retrievalMode: "degraded-web",
+    };
+  } catch (err: any) {
+    return {
+      error: {
+        code: "network",
+        message: err?.message || "General web fetch fallback failed",
+        retryable: true,
+      },
+      retrievalMode: "degraded-web",
     };
   }
 }

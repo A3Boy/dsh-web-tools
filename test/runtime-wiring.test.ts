@@ -63,31 +63,48 @@ test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async
 
   assert.ok(registeredSearchProvider, "Search provider must be registered on ctx.web");
   assert.ok(registeredFetchProvider, "Fetch provider must be registered on ctx.web");
-  assert.ok(registeredUpgradeRoute, "Upgrade route must be registered on webServer");
-  assert.equal(registeredUpgradeRoute.path, "/web-tools/bridge/ws");
 
   // Verify that registered search provider routes XHS query to SpecializedSource
   let xhsHandled = false;
   const mockXhs: SpecializedSource = {
     id: "xiaohongshu",
-    async probe(): Promise<SourceStatus> {
-      return { id: "xiaohongshu", enabled: true, bridgeConnected: true, authenticated: true };
+    name: "小红书",
+    async status(): Promise<SourceStatus> {
+      return {
+        id: "xiaohongshu",
+        name: "小红书",
+        enabled: true,
+        runtimeAvailable: true,
+        runtimeState: "ready",
+        authenticated: true,
+      };
     },
     async search(): Promise<SourceSearchOutcome> {
       xhsHandled = true;
       return {
-        id: "xiaohongshu",
-        mode: "native-browser",
-        sources: [{ url: "https://www.xiaohongshu.com/explore/12345?xsec_token=ABC", title: "Wiring Success" }],
-        latencyMs: 50,
+        items: [
+          {
+            id: "12345",
+            platform: "xiaohongshu",
+            url: "https://www.xiaohongshu.com/explore/12345?xsec_token=ABC",
+            title: "Wiring Success",
+          },
+        ],
       };
     },
     async fetch(): Promise<SourceFetchOutcome> {
-      return { id: "xiaohongshu", mode: "native-browser", url: "https://www.xiaohongshu.com/explore/12345", latencyMs: 50 };
+      return {
+        item: {
+          id: "12345",
+          platform: "xiaohongshu",
+          url: "https://www.xiaohongshu.com/explore/12345",
+          title: "Wiring Success",
+        },
+      };
     },
   };
 
-  defaultSourceRegistry.register(mockXhs);
+  defaultSourceRegistry.registerSource(mockXhs);
 
   const res = await registeredSearchProvider.search({ query: "小红书上最好的相机推荐" });
   assert.equal(xhsHandled, true, "Routed search provider on ctx.web must dispatch to XiaohongshuSource");

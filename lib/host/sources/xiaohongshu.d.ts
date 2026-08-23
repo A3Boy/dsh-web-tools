@@ -1,22 +1,11 @@
-/**
- * dsh-web-tools — Xiaohongshu Specialized Platform Source Adapter.
- *
- * Implements `SpecializedSource` on Host:
- * - Probes authenticated status via Browser Bridge.
- * - Dispatches DOM search via `BridgeClient`.
- * - Fetches structured note content preserving `xsec_token`.
- *
- * @module
- */
-import type { SpecializedSource, SpecializedPlatformId, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
-import { BridgeClient } from "./bridge-client.ts";
+import { type NativeBrowserRuntime } from "../browser/index.ts";
+import type { SpecializedSource, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
 export declare class XiaohongshuSource implements SpecializedSource {
-    readonly id: SpecializedPlatformId;
-    private bridgeClient;
-    constructor(bridgeClient?: BridgeClient);
-    probe(): Promise<SourceStatus>;
-    search(request: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
+    readonly id: "xiaohongshu";
+    readonly name = "\u5C0F\u7EA2\u4E66";
+    private runtime;
+    constructor(runtime?: NativeBrowserRuntime);
+    status(): Promise<SourceStatus>;
+    search(query: string, req?: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
     fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome>;
 }
-/** Default Xiaohongshu Source instance */
-export declare const defaultXiaohongshuSource: XiaohongshuSource;

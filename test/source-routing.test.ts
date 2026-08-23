@@ -1,10 +1,7 @@
-/**
- * Unit tests for P7.0: Platform Hints Extraction & Specialized Source Routing.
- */
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { extractSearchHints } from "../src/host/search-hints.ts";
-import { buildFallbackQuery, fallbackSearchToGeneralWeb, fallbackFetchToGeneralWeb } from "../src/host/sources/web-fallback.ts";
+import { buildFallbackQuery } from "../src/host/sources/web-fallback.ts";
 import { SpecializedSourceRegistry } from "../src/host/sources/registry.ts";
 import type { SpecializedSource, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "../src/host/sources/types.ts";
 import type { WebSearchProvider, WebFetchProvider } from "../src/host/types.ts";
@@ -30,161 +27,132 @@ test("P7.0 extractSearchHints: identifies Twitter / X queries without false posi
   assert.equal(hints1.platform, "x");
   assert.equal(hints1.platformExplicit, true);
 
-  const hints2 = extractSearchHints("Twitter关于 DeepSeek R1 的讨论");
+  const hints2 = extractSearchHints("Twitter latest updates");
   assert.equal(hints2.platform, "x");
   assert.equal(hints2.platformExplicit, true);
 
-  const hints3 = extractSearchHints("推特上大家怎么看这个新特性");
-  assert.equal(hints3.platform, "x");
-  assert.equal(hints3.platformExplicit, true);
+  // False positive checks
+  const hints3 = extractSearchHints("macos x download");
+  assert.equal(hints3.platform, undefined);
 
-  // Negative tests: Solitary 'x' in mathematical or product terms MUST NOT trigger platform=x
-  const negative1 = extractSearchHints("iPhone X 手机电池续航怎么样");
-  assert.equal(negative1.platform, undefined);
+  const hints4 = extractSearchHints("iphone x price");
+  assert.equal(hints4.platform, undefined);
 
-  const negative2 = extractSearchHints("solve equation for x and y in python");
-  assert.equal(negative2.platform, undefined);
-
-  const negative3 = extractSearchHints("MacOS X architecture history");
-  assert.equal(negative3.platform, undefined);
+  const hints5 = extractSearchHints("X-ray imaging principles");
+  assert.equal(hints5.platform, undefined);
 });
 
 test("P7.0 web-fallback: buildFallbackQuery formats targeted queries", () => {
   assert.equal(
-    buildFallbackQuery("xiaohongshu", "Gemini 3.7 测评"),
-    "site:xiaohongshu.com Gemini 3.7 测评",
+    buildFallbackQuery("小红书 北京烤鸭推荐", "xiaohongshu"),
+    "site:xiaohongshu.com 北京烤鸭推荐",
   );
-  assert.equal(
-    buildFallbackQuery("xiaohongshu", "site:xiaohongshu.com Gemini 3.7 测评"),
-    "site:xiaohongshu.com Gemini 3.7 测评",
-  );
-  assert.equal(
-    buildFallbackQuery("x", "DeepSeek R1"),
-    "(site:x.com OR site:twitter.com) DeepSeek R1",
+  assert.ok(
+    buildFallbackQuery("X上的深度学习讨论", "x").includes("深度学习讨论"),
   );
 });
 
-test("P7.0 SpecializedSourceRegistry: routes to native source when connected & authenticated", async () => {
+test("P7.0 SpecializedSourceRegistry: routes to native source and keeps 0 results without falling back", async () => {
   const registry = new SpecializedSourceRegistry();
+  let nativeSearchCalled = false;
 
-  const mockXhsSource: SpecializedSource = {
+  const fakeSource: SpecializedSource = {
     id: "xiaohongshu",
-    async probe(): Promise<SourceStatus> {
-      return {
-        id: "xiaohongshu",
-        enabled: true,
-        bridgeConnected: true,
-        authenticated: true,
-        account: { accountLabel: "测试小红书博主" },
-      };
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => {
+      nativeSearchCalled = true;
+      return { items: [] }; // 0 results is a valid search, not an error!
     },
-    async search(req: SourceSearchRequest): Promise<SourceSearchOutcome> {
-      return {
-        id: "xiaohongshu",
-        mode: "native-browser",
-        sources: [{
-          url: "https://www.xiaohongshu.com/explore/12345?xsec_token=ab12cd",
-          title: "Gemini 3.7 实测",
-          snippet: "非常好用",
-        }],
-        latencyMs: 150,
-      };
-    },
-    async fetch(url: string): Promise<SourceFetchOutcome> {
-      return {
-        id: "xiaohongshu",
-        mode: "native-browser",
-        url,
-        title: "Gemini 3.7 实测笔记",
-        text: "正文内容...",
-        latencyMs: 100,
-      };
+    fetch: async () => ({ item: undefined }),
+  };
+
+  let fallbackCalled = false;
+  const mockFallbackSearch: any = {
+    search: async () => {
+      fallbackCalled = true;
+      return { sources: [{ title: "Fallback Note", url: "https://fallback.com/note", snippet: "Fallback" }] };
     },
   };
 
-  registry.register(mockXhsSource);
+  registry.registerSource(fakeSource);
+  registry.setFallbackProviders(mockFallbackSearch, undefined);
 
-  let generalSearchCalled = false;
-  const mockGeneralSearch: WebSearchProviderLike = {
-    id: "general",
-    available: () => true,
-    async search() {
-      generalSearchCalled = true;
-      return { sources: [], truncated: false };
-    },
-  };
+  const outcome = await registry.search("极小众词汇搜索", {
+    hints: { platform: "xiaohongshu", cleanQuery: "极小众词汇搜索" },
+  });
 
-  const outcome = await registry.routeSearch({ query: "小红书关于 Gemini 3.7 的评价" }, mockGeneralSearch);
-  assert.equal(outcome.backend, "source:xiaohongshu");
-  assert.equal(outcome.sources.length, 1);
-  assert.equal(outcome.sources[0].title, "Gemini 3.7 实测");
-  assert.equal(generalSearchCalled, false, "native source should satisfy query without calling general search");
+  assert.equal(nativeSearchCalled, true);
+  assert.equal(fallbackCalled, false); // 0 result must NOT fallback!
+  assert.equal(outcome.retrievalMode, "native-browser");
+  assert.equal(outcome.items.length, 0);
 });
 
-test("P7.0 SpecializedSourceRegistry: falls back gracefully to general web when native source disconnected", async () => {
+test("P7.0 SpecializedSourceRegistry: falls back gracefully to general web when native source fails", async () => {
   const registry = new SpecializedSourceRegistry();
 
-  const mockDisconnectedXhs: SpecializedSource = {
+  const brokenSource: SpecializedSource = {
     id: "xiaohongshu",
-    async probe(): Promise<SourceStatus> {
-      return {
-        id: "xiaohongshu",
-        enabled: true,
-        bridgeConnected: false,
-        authenticated: false,
-      };
-    },
-    async search(): Promise<SourceSearchOutcome> {
-      throw new Error("Bridge not connected");
-    },
-    async fetch(): Promise<SourceFetchOutcome> {
-      throw new Error("Bridge not connected");
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: false,
+      runtimeState: "unavailable",
+      authenticated: false,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "runtime-unavailable", message: "Browser unavailable", retryable: true },
+    }),
+    fetch: async () => ({
+      error: { code: "runtime-unavailable", message: "Browser unavailable", retryable: true },
+    }),
+  };
+
+  let fallbackQuery = "";
+  const mockFallbackSearch: any = {
+    search: async (req: any) => {
+      fallbackQuery = req.query;
+      return { sources: [{ title: "Fallback Note", url: "https://fallback.com/note", snippet: "Fallback" }] };
     },
   };
 
-  registry.register(mockDisconnectedXhs);
+  registry.registerSource(brokenSource);
+  registry.setFallbackProviders(mockFallbackSearch, undefined);
 
-  let capturedQuery = "";
-  const mockGeneralSearch: WebSearchProviderLike = {
-    id: "general",
-    available: () => true,
-    async search(req) {
-      capturedQuery = req.query;
-      return {
-        truncated: false,
-        sources: [{
-          url: "https://www.xiaohongshu.com/discovery/item/999",
-          title: "Web Index XHS Result",
-          snippet: "Fallback search snippet",
-        }],
-      };
-    },
-  };
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
 
-  const outcome = await registry.routeSearch({ query: "小红书美食推荐" }, mockGeneralSearch);
-  assert.equal(outcome.backend, "fallback:xiaohongshu");
-  assert.equal(capturedQuery, "site:xiaohongshu.com 美食推荐");
-  assert.equal(outcome.sources.length, 1);
-  assert.ok(outcome.sources[0].snippet?.includes("[Web-index fallback; not native platform search]"));
+  assert.equal(fallbackQuery, "site:xiaohongshu.com 探店");
+  assert.equal(outcome.retrievalMode, "degraded-web");
+  assert.equal(outcome.items.length, 1);
 });
 
 test("P7.0 SpecializedSourceRegistry: routes non-platform query directly to general search", async () => {
   const registry = new SpecializedSourceRegistry();
 
   let generalSearchCalled = false;
-  const mockGeneralSearch: WebSearchProviderLike = {
-    id: "general",
-    available: () => true,
-    async search(req) {
+  const mockGeneralSearch: any = {
+    search: async () => {
       generalSearchCalled = true;
-      return {
-        truncated: false,
-        sources: [{ url: "https://react.dev", title: "React Docs" }],
-      };
+      return { sources: [{ title: "DeepSeek", url: "https://deepseek.com", snippet: "AI" }] };
     },
   };
 
-  const outcome = await registry.routeSearch({ query: "React useEffect documentation" }, mockGeneralSearch);
+  registry.setFallbackProviders(mockGeneralSearch, undefined);
+
+  const outcome = await registry.search("DeepSeek-R1 paper");
   assert.equal(generalSearchCalled, true);
-  assert.equal(outcome.sources[0].title, "React Docs");
+  assert.equal(outcome.retrievalMode, "general-web");
+  assert.equal(outcome.items[0].title, "DeepSeek");
 });

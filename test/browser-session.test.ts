@@ -1,0 +1,53 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { ProfileStore } from "../src/host/browser/profile-store.ts";
+import { StateStore } from "../src/host/browser/state-store.ts";
+
+test("ProfileStore & StateStore: zero raw cookie storage and platform isolation", () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-browser-test-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  try {
+    const profileStore = new ProfileStore(tmpDir);
+    const xhsDir = profileStore.ensureProfileDir("xiaohongshu");
+    const xDir = profileStore.ensureProfileDir("x");
+
+    assert.ok(fs.existsSync(xhsDir));
+    assert.ok(fs.existsSync(xDir));
+    assert.notEqual(xhsDir, xDir);
+
+    const stateStore = new StateStore(tmpDir);
+    stateStore.saveState("xiaohongshu", {
+      pid: 99999,
+      port: 12345,
+      browserKind: "edge",
+      profileDir: xhsDir,
+      startedAt: 1000,
+    });
+
+    const loaded = stateStore.loadState("xiaohongshu");
+    assert.deepEqual(loaded, {
+      pid: 99999,
+      port: 12345,
+      browserKind: "edge",
+      profileDir: xhsDir,
+      startedAt: 1000,
+    });
+
+    // Zero cookie / credential fields in state
+    assert.equal((loaded as any).cookies, undefined);
+    assert.equal((loaded as any).auth_token, undefined);
+    assert.equal((loaded as any).web_session, undefined);
+
+    stateStore.clearState("xiaohongshu");
+    assert.equal(stateStore.loadState("xiaohongshu"), null);
+
+    profileStore.clearProfile("xiaohongshu");
+    assert.ok(!fs.existsSync(xhsDir));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

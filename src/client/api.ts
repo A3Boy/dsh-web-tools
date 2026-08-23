@@ -74,7 +74,12 @@ export const api = {
     call<Record<string, any>>("provider-options/batch", { providers }),
   routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
-  bridgeStatus: () => call<{ connected: boolean; platforms: Record<string, { enabled: boolean; authenticated: boolean; bridgeConnected: boolean; account?: any; lastError?: string }> }>("bridge/status"),
-  bridgeBootstrap: () => call<{ ticket: string; expiresAt: number }>("bridge/bootstrap"),
-  bridgeConnectAuth: (platform: string) => call<{ status: string; url?: string }>("bridge/connect-auth", { platform }),
+  platformStatus: () =>
+    call<{ platforms: Record<string, { id: string; name: string; enabled: boolean; runtimeAvailable: boolean; runtimeState: string; authenticated: boolean; account?: any; lastError?: string }> }>("platform/status"),
+  platformLogin: (platform: "xiaohongshu" | "x") =>
+    call<{ status: string }>("platform/login", { platform }),
+  platformStop: (platform: "xiaohongshu" | "x") =>
+    call<{ ok: boolean }>("platform/stop", { platform }),
+  platformReset: (platform: "xiaohongshu" | "x") =>
+    call<{ ok: boolean }>("platform/reset", { platform }),
 };

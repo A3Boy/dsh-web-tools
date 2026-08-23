@@ -19,10 +19,58 @@ import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutin
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
-import { defaultBridgeServer } from "./sources/bridge-server.ts";
 import { defaultSourceRegistry } from "./sources/registry.ts";
+import { createNativeBrowserRuntime } from "./browser/index.ts";
+import type { BrowserPlatform } from "./browser/types.ts";
 
-import { defaultBridgeClient } from "./sources/bridge-client.ts";
+const sharedNativeRuntime = createNativeBrowserRuntime();
+
+async function handlePlatformStatus(): Promise<{ platforms: Record<string, unknown> }> {
+  const statuses = await defaultSourceRegistry.getPlatformStatuses();
+  const platforms: Record<string, unknown> = {};
+  for (const s of statuses) {
+    platforms[s.id] = {
+      id: s.id,
+      name: s.name,
+      enabled: s.enabled,
+      runtimeAvailable: s.runtimeAvailable,
+      runtimeState: s.runtimeState,
+      authenticated: s.authenticated,
+      account: s.account,
+      lastError: s.lastError,
+      lastCheckedAt: s.lastCheckedAt,
+    };
+  }
+  return { platforms };
+}
+
+async function handlePlatformLogin(payload: unknown): Promise<{ status: string }> {
+  const platform = (payload as any)?.platform as BrowserPlatform;
+  if (platform === "xiaohongshu" || platform === "x") {
+    // Run login flow asynchronously, client polls status
+    sharedNativeRuntime.login(platform).catch(() => {});
+    return { status: "login-pending" };
+  }
+  return { status: "unknown_platform" };
+}
+
+async function handlePlatformStop(payload: unknown): Promise<{ ok: boolean }> {
+  const platform = (payload as any)?.platform as BrowserPlatform;
+  if (platform === "xiaohongshu" || platform === "x") {
+    await sharedNativeRuntime.stop(platform);
+    return { ok: true };
+  }
+  return { ok: false };
+}
+
+async function handlePlatformReset(payload: unknown): Promise<{ ok: boolean }> {
+  const platform = (payload as any)?.platform as BrowserPlatform;
+  if (platform === "xiaohongshu" || platform === "x") {
+    await sharedNativeRuntime.resetSession(platform);
+    return { ok: true };
+  }
+  return { ok: false };
+}
 
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export function keyIdOf(key: string): string {
@@ -405,40 +453,6 @@ async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
   return buildProviderOptionView(provider, undefined);
 }
 
-async function handleBridgeBootstrap(): Promise<{ ticket: string; expiresAt: number }> {
-  const ticket = defaultBridgeServer.issuePairingTicket();
-  return { ticket, expiresAt: Date.now() + 60000 };
-}
-
-async function handleBridgeConnectAuth(payload: unknown): Promise<{ status: string; url?: string }> {
-  const platform = (payload as any)?.platform;
-  if (platform === "xiaohongshu" || platform === "x") {
-    if (defaultBridgeServer.isConnected()) {
-      return defaultBridgeClient.connectAuth(platform);
-    }
-    // Fallback if bridge is not yet connected
-    const url = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
-    return { status: "login_opened", url };
-  }
-  return { status: "unknown_platform" };
-}
-
-async function handleBridgeStatus(): Promise<{ connected: boolean; platforms: Record<string, unknown> }> {
-  const connected = defaultBridgeServer.isConnected();
-  const statuses = await defaultSourceRegistry.probeAll();
-  const platforms: Record<string, unknown> = {};
-  for (const s of statuses) {
-    platforms[s.id] = {
-      enabled: s.enabled,
-      authenticated: s.authenticated,
-      bridgeConnected: s.bridgeConnected,
-      account: s.account,
-      lastError: s.lastError,
-    };
-  }
-  return { connected, platforms };
-}
-
 // ---------------------------------------------------------------------------
 // route registration
 // ---------------------------------------------------------------------------
@@ -460,9 +474,10 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
-  "bridge/bootstrap": () => handleBridgeBootstrap(),
-  "bridge/connect-auth": (_deps, payload) => handleBridgeConnectAuth(payload),
-  "bridge/status": () => handleBridgeStatus(),
+  "platform/status": () => handlePlatformStatus(),
+  "platform/login": (_deps, payload) => handlePlatformLogin(payload),
+  "platform/stop": (_deps, payload) => handlePlatformStop(payload),
+  "platform/reset": (_deps, payload) => handlePlatformReset(payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */
