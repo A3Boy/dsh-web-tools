@@ -385,6 +385,8 @@ export function WebToolsSection(props: SectionProps) {
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [bridgeState, setBridgeState] = useState<{ connected: boolean; platforms: Record<string, any> } | null>(null);
+  const [bridgeTicket, setBridgeTicket] = useState<string | null>(null);
   // Follow DSH-wide locale switches directly — the page always mirrors DSH.
   useEffect(() => {
     if (!ui) return;
@@ -430,6 +432,13 @@ export function WebToolsSection(props: SectionProps) {
       setError("");
     } catch (e) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
+    }
+
+    try {
+      const b = await api.bridgeStatus();
+      if (token === loadToken.current) setBridgeState(b);
+    } catch {
+      // Non-blocking bridge status
     }
   };
 
@@ -673,6 +682,76 @@ export function WebToolsSection(props: SectionProps) {
           </SettingsGroup>
         </section>
       )}
+
+      {/* 平台搜索源 (Platform Sources) */}
+      <section>
+        <SettingsGroup
+          title={
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+              <span>{t("platformSourcesTitle")}</span>
+              <span style={{ fontSize: 12, fontWeight: "normal", color: bridgeState?.connected ? stateColor.success : text.tertiary, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {bridgeState?.connected ? <StateDot state="done" size={6} /> : <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />}
+                {bridgeState?.connected ? t("bridgeStatusConnected") : t("bridgeStatusDisconnected")}
+              </span>
+            </div>
+          }
+        >
+          {/* Xiaohongshu Row */}
+          <SettingsRow
+            icon={
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#ff2442", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: "bold" }}>
+                红
+              </div>
+            }
+            title={t("xiaohongshuTitle")}
+            subtitle={
+              bridgeState?.platforms?.xiaohongshu?.authenticated
+                ? `${t("platformAccountPrefix")}${bridgeState.platforms.xiaohongshu.account?.accountLabel ?? t("platformConnected")}`
+                : t("xiaohongshuDesc")
+            }
+            trailing={
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {bridgeState?.platforms?.xiaohongshu?.authenticated ? (
+                  <StateDot state="done" size={6} />
+                ) : (
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />
+                )}
+                <span style={{ fontSize: 12, color: bridgeState?.platforms?.xiaohongshu?.authenticated ? text.primary : text.tertiary }}>
+                  {bridgeState?.platforms?.xiaohongshu?.authenticated ? t("platformConnected") : t("platformNotConnected")}
+                </span>
+              </div>
+            }
+          />
+
+          {/* Twitter / X Row */}
+          <SettingsRow
+            icon={
+              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: "bold" }}>
+                𝕏
+              </div>
+            }
+            title={t("xTitle")}
+            subtitle={
+              bridgeState?.platforms?.x?.authenticated
+                ? `${t("platformAccountPrefix")}${bridgeState.platforms.x.account?.accountLabel ?? t("platformConnected")}`
+                : t("xDesc")
+            }
+            trailing={
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {bridgeState?.platforms?.x?.authenticated ? (
+                  <StateDot state="done" size={6} />
+                ) : (
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />
+                )}
+                <span style={{ fontSize: 12, color: bridgeState?.platforms?.x?.authenticated ? text.primary : text.tertiary }}>
+                  {bridgeState?.platforms?.x?.authenticated ? t("platformConnected") : t("platformNotConnected")}
+                </span>
+              </div>
+            }
+            isLast
+          />
+        </SettingsGroup>
+      </section>
 
       {/* Providers: unified group container */}
       <section>

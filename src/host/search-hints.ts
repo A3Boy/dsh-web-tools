@@ -16,6 +16,8 @@
 
 export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
 
+export type PlatformHint = "xiaohongshu" | "x";
+
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 
 export interface FreshnessHint {
@@ -44,6 +46,9 @@ export interface LocaleHint {
 
 export interface SearchHints {
   topic?: SearchTopic;
+  platform?: PlatformHint;
+  /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
+  platformExplicit?: boolean;
   freshness?: FreshnessHint;
   domains?: DomainHints;
   locale?: LocaleHint;
@@ -88,6 +93,13 @@ export function calculateAfterDate(preset: FreshnessPreset, now: Date = new Date
 // Regex patterns for operator extraction
 const SITE_INCLUDE_RE = /(?:^|\s)site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)/gi;
 const SITE_EXCLUDE_RE = /(?:^|\s)-site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)/gi;
+
+// Platform indicators (high precision to avoid false positives on solitary 'x' or common words)
+const XIAOHONGSHU_EXPLICIT_RE = /(?:小红书|rednote|\bxsec_token\b)/i;
+const XIAOHONGSHU_CLEAN_RE = /(?:小红书|rednote)/gi;
+
+const X_EXPLICIT_RE = /(?:twitter|推特|x\.com|twitter\.com|(?:在|上)X(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜))/i;
+const X_CLEAN_RE = /(?:twitter|推特|(?:在|上)X(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜))/gi;
 
 // Code topic indicators (keywords or patterns)
 const CODE_INDICATORS = [
@@ -193,6 +205,23 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   }
   cleanQuery = cleanQuery.replace(SITE_INCLUDE_RE, " ");
 
+  // 1.1 Extract Platform Hint (Xiaohongshu vs X/Twitter)
+  let platform: PlatformHint | undefined;
+  let platformExplicit = false;
+
+  const isXhsDomain = includeDomains.some((d) => d.includes("xiaohongshu.com") || d.includes("xhslink.com"));
+  const isXDomain = includeDomains.some((d) => d.includes("x.com") || d.includes("twitter.com"));
+
+  if (isXhsDomain || XIAOHONGSHU_EXPLICIT_RE.test(rawQuery)) {
+    platform = "xiaohongshu";
+    platformExplicit = true;
+    cleanQuery = cleanQuery.replace(XIAOHONGSHU_CLEAN_RE, " ");
+  } else if (isXDomain || X_EXPLICIT_RE.test(rawQuery)) {
+    platform = "x";
+    platformExplicit = true;
+    cleanQuery = cleanQuery.replace(X_CLEAN_RE, " ");
+  }
+
   // 2. Extract explicit after: / before: dates
   let afterDate: string | undefined;
   let beforeDate: string | undefined;
@@ -294,6 +323,8 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
 
   return {
     topic,
+    platform,
+    platformExplicit: platformExplicit ? true : undefined,
     freshness,
     domains,
     locale,

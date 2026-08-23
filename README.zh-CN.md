@@ -43,6 +43,11 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
   - **Tavily**：全档位 `chunks_per_source` 分块控制，`news` 话题与时间区间过滤（finance/code 智能回退通用检索）。
   - **SearXNG**：自建元搜索支持 `categories`（it/science/news）与 `time_range`。
   - **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
+- **平台搜索源（小红书与 Twitter / X）**：
+  - **Browser Bridge 模式**：通过轻量 MV3 浏览器扩展连接用户浏览器真实登录态，**Host 端 0 保存平台 Cookie**，彻底避免逆向接口维护与风控封号。
+  - **小红书**：瀑布流 DOM 增量提取，保留完整 `xsec_token` 签名 URL 并支持正文与互动数据解析。
+  - **Twitter / X**：原生支持 `from:`、`since:` 等高级检索算子与语义 DOM 推文抓取。
+  - **断开降级（Web Fallback）**：平台未连接时自动降级为 `site:xiaohongshu.com` / `(site:x.com OR site:twitter.com)`。
 - **完全兼容 DSH 原生工具**：不增加 `web_search_exa` 等特定工具，Agent 无感调用官方标准 `web_search` 与 `web_fetch`。
 - **多 Query 并发支持**：适配 DSH 原生 `queries[]` 数组，在存在多个独立检索维度时并行请求。
 - **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低负载 Key，鉴权失败自动切换备用 Key。

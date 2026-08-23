@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "DeepSeek Harness Web Tools — Browser Bridge",
+  "version": "0.2.0",
+  "description": "Lightweight MV3 Browser Bridge connecting DSH Agent to authenticated browser sessions (Xiaohongshu, Twitter/X) without saving raw cookies.",
+  "minimum_chrome_version": "116",
+  "background": {
+    "service_worker": "dist/service-worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "tabs",
+    "scripting",
+    "cookies",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://www.xiaohongshu.com/*",
+    "https://creator.xiaohongshu.com/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
+  ]
+}

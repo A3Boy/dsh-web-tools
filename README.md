@@ -43,6 +43,11 @@ Preserves the native DSH `web_search` / `web_fetch` tool contracts while providi
   - **Tavily**: Full-tier `chunks_per_source` chunking control, `news` topic and time range filtering (gracefully falls back to general search for finance/code).
   - **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
   - **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
+- **Platform Search Sources (Xiaohongshu & Twitter / X)**:
+  - **Browser Bridge Architecture**: Leverages user authenticated browser sessions via a lightweight MV3 extension, with **0 raw cookie storage on the Host process**, bypassing fragile reverse-engineered APIs.
+  - **Xiaohongshu**: Waterfall DOM incremental extraction preserving complete signed `xsec_token` URLs, note text, and engagement metrics.
+  - **Twitter / X**: Native query operator mapping (`from:`, `since:`, `lang:`) and semantic DOM tweet extraction.
+  - **Graceful Web Fallback**: Seamlessly falls back to `site:xiaohongshu.com` / `(site:x.com OR site:twitter.com)` when disconnected.
 - **Native DSH Tool Compatibility**: No bespoke tools like `web_search_exa`; agents invoke standard `web_search` and `web_fetch` contracts seamlessly.
 - **Multi-Query Support**: Handles DSH `queries[]` payloads concurrently across independent search dimensions.
 - **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.

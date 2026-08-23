@@ -19,6 +19,9 @@ import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutin
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
+import { defaultBridgeServer } from "./sources/bridge-server.ts";
+import { defaultSourceRegistry } from "./sources/registry.ts";
+
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export function keyIdOf(key: string): string {
   return createHash("sha1").update(key).digest("hex").slice(0, 8);
@@ -400,6 +403,27 @@ async function handleProviderOptionsReset(deps: RouteDeps, payload: unknown) {
   return buildProviderOptionView(provider, undefined);
 }
 
+async function handleBridgeBootstrap(): Promise<{ ticket: string; expiresAt: number }> {
+  const ticket = defaultBridgeServer.issuePairingTicket();
+  return { ticket, expiresAt: Date.now() + 60000 };
+}
+
+async function handleBridgeStatus(): Promise<{ connected: boolean; platforms: Record<string, unknown> }> {
+  const connected = defaultBridgeServer.isConnected();
+  const statuses = await defaultSourceRegistry.probeAll();
+  const platforms: Record<string, unknown> = {};
+  for (const s of statuses) {
+    platforms[s.id] = {
+      enabled: s.enabled,
+      authenticated: s.authenticated,
+      bridgeConnected: s.bridgeConnected,
+      account: s.account,
+      lastError: s.lastError,
+    };
+  }
+  return { connected, platforms };
+}
+
 // ---------------------------------------------------------------------------
 // route registration
 // ---------------------------------------------------------------------------
@@ -421,6 +445,8 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
+  "bridge/bootstrap": () => handleBridgeBootstrap(),
+  "bridge/status": () => handleBridgeStatus(),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

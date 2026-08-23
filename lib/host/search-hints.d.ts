@@ -14,6 +14,7 @@
  * @module
  */
 export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
+export type PlatformHint = "xiaohongshu" | "x";
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 export interface FreshnessHint {
     preset?: FreshnessPreset;
@@ -38,6 +39,9 @@ export interface LocaleHint {
 }
 export interface SearchHints {
     topic?: SearchTopic;
+    platform?: PlatformHint;
+    /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
+    platformExplicit?: boolean;
     freshness?: FreshnessHint;
     domains?: DomainHints;
     locale?: LocaleHint;

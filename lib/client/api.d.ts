@@ -56,4 +56,18 @@ export declare const api: {
         defaultProvider: string;
         fallbackOrder: string[];
     }>;
+    bridgeStatus: () => Promise<{
+        connected: boolean;
+        platforms: Record<string, {
+            enabled: boolean;
+            authenticated: boolean;
+            bridgeConnected: boolean;
+            account?: any;
+            lastError?: string;
+        }>;
+    }>;
+    bridgeBootstrap: () => Promise<{
+        ticket: string;
+        expiresAt: number;
+    }>;
 };
