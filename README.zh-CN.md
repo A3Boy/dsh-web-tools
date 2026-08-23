@@ -6,9 +6,9 @@
 
 # dsh-web-tools
 
-DeepSeek Harness 的统一多 Provider Web Runtime。
+为 DeepSeek Harness 提供统一的联网搜索与正文抓取能力。
 
-对齐 DSH 原生 `web_search` / `web_fetch` 工具契约，在 Host 宿主层提供多搜索源聚合、自动 Fallback、多 API Key 轮询管理、配额与健康状态监控、Provider 原生参数偏好配置、正文提取抓取及会话级 Search Mode。
+无缝增强原生 `web_search` / `web_fetch`：聚合 9+ 主流搜索源（Exa、Tavily、Brave、SearXNG 等）与小红书 / Twitter(X) 原生搜索；支持自动容灾降级、多 Key 轮询与配额监控；配合原生独立浏览器会话，实现 0 扩展、0 依赖、0 Cookie 泄露的安全搜索体验。
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">

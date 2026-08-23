@@ -6,9 +6,9 @@
 
 # dsh-web-tools
 
-A unified multi-provider Web Runtime for DeepSeek Harness.
+Unified web search and content extraction runtime for DeepSeek Harness.
 
-Preserves the native DSH `web_search` / `web_fetch` tool contracts while providing multi-provider aggregation, automatic fallback, multi-key pooling, quota and health monitoring, provider-native preference tuning, page content extraction, and per-session Search Mode at the host runtime layer.
+Seamlessly enhances native `web_search` / `web_fetch`: aggregates 9+ general providers (Exa, Tavily, Brave, SearXNG, etc.) alongside native Xiaohongshu & Twitter (X) platform search. Features automatic failover fallback, multi-key pooling, real-time quota monitoring, and dedicated native browser sessions with zero browser extensions, zero Playwright/Chromium bundles, and zero cookie leaks.
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
