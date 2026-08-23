@@ -28,7 +28,7 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
 </div>
 
 <p align="center">
-  <img src="assets/overview.png" width="900" alt="dsh-web-tools 设置页" />
+  <img src="assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools 搜索策略与多源调度" />
 </p>
 
 ## 特性
@@ -114,10 +114,6 @@ dsh plugin --profile web remove dsh-web-tools
 - **顺序模式 (Ordered - 默认)**：始终优先请求列表第一位的 Provider。
 - **轮询模式 (Round-Robin)**：每轮查询依次轮换首选 Provider，均匀分摊多个 Provider 之间的请求量。
 - **随机模式 (Random)**：每轮查询随机选择初始 Provider。
-
-<p align="center">
-  <img src="assets/searchOrderAndRouting.png" width="900" alt="搜索策略与顺序调整" />
-</p>
 
 > 无论采用何种路由策略，当初始 Provider 失败时，均会自动沿剩余可用链路执行 Fallback。
 
