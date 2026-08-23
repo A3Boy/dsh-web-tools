@@ -234,6 +234,10 @@ export class SessionManager implements NativeBrowserRuntime {
     const config = PLATFORM_AUTH_CONFIG[platform];
     const session = await this.ensureSession(platform, config.initialUrl, true, signal);
 
+    // Always navigate to the official login page and restore visibility,
+    // even when reusing an existing stale/background session.
+    await this.prepareInteractiveLogin(session, config.initialUrl, signal);
+
     const start = Date.now();
     const timeoutMs = 300000; // 5 min timeout for manual interaction
     let authenticated = false;
@@ -282,6 +286,46 @@ export class SessionManager implements NativeBrowserRuntime {
       verifiedAt: Date.now(),
       lastError: authenticated ? undefined : "Login timed out",
     };
+  }
+
+  private async prepareInteractiveLogin(
+    session: RunningSession,
+    initialUrl: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    // Navigate a page target to the login URL, or create one if none exists
+    try {
+      const targets = await session.cdp.send<{ targetInfos: Array<{ targetId: string; type: string }> }>("Target.getTargets");
+      let pageTarget = targets.targetInfos?.find((t) => t.type === "page");
+
+      if (pageTarget) {
+        // Attach to existing page target and navigate to login URL
+        const attachRes = await session.cdp.send<{ sessionId: string }>("Target.attachToTarget", {
+          targetId: pageTarget.targetId,
+          flatten: true,
+        }, undefined, signal);
+        const pageSessionId = attachRes.sessionId;
+        await session.cdp.send("Page.enable", {}, pageSessionId, signal);
+        await session.cdp.send("Page.navigate", { url: initialUrl }, pageSessionId, signal);
+      } else {
+        // Create a new page target
+        const createRes = await session.cdp.send<{ targetId: string }>("Target.createTarget", { url: initialUrl }, undefined, signal);
+        pageTarget = { targetId: createRes.targetId, type: "page" };
+      }
+
+      // Restore window to normal (visible) state
+      if (pageTarget) {
+        const boundsRes = await session.cdp.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: pageTarget.targetId });
+        if (boundsRes?.windowId) {
+          await session.cdp.send("Browser.setWindowBounds", {
+            windowId: boundsRes.windowId,
+            bounds: { windowState: "normal" },
+          });
+        }
+      }
+    } catch {
+      // Non-critical: if interactive prep fails, login still proceeds with polling
+    }
   }
 
   async openPage(
@@ -452,6 +496,10 @@ export class SessionManager implements NativeBrowserRuntime {
             await new Promise((r) => setTimeout(r, 100));
             dead = !isPidAlive(pid);
           }
+        }
+
+        if (!dead) {
+          throw new Error(`Browser process ${pid} did not exit after stop`);
         }
       }
 

@@ -13,6 +13,7 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private internalCheckAuth;
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
+    private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
     private ensureSession;
     private resetIdleTimer;

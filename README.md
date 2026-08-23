@@ -9,9 +9,9 @@
 Empower DeepSeek Harness with unified search and deep content extraction across the open web and social platforms.
 
 ✨ **Key Highlights**:
-- 🔍 **Multi-Provider Web Aggregation**: Seamlessly aggregates 9+ top search engines (Exa, Tavily, Brave, Firecrawl, Parallel, SearXNG, etc.) with automatic, zero-downtime failover.
-- 📱 **Native Xiaohongshu & Twitter (X) Search**: Deep integration with native platform search and post/tweet extraction, preserving critical `xsec_token` and time filters.
-- 🛡️ **Native Isolated Browser Architecture**: Directly connects to native Edge/Chrome via isolated profiles and raw CDP — **0 extension installs, 0 Playwright/Chromium bundles, 0 raw cookie storage**.
+- 🔍 **Multi-Provider Web Aggregation**: Seamlessly aggregates 8 major web search providers (Exa, Tavily, Brave, Firecrawl, Parallel, You.com, Jina, SearXNG) with automatic failover, multi-key round-robin, and real-time quota monitoring.
+- 📱 **Native Xiaohongshu & Twitter (X) Search**: Deep integration with native platform search and post/tweet extraction, preserving critical `xsec_token` and time filters (`since:`, `until:`).
+- 🛡️ **Native Isolated Browser Architecture**: Directly connects to native Edge/Chrome via isolated profiles and raw CDP — **0 browser extensions, 0 Playwright/Chromium bundles, raw cookies stay in the dedicated browser profile and never enter plugin config or logs**.
 - ⚡ **Zero-Overhead Agent Tool Compatibility**: Transparently routes standard `web_search` and `web_fetch` requests with intelligent query cleaning and instant fallback.
 
 <p align="center">

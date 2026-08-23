@@ -9,7 +9,7 @@ test("XSource: parseXMetricNumber accurately parses metrics", () => {
   assert.equal(parseXMetricNumber("3,500"), 3500);
 });
 
-test("XSource: buildXSearchUrl maps SearchHints correctly (since/until & news live tab)", () => {
+test("XSource: buildXSearchUrl maps SearchHints correctly (since/until & news live tab, no inferred lang:)", () => {
   const url = buildXSearchUrl("OpenAI", {
     hints: {
       platform: "x",
@@ -23,7 +23,8 @@ test("XSource: buildXSearchUrl maps SearchHints correctly (since/until & news li
     },
   });
 
-  assert.ok(url.includes("lang%3Aen"));
+  // Must NOT include inferred lang: filter (would break cross-language results)
+  assert.ok(!url.includes("lang%3A"));
   assert.ok(url.includes("since%3A2026-08-16"));
   assert.ok(url.includes("until%3A2026-08-23"));
   assert.ok(url.includes("&f=live"));
