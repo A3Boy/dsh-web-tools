@@ -729,7 +729,9 @@ export function WebToolsSection(props: SectionProps) {
             subtitle={
               platformState?.platforms?.xiaohongshu?.authenticated
                 ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
-                : t("platformNotLoggedIn")
+                : platformState?.platforms?.xiaohongshu?.sessionEstablished
+                  ? t("platformSessionSaved")
+                  : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
@@ -768,7 +770,9 @@ export function WebToolsSection(props: SectionProps) {
             subtitle={
               platformState?.platforms?.x?.authenticated
                 ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
-                : t("platformNotLoggedIn")
+                : platformState?.platforms?.x?.sessionEstablished
+                  ? t("platformSessionSaved")
+                  : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>

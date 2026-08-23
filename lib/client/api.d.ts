@@ -64,6 +64,7 @@ export declare const api: {
             runtimeAvailable: boolean;
             runtimeState: string;
             authenticated: boolean;
+            sessionEstablished?: boolean;
             account?: any;
             lastError?: string;
         }>;

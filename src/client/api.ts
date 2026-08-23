@@ -75,7 +75,7 @@ export const api = {
   routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
   platformStatus: () =>
-    call<{ platforms: Record<string, { id: string; name: string; enabled: boolean; runtimeAvailable: boolean; runtimeState: string; authenticated: boolean; account?: any; lastError?: string }> }>("platform/status"),
+    call<{ platforms: Record<string, { id: string; name: string; enabled: boolean; runtimeAvailable: boolean; runtimeState: string; authenticated: boolean; sessionEstablished?: boolean; account?: any; lastError?: string }> }>("platform/status"),
   platformLogin: (platform: "xiaohongshu" | "x") =>
     call<{ status: string }>("platform/login", { platform }),
   platformStop: (platform: "xiaohongshu" | "x") =>

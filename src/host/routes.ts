@@ -33,6 +33,7 @@ async function handlePlatformStatus(): Promise<{ platforms: Record<string, unkno
       runtimeAvailable: s.runtimeAvailable,
       runtimeState: s.runtimeState,
       authenticated: s.authenticated,
+      sessionEstablished: s.sessionEstablished,
       account: s.account,
       lastError: s.lastError,
       lastCheckedAt: s.lastCheckedAt,

@@ -13,6 +13,8 @@ export interface BrowserSessionStatus {
     browser?: BrowserInfo;
     authState: PlatformAuthState;
     authenticated: boolean;
+    /** Whether a dedicated profile session was previously established (non-secret metadata, unverified at cold start). */
+    sessionEstablished?: boolean;
     accountLabel?: string;
     verifiedAt?: number;
     lastError?: string;

@@ -31,6 +31,7 @@ export class XiaohongshuSource implements SpecializedSource {
       runtimeAvailable: sessionStatus.runtimeAvailable,
       runtimeState: sessionStatus.runtimeState,
       authenticated: sessionStatus.authenticated,
+      sessionEstablished: sessionStatus.sessionEstablished,
       account: sessionStatus.accountLabel
         ? { handle: sessionStatus.accountLabel, name: sessionStatus.accountLabel }
         : undefined,

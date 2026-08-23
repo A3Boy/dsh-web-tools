@@ -39,6 +39,7 @@ export interface SourceStatus {
     | "ready"
     | "error";
   authenticated: boolean;
+  sessionEstablished?: boolean;
   account?: SourceAccountInfo;
   lastError?: string;
   lastCheckedAt?: number;

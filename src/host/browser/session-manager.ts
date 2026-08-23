@@ -201,6 +201,7 @@ export class SessionManager implements NativeBrowserRuntime {
           browser,
           authState: "unknown",
           authenticated: false,
+          sessionEstablished: true,
           verifiedAt: meta.lastVerifiedAt,
         };
       }

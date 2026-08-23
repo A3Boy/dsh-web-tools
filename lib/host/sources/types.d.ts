@@ -18,6 +18,7 @@ export interface SourceStatus {
     runtimeAvailable: boolean;
     runtimeState: "unavailable" | "stopped" | "starting" | "ready" | "error";
     authenticated: boolean;
+    sessionEstablished?: boolean;
     account?: SourceAccountInfo;
     lastError?: string;
     lastCheckedAt?: number;
