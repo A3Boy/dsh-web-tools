@@ -24,35 +24,25 @@ export class CdpPage implements CdpPageLease {
     await this.client.send("Page.enable", {}, this.sessionId, signal);
     await this.client.send("Runtime.enable", {}, this.sessionId, signal);
 
-    let loadPromiseResolve: () => void;
-    let loadPromiseReject: (err: any) => void;
-    const loadPromise = new Promise<void>((resolve, reject) => {
-      loadPromiseResolve = resolve;
-      loadPromiseReject = reject;
-    });
+    // Send the navigation command but don't wait for Page.loadEventFired
+    // (SPA pages like XHS may not fire it reliably on re-used sessions).
+    await this.client.send("Page.navigate", { url }, this.sessionId, signal, 30000);
 
-    let offLoad: (() => void) | undefined;
-    const timeout = 30000;
-    const timer = setTimeout(() => {
-      if (offLoad) offLoad();
-      loadPromiseReject(new NavigationTimeoutError(url, timeout));
-    }, timeout);
-
-    offLoad = this.client.on("Page.loadEventFired", (_params, sid) => {
-      if (sid === this.sessionId) {
-        clearTimeout(timer);
-        if (offLoad) offLoad();
-        loadPromiseResolve();
+    // Poll for a usable readyState (handles SPA that never fires loadEventFired)
+    const start = Date.now();
+    const timeoutMs = 15000;
+    while (Date.now() - start < timeoutMs) {
+      if (signal?.aborted) throw new Error("navigate aborted");
+      try {
+        const ready = await this.evaluate<boolean>("document.readyState === 'complete' || document.readyState === 'interactive'");
+        if (ready) return;
+      } catch {
+        // Page context may not be ready yet
       }
-    });
-
-    try {
-      await this.client.send("Page.navigate", { url }, this.sessionId, signal);
-      await loadPromise;
-    } finally {
-      clearTimeout(timer);
-      if (offLoad) offLoad();
+      await new Promise((r) => setTimeout(r, 200));
     }
+
+    // Timeout, but don't throw — the page may still be usable
   }
 
   async waitForLoad(signal?: AbortSignal): Promise<void> {
@@ -137,6 +127,18 @@ export class CdpPage implements CdpPageLease {
   }
 
   async close(): Promise<void> {
+    // Minimize the browser window after closing the page
+    try {
+      const boundsRes = await this.client.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: this.targetId });
+      if (boundsRes?.windowId) {
+        await this.client.send("Browser.setWindowBounds", {
+          windowId: boundsRes.windowId,
+          bounds: { windowState: "minimized" },
+        });
+      }
+    } catch {
+      // Non-critical: window may already be minimized
+    }
     await this.onClose();
   }
 }

@@ -71,10 +71,23 @@ export class XiaohongshuSource implements SpecializedSource {
 
     try {
       await page.waitForLoad(signal);
-      try {
-        await page.waitForSelector("section.note-item", 8000, signal);
-      } catch {
-        // May be empty result
+
+      // Wait for search results to populate (structured or DOM), up to 12s
+      let resultsReady = false;
+      const readyStart = Date.now();
+      while (!resultsReady && Date.now() - readyStart < 12000) {
+        if (signal?.aborted) break;
+        const chk = await page.call(extractXhsSearchState, [], signal);
+        if (chk && chk.available && chk.feeds.length > 0) {
+          resultsReady = true;
+          break;
+        }
+        const domCount = await page.evaluate<number>("document.querySelectorAll('section.note-item').length", signal);
+        if (domCount > 0) {
+          resultsReady = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 400));
       }
 
       const collectedMap = new Map<string, SourceItem>();
