@@ -1,3 +1,4 @@
+import type { XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
 export interface XhsNoteExtraction {
     id: string;
     title: string;
@@ -10,6 +11,7 @@ export interface XhsNoteExtraction {
     collects?: number;
     coverImage?: string;
 }
+export declare function extractXhsSearchState(): XhsStructuredSearchExtraction;
 export declare function extractVisibleXhsSearch(): XhsNoteExtraction[];
 export declare function extractXhsNoteDetail(): {
     title?: string;

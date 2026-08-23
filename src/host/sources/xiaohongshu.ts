@@ -1,9 +1,12 @@
 import { createNativeBrowserRuntime, type NativeBrowserRuntime } from "../browser/index.ts";
 import {
+  extractXhsSearchState,
   extractVisibleXhsSearch,
   extractXhsNoteDetail,
   type XhsNoteExtraction,
 } from "./browser-scripts/xiaohongshu.ts";
+import { normalizeXhsFeed } from "./xiaohongshu/normalize.ts";
+import { buildXhsSearchUrl } from "./xiaohongshu/query.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -54,7 +57,7 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     const maxResults = Math.min(req?.maxResults || 10, 30);
-    const searchUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&source=web_search_result_notes`;
+    const searchUrl = buildXhsSearchUrl(query);
 
     let page;
     try {
@@ -68,7 +71,6 @@ export class XiaohongshuSource implements SpecializedSource {
 
     try {
       await page.waitForLoad(signal);
-      // Wait for note container
       try {
         await page.waitForSelector("section.note-item", 8000, signal);
       } catch {
@@ -76,38 +78,59 @@ export class XiaohongshuSource implements SpecializedSource {
       }
 
       const collectedMap = new Map<string, SourceItem>();
-      let noNewCount = 0;
+      let stagnantCount = 0;
       const maxScrolls = 6;
 
       for (let s = 0; s < maxScrolls; s++) {
         if (signal?.aborted) break;
 
-        const batch: XhsNoteExtraction[] = await page.call(extractVisibleXhsSearch, [], signal);
-        let addedThisBatch = 0;
+        const beforeCount = collectedMap.size;
 
-        for (const item of batch) {
-          if (!collectedMap.has(item.id)) {
-            collectedMap.set(item.id, {
-              id: item.id,
-              title: item.title,
-              url: item.url,
-              snippet: item.snippet,
-              author: item.authorName ? { name: item.authorName, url: item.authorUrl } : undefined,
-              likes: item.likes,
-              coverImage: item.coverImage,
-              platform: "xiaohongshu",
-            });
-            addedThisBatch++;
+        // 1. Structured extraction (PRIMARY)
+        try {
+          const structured = await page.call(extractXhsSearchState, [], signal);
+          if (structured && structured.available && Array.isArray(structured.feeds)) {
+            for (const feed of structured.feeds) {
+              const item = normalizeXhsFeed(feed);
+              if (item && !collectedMap.has(item.id)) {
+                collectedMap.set(item.id, item);
+              }
+            }
+          }
+        } catch {
+          // Structured extraction fallback to DOM
+        }
+
+        // 2. DOM extraction (FALLBACK / SUPPLEMENT)
+        if (collectedMap.size < maxResults) {
+          try {
+            const domBatch: XhsNoteExtraction[] = await page.call(extractVisibleXhsSearch, [], signal);
+            for (const domItem of domBatch) {
+              if (!collectedMap.has(domItem.id)) {
+                collectedMap.set(domItem.id, {
+                  id: domItem.id,
+                  title: domItem.title,
+                  url: domItem.url,
+                  snippet: domItem.snippet,
+                  author: domItem.authorName ? { name: domItem.authorName, url: domItem.authorUrl } : undefined,
+                  likes: domItem.likes,
+                  coverImage: domItem.coverImage,
+                  platform: "xiaohongshu",
+                });
+              }
+            }
+          } catch {
+            // Ignore DOM errors
           }
         }
 
         if (collectedMap.size >= maxResults) break;
 
-        if (addedThisBatch === 0) {
-          noNewCount++;
-          if (noNewCount >= 2) break;
+        if (collectedMap.size === beforeCount) {
+          stagnantCount++;
+          if (stagnantCount >= 2) break;
         } else {
-          noNewCount = 0;
+          stagnantCount = 0;
         }
 
         await page.scrollBy(700, signal);

@@ -1,3 +1,5 @@
+import type { XhsRawSearchFeed, XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
+
 export interface XhsNoteExtraction {
   id: string;
   title: string;
@@ -9,6 +11,28 @@ export interface XhsNoteExtraction {
   comments?: number;
   collects?: number;
   coverImage?: string;
+}
+
+export function extractXhsSearchState(): XhsStructuredSearchExtraction {
+  const state = (window as any).__INITIAL_STATE__;
+  const feedsRef = state?.search?.feeds;
+
+  if (!feedsRef) {
+    return { available: false, feeds: [] };
+  }
+
+  const feeds =
+    feedsRef.value !== undefined
+      ? feedsRef.value
+      : feedsRef._value !== undefined
+        ? feedsRef._value
+        : feedsRef;
+
+  if (!Array.isArray(feeds)) {
+    return { available: false, feeds: [] };
+  }
+
+  return { available: true, feeds };
 }
 
 export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
