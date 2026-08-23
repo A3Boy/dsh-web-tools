@@ -10,5 +10,6 @@ export declare class CdpClient {
     private setupSocketHandlers;
     send<T = any>(method: string, params?: Record<string, unknown>, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T>;
     on(eventName: string, listener: (params: any, sessionId?: string) => void): () => void;
+    onClose(listener: () => void): () => void;
     close(): void;
 }

@@ -110,6 +110,26 @@ export function extractXhsNoteDetail(): {
   const dateEl = document.querySelector(".date") || document.querySelector(".bottom-container .date");
   const publishedAt = dateEl ? (dateEl.textContent || "").trim() : undefined;
 
+  function parseCount(t: string): number | undefined {
+    if (!t) return undefined;
+    const clean = t.trim().replace(/,/g, "");
+    if (/^\d+$/.test(clean)) return parseInt(clean, 10);
+    const wanMatch = clean.match(/^([\d.]+)\s*[万wW]$/);
+    if (wanMatch) return Math.round(parseFloat(wanMatch[1]) * 10000);
+    const kMatch = clean.match(/^([\d.]+)\s*[kK]$/);
+    if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+    return undefined;
+  }
+
+  const likeEl = document.querySelector(".interact-container .like-wrapper .count") || document.querySelector(".like-wrapper .count");
+  const likes = likeEl ? parseCount(likeEl.textContent || "") : undefined;
+
+  const collectEl = document.querySelector(".interact-container .collect-wrapper .count") || document.querySelector(".collect-wrapper .count");
+  const collects = collectEl ? parseCount(collectEl.textContent || "") : undefined;
+
+  const chatEl = document.querySelector(".interact-container .chat-wrapper .count") || document.querySelector(".chat-wrapper .count");
+  const comments = chatEl ? parseCount(chatEl.textContent || "") : undefined;
+
   const imgElements = Array.from(document.querySelectorAll(".note-slider img, .media-container img, .carousel img"));
   const images = imgElements
     .map((img) => img.getAttribute("src") || img.getAttribute("data-src") || "")
@@ -121,6 +141,9 @@ export function extractXhsNoteDetail(): {
     authorName,
     authorUrl,
     publishedAt,
+    likes,
+    collects,
+    comments,
     images: images.length > 0 ? images : undefined,
     isBlocked: false,
   };

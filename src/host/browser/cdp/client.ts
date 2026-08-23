@@ -98,6 +98,14 @@ export class CdpClient {
         req.reject(new Error("CDP WebSocket connection closed"));
       }
       this.pending.clear();
+      const closeListeners = this.eventListeners.get("__cdp_close__");
+      if (closeListeners) {
+        for (const l of closeListeners) {
+          try {
+            l({});
+          } catch {}
+        }
+      }
     });
 
     this.ws.on("error", () => {
@@ -174,6 +182,10 @@ export class CdpClient {
         if (set.size === 0) this.eventListeners.delete(eventName);
       }
     };
+  }
+
+  onClose(listener: () => void): () => void {
+    return this.on("__cdp_close__", listener);
   }
 
   close(): void {

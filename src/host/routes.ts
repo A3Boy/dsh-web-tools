@@ -20,10 +20,7 @@ import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-opt
 import { createHash } from "node:crypto";
 
 import { defaultSourceRegistry } from "./sources/registry.ts";
-import { createNativeBrowserRuntime } from "./browser/index.ts";
 import type { BrowserPlatform } from "./browser/types.ts";
-
-const sharedNativeRuntime = createNativeBrowserRuntime();
 
 async function handlePlatformStatus(): Promise<{ platforms: Record<string, unknown> }> {
   const statuses = await defaultSourceRegistry.getPlatformStatuses();
@@ -44,29 +41,29 @@ async function handlePlatformStatus(): Promise<{ platforms: Record<string, unkno
   return { platforms };
 }
 
-async function handlePlatformLogin(payload: unknown): Promise<{ status: string }> {
+async function handlePlatformLogin(deps: RouteDeps, payload: unknown): Promise<{ status: string }> {
   const platform = (payload as any)?.platform as BrowserPlatform;
   if (platform === "xiaohongshu" || platform === "x") {
     // Run login flow asynchronously, client polls status
-    sharedNativeRuntime.login(platform).catch(() => {});
+    deps.nativeRuntime.login(platform).catch(() => {});
     return { status: "login-pending" };
   }
   return { status: "unknown_platform" };
 }
 
-async function handlePlatformStop(payload: unknown): Promise<{ ok: boolean }> {
+async function handlePlatformStop(deps: RouteDeps, payload: unknown): Promise<{ ok: boolean }> {
   const platform = (payload as any)?.platform as BrowserPlatform;
   if (platform === "xiaohongshu" || platform === "x") {
-    await sharedNativeRuntime.stop(platform);
+    await deps.nativeRuntime.stop(platform);
     return { ok: true };
   }
   return { ok: false };
 }
 
-async function handlePlatformReset(payload: unknown): Promise<{ ok: boolean }> {
+async function handlePlatformReset(deps: RouteDeps, payload: unknown): Promise<{ ok: boolean }> {
   const platform = (payload as any)?.platform as BrowserPlatform;
   if (platform === "xiaohongshu" || platform === "x") {
-    await sharedNativeRuntime.resetSession(platform);
+    await deps.nativeRuntime.resetSession(platform);
     return { ok: true };
   }
   return { ok: false };
@@ -89,6 +86,7 @@ export interface RouteDeps {
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
   testFullSearch: (query: string) => Promise<Record<string, unknown>>;
   describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
+  nativeRuntime: import("./browser/types.ts").NativeBrowserRuntime;
   /**
    * Live pool entries for one provider (real key health from the executor),
    * so the card's per-key state matches what search actually uses.
@@ -475,9 +473,9 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
   "platform/status": () => handlePlatformStatus(),
-  "platform/login": (_deps, payload) => handlePlatformLogin(payload),
-  "platform/stop": (_deps, payload) => handlePlatformStop(payload),
-  "platform/reset": (_deps, payload) => handlePlatformReset(payload),
+  "platform/login": (deps, payload) => handlePlatformLogin(deps, payload),
+  "platform/stop": (deps, payload) => handlePlatformStop(deps, payload),
+  "platform/reset": (deps, payload) => handlePlatformReset(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

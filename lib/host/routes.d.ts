@@ -32,6 +32,7 @@ export interface RouteDeps {
     testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
     testFullSearch: (query: string) => Promise<Record<string, unknown>>;
     describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
+    nativeRuntime: import("./browser/types.ts").NativeBrowserRuntime;
     /**
      * Live pool entries for one provider (real key health from the executor),
      * so the card's per-key state matches what search actually uses.

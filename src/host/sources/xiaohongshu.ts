@@ -44,6 +44,14 @@ export class XiaohongshuSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
+    const status = await this.runtime.status("xiaohongshu");
+    if (!status.authenticated) {
+      return {
+        items: [],
+        error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
+      };
+    }
+
     const maxResults = Math.min(req?.maxResults || 10, 30);
     const searchUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&source=web_search_result_notes`;
 
@@ -114,6 +122,11 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
+    const status = await this.runtime.status("xiaohongshu");
+    if (!status.authenticated) {
+      return { error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false } };
+    }
+
     let page;
     try {
       page = await this.runtime.openPage("xiaohongshu", url, signal);

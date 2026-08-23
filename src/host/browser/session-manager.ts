@@ -118,13 +118,13 @@ export class SessionManager implements NativeBrowserRuntime {
 
     const running = this.sessions.get(platform);
     if (!running) {
-      // Check if we can probe stored state or cold-start verification
+      // Check stored runtime.json for already running process
       const stored = this.stateStore.loadState(platform);
       if (stored && isPidAlive(stored.pid)) {
         try {
-          const wsUrl = await fetchWebSocketDebuggerUrl(stored.port, 1500);
+          const wsUrl = await fetchWebSocketDebuggerUrl(stored.port, 1200);
           const cdp = new CdpClient(wsUrl);
-          await cdp.connect(2000);
+          await cdp.connect(1500);
           const tempSession: RunningSession = {
             platform,
             browser: { kind: stored.browserKind, executablePath: browser.executablePath },
@@ -134,6 +134,12 @@ export class SessionManager implements NativeBrowserRuntime {
             profileDir: stored.profileDir,
             startedAt: stored.startedAt,
           };
+          cdp.onClose(() => {
+            if (this.sessions.get(platform)?.cdp === cdp) {
+              this.sessions.delete(platform);
+              this.stateStore.clearState(platform);
+            }
+          });
           const authenticated = await this.internalCheckAuth(tempSession);
           this.sessions.set(platform, tempSession);
           this.resetIdleTimer(tempSession);
@@ -151,12 +157,26 @@ export class SessionManager implements NativeBrowserRuntime {
         }
       }
 
+      // Check profile metadata: did user establish session previously?
+      const meta = this.profileStore.loadMetadata(platform);
+      if (meta && meta.sessionEstablished) {
+        return {
+          platform,
+          runtimeAvailable: true,
+          runtimeState: "stopped",
+          browser,
+          authState: "authenticated",
+          authenticated: true,
+          verifiedAt: meta.lastVerifiedAt,
+        };
+      }
+
       return {
         platform,
         runtimeAvailable: true,
         runtimeState: "stopped",
         browser,
-        authState: "unknown",
+        authState: "signed-out",
         authenticated: false,
       };
     }
@@ -188,8 +208,29 @@ export class SessionManager implements NativeBrowserRuntime {
       if (signal?.aborted) throw new Error("Login aborted by user");
       authenticated = await this.internalCheckAuth(session);
       if (authenticated) {
-        // Wait 2s for disk flush
-        await new Promise((r) => setTimeout(r, 2000));
+        // Record non-secret session established metadata
+        this.profileStore.saveMetadata(platform, {
+          platform,
+          sessionEstablished: true,
+          browserKind: session.browser.kind,
+          lastVerifiedAt: Date.now(),
+        });
+        // Minimize window after login success
+        try {
+          const targets = await session.cdp.send<{ targetInfos: Array<{ targetId: string; type: string }> }>("Target.getTargets");
+          const pageTarget = targets.targetInfos?.find((t) => t.type === "page");
+          if (pageTarget) {
+            const boundsRes = await session.cdp.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: pageTarget.targetId });
+            if (boundsRes?.windowId) {
+              await session.cdp.send("Browser.setWindowBounds", {
+                windowId: boundsRes.windowId,
+                bounds: { windowState: "minimized" },
+              });
+            }
+          }
+        } catch {
+          // Ignore minimize failure
+        }
         break;
       }
       await new Promise((r) => setTimeout(r, 1500));
@@ -278,11 +319,18 @@ export class SessionManager implements NativeBrowserRuntime {
         const config = PLATFORM_AUTH_CONFIG[platform];
         const startUrl = initialUrl || (visible ? config.initialUrl : undefined);
 
-        const spawned = await launchBrowserProcess(browser, profileDir, startUrl);
+        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, !visible);
         const wsUrl = await fetchWebSocketDebuggerUrl(spawned.port, 12000, signal);
 
         const cdp = new CdpClient(wsUrl);
         await cdp.connect(5000);
+
+        cdp.onClose(() => {
+          if (this.sessions.get(platform)?.cdp === cdp) {
+            this.sessions.delete(platform);
+            this.stateStore.clearState(platform);
+          }
+        });
 
         const session: RunningSession = {
           platform,
@@ -347,13 +395,24 @@ export class SessionManager implements NativeBrowserRuntime {
         // Fallback
       }
       session.cdp.close();
+
       if (session.process && !session.process.killed) {
-        try {
-          session.process.kill();
-        } catch {
-          // Process already closed
+        // Wait up to 3s for graceful process exit
+        const exited = await new Promise<boolean>((resolve) => {
+          const t = setTimeout(() => resolve(false), 3000);
+          session.process!.once("exit", () => {
+            clearTimeout(t);
+            resolve(true);
+          });
+        });
+
+        if (!exited) {
+          try {
+            session.process.kill();
+          } catch {}
         }
       }
+
       this.sessions.delete(platform);
       this.stateStore.clearState(platform);
     }

@@ -14,6 +14,7 @@ export function buildSafeLaunchArgs(
   profileDir: string,
   port: number,
   initialUrl?: string,
+  minimized = false,
 ): string[] {
   const args = [
     `--user-data-dir=${profileDir}`,
@@ -22,6 +23,10 @@ export function buildSafeLaunchArgs(
     `--no-first-run`,
     `--no-default-browser-check`,
   ];
+
+  if (minimized) {
+    args.push("--start-minimized");
+  }
 
   if (initialUrl) {
     args.push(initialUrl);
@@ -34,13 +39,23 @@ export async function launchBrowserProcess(
   browser: BrowserInfo,
   profileDir: string,
   initialUrl?: string,
+  minimized = false,
 ): Promise<SpawnedBrowserProcess> {
   const port = await allocateRandomPort();
-  const args = buildSafeLaunchArgs(profileDir, port, initialUrl);
+  const args = buildSafeLaunchArgs(profileDir, port, initialUrl, minimized);
 
   const cp = spawn(browser.executablePath, args, {
     stdio: "ignore",
     detached: false,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    cp.once("spawn", () => {
+      resolve();
+    });
+    cp.once("error", (err) => {
+      reject(err);
+    });
   });
 
   return {

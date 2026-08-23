@@ -450,6 +450,7 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
+        nativeRuntime,
         checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,

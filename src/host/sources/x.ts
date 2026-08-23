@@ -25,29 +25,20 @@ export function parseXMetricNumber(text?: string): number | undefined {
 
 export function buildXSearchUrl(query: string, req?: SourceSearchRequest): string {
   let q = query.trim();
-  if ((req?.hints as any)?.author) {
-    q += ` from:${(req!.hints as any).author.replace(/^@/, "")}`;
-  }
   if (req?.hints?.locale?.language) {
     q += ` lang:${req.hints.locale.language}`;
   }
   if (req?.hints?.freshness) {
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const f = req.hints.freshness as string;
-    if (f === "day") {
-      const since = new Date(now - oneDay).toISOString().split("T")[0];
-      q += ` since:${since}`;
-    } else if (f === "week") {
-      const since = new Date(now - 7 * oneDay).toISOString().split("T")[0];
-      q += ` since:${since}`;
-    } else if (f === "month") {
-      const since = new Date(now - 30 * oneDay).toISOString().split("T")[0];
-      q += ` since:${since}`;
+    const { after, before } = req.hints.freshness;
+    if (after) {
+      q += ` since:${after}`;
+    }
+    if (before) {
+      q += ` until:${before}`;
     }
   }
 
-  const fParam = (req?.hints as any)?.sortBy === "latest" ? "&f=live" : "";
+  const fParam = req?.hints?.topic === "news" ? "&f=live" : "";
   return `https://x.com/search?q=${encodeURIComponent(q)}&src=typed_query${fParam}`;
 }
 
@@ -82,6 +73,14 @@ export class XSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
+    const status = await this.runtime.status("x");
+    if (!status.authenticated) {
+      return {
+        items: [],
+        error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false },
+      };
+    }
+
     const maxResults = Math.min(req?.maxResults || 10, 30);
     const searchUrl = buildXSearchUrl(query, req);
 
@@ -155,6 +154,11 @@ export class XSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
+    const status = await this.runtime.status("x");
+    if (!status.authenticated) {
+      return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
+    }
+
     let page;
     try {
       page = await this.runtime.openPage("x", url, signal);

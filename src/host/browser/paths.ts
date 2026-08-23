@@ -26,6 +26,10 @@ export function validatePlatformUrl(urlStr: string, platform: BrowserPlatform): 
     return false;
   }
 
+  if (parsed.protocol !== "https:") {
+    return false;
+  }
+
   const hostname = parsed.hostname.toLowerCase();
 
   if (platform === "xiaohongshu") {
