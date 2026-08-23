@@ -39,6 +39,7 @@ test("Integration: web_search on Xiaohongshu query routes to XiaohongshuSource v
     }),
     login: async () => ({} as any),
     checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
     openPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},

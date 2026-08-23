@@ -50,6 +50,7 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
     }),
     login: async () => ({} as any),
     checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
     openPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},
@@ -84,6 +85,7 @@ test("XiaohongshuSource: returns auth-required without opening page when unauthe
     }),
     login: async () => ({} as any),
     checkAuthentication: async () => false,
+    verifyAuthenticationForOperation: async () => false,
     openPage: async () => {
       openPageCalled = true;
       throw new Error("Should not open page");

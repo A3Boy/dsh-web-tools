@@ -70,7 +70,7 @@ test("ProfileStore & StateStore: zero raw cookie storage and metadata persistenc
   }
 });
 
-test("SessionManager: status() returns cold-start authenticated if metadata sessionEstablished is true", async () => {
+test("SessionManager: status() returns stopped + auth unknown if metadata sessionEstablished is true", async () => {
   const tmpDir = path.join(os.tmpdir(), "dsh-session-test-" + Date.now());
   fs.mkdirSync(tmpDir, { recursive: true });
 
@@ -87,8 +87,8 @@ test("SessionManager: status() returns cold-start authenticated if metadata sess
     const status = await sessionManager.status("xiaohongshu");
 
     assert.equal(status.runtimeState, "stopped");
-    assert.equal(status.authenticated, true);
-    assert.equal(status.authState, "authenticated");
+    assert.equal(status.authenticated, false); // Cold-start unverified !== authenticated
+    assert.equal(status.authState, "unknown");
     assert.equal(status.verifiedAt, 99999);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

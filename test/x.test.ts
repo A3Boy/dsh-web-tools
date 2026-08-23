@@ -68,6 +68,7 @@ test("XSource: executes search and tweet fetch through NativeBrowserRuntime when
     }),
     login: async () => ({} as any),
     checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
     openPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},
@@ -101,6 +102,7 @@ test("XSource: returns auth-required without opening page when unauthenticated",
     }),
     login: async () => ({} as any),
     checkAuthentication: async () => false,
+    verifyAuthenticationForOperation: async () => false,
     openPage: async () => {
       openPageCalled = true;
       throw new Error("Should not open page");

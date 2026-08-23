@@ -6,9 +6,13 @@
 
 # dsh-web-tools
 
-Unified web search and content extraction runtime for DeepSeek Harness.
+Empower DeepSeek Harness with unified search and deep content extraction across the open web and social platforms.
 
-Seamlessly enhances native `web_search` / `web_fetch`: aggregates 9+ general providers (Exa, Tavily, Brave, SearXNG, etc.) alongside native Xiaohongshu & Twitter (X) platform search. Features automatic failover fallback, multi-key pooling, real-time quota monitoring, and dedicated native browser sessions with zero browser extensions, zero Playwright/Chromium bundles, and zero cookie leaks.
+✨ **Key Highlights**:
+- 🔍 **Multi-Provider Web Aggregation**: Seamlessly aggregates 9+ top search engines (Exa, Tavily, Brave, Firecrawl, Parallel, SearXNG, etc.) with automatic, zero-downtime failover.
+- 📱 **Native Xiaohongshu & Twitter (X) Search**: Deep integration with native platform search and post/tweet extraction, preserving critical `xsec_token` and time filters.
+- 🛡️ **Native Isolated Browser Architecture**: Directly connects to native Edge/Chrome via isolated profiles and raw CDP — **0 extension installs, 0 Playwright/Chromium bundles, 0 raw cookie storage**.
+- ⚡ **Zero-Overhead Agent Tool Compatibility**: Transparently routes standard `web_search` and `web_fetch` requests with intelligent query cleaning and instant fallback.
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">

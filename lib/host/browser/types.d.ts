@@ -40,6 +40,7 @@ export interface NativeBrowserRuntime {
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
+    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal): Promise<boolean>;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
     resetSession(platform: BrowserPlatform): Promise<void>;
     stop(platform: BrowserPlatform): Promise<void>;

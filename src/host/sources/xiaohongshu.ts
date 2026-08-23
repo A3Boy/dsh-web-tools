@@ -44,8 +44,8 @@ export class XiaohongshuSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const status = await this.runtime.status("xiaohongshu");
-    if (!status.authenticated) {
+    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal);
+    if (!isAuth) {
       return {
         items: [],
         error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
@@ -122,8 +122,8 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
-    const status = await this.runtime.status("xiaohongshu");
-    if (!status.authenticated) {
+    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal);
+    if (!isAuth) {
       return { error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false } };
     }
 

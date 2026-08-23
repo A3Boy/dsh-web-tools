@@ -83,6 +83,40 @@ export class SessionManager implements NativeBrowserRuntime {
     return this.internalCheckAuth(session);
   }
 
+  async verifyAuthenticationForOperation(
+    platform: BrowserPlatform,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const meta = this.profileStore.loadMetadata(platform);
+    if (!meta || !meta.sessionEstablished) {
+      return false;
+    }
+
+    try {
+      const session = await this.ensureSession(platform, undefined, false, signal);
+      const isAuth = await this.internalCheckAuth(session);
+      if (isAuth) {
+        this.profileStore.saveMetadata(platform, {
+          platform,
+          sessionEstablished: true,
+          browserKind: session.browser.kind,
+          lastVerifiedAt: Date.now(),
+        });
+        return true;
+      } else {
+        this.profileStore.saveMetadata(platform, {
+          platform,
+          sessionEstablished: false,
+          browserKind: session.browser.kind,
+          lastVerifiedAt: Date.now(),
+        });
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+
   private async internalCheckAuth(session: RunningSession): Promise<boolean> {
     const config = PLATFORM_AUTH_CONFIG[session.platform];
     try {
@@ -165,8 +199,8 @@ export class SessionManager implements NativeBrowserRuntime {
           runtimeAvailable: true,
           runtimeState: "stopped",
           browser,
-          authState: "authenticated",
-          authenticated: true,
+          authState: "unknown",
+          authenticated: false,
           verifiedAt: meta.lastVerifiedAt,
         };
       }
@@ -353,8 +387,10 @@ export class SessionManager implements NativeBrowserRuntime {
         this.stateStore.saveState(platform, state);
 
         spawned.process.on("exit", () => {
-          this.sessions.delete(platform);
-          this.stateStore.clearState(platform);
+          if (this.sessions.get(platform)?.process === spawned.process) {
+            this.sessions.delete(platform);
+            this.stateStore.clearState(platform);
+          }
         });
 
         this.sessions.set(platform, session);
@@ -396,20 +432,26 @@ export class SessionManager implements NativeBrowserRuntime {
       }
       session.cdp.close();
 
-      if (session.process && !session.process.killed) {
-        // Wait up to 3s for graceful process exit
-        const exited = await new Promise<boolean>((resolve) => {
-          const t = setTimeout(() => resolve(false), 3000);
-          session.process!.once("exit", () => {
-            clearTimeout(t);
-            resolve(true);
-          });
-        });
+      const pid = session.pid;
+      if (pid) {
+        // Wait up to 3 seconds for PID to die
+        let dead = !isPidAlive(pid);
+        const start = Date.now();
+        while (!dead && Date.now() - start < 3000) {
+          await new Promise((r) => setTimeout(r, 150));
+          dead = !isPidAlive(pid);
+        }
 
-        if (!exited) {
+        if (!dead) {
           try {
-            session.process.kill();
+            process.kill(pid);
           } catch {}
+          // Wait again up to 2 seconds after SIGTERM/kill
+          const killStart = Date.now();
+          while (!dead && Date.now() - killStart < 2000) {
+            await new Promise((r) => setTimeout(r, 100));
+            dead = !isPidAlive(pid);
+          }
         }
       }
 

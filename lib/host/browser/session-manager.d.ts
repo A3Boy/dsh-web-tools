@@ -9,6 +9,7 @@ export declare class SessionManager implements NativeBrowserRuntime {
     constructor(browserChoice?: "auto" | "edge" | "chrome" | string, baseDirOverride?: string, idleShutdownMs?: number);
     detect(): Promise<BrowserInfo | null>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
+    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal): Promise<boolean>;
     private internalCheckAuth;
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;

@@ -73,8 +73,8 @@ export class XSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const status = await this.runtime.status("x");
-    if (!status.authenticated) {
+    const isAuth = await this.runtime.verifyAuthenticationForOperation("x", signal);
+    if (!isAuth) {
       return {
         items: [],
         error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false },
@@ -154,8 +154,8 @@ export class XSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
-    const status = await this.runtime.status("x");
-    if (!status.authenticated) {
+    const isAuth = await this.runtime.verifyAuthenticationForOperation("x", signal);
+    if (!isAuth) {
       return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
     }
 

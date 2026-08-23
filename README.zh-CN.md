@@ -6,9 +6,13 @@
 
 # dsh-web-tools
 
-为 DeepSeek Harness 提供统一的联网搜索与正文抓取能力。
+让 DeepSeek Harness 拥有直连全网与社媒平台的搜索与抓取能力。
 
-无缝增强原生 `web_search` / `web_fetch`：聚合 9+ 主流搜索源（Exa、Tavily、Brave、SearXNG 等）与小红书 / Twitter(X) 原生搜索；支持自动容灾降级、多 Key 轮询与配额监控；配合原生独立浏览器会话，实现 0 扩展、0 依赖、0 Cookie 泄露的安全搜索体验。
+✨ **核心亮点**：
+- 🔍 **全网聚合与自动容灾**：9+ 主流搜索源（Exa、Tavily、Brave、Firecrawl、Parallel、SearXNG 等）无缝聚合，首选源故障秒级平滑降级。
+- 📱 **小红书与 Twitter(X) 原生搜索**：深度融合社媒平台原生搜索与图文/推文详情抓取，保留 `xsec_token` 与时间筛选。
+- 🛡️ **原生独立会话架构**：基于本机已安装 Edge/Chrome 独立 Profile 与 CDP 交互，**0 扩展依赖、0 Playwright/Chromium 打包、0 Cookie 存储泄露**。
+- ⚡ **无感融入 Agent**：全自动适配 DSH 原生 `web_search` / `web_fetch`，智能意图路由，开箱即用。
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
