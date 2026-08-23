@@ -13,20 +13,31 @@ export interface AccountSummary {
 
 export class BrowserAuthManager {
   /**
-   * Check if Xiaohongshu session is present.
+   * Check if Xiaohongshu session is present across root and subdomains.
    */
   public async checkXiaohongshu(): Promise<AccountSummary> {
     try {
-      const cookie = await chrome.cookies.get({
+      // 1. Try URL match
+      let cookie = await chrome.cookies.get({
         url: "https://www.xiaohongshu.com",
         name: "web_session",
       });
+
+      // 2. Try domain wildcard match if URL match was empty
+      if (!cookie || !cookie.value) {
+        const list = await chrome.cookies.getAll({
+          domain: "xiaohongshu.com",
+          name: "web_session",
+        });
+        if (list && list.length > 0) {
+          cookie = list[0];
+        }
+      }
 
       if (!cookie || !cookie.value) {
         return { authenticated: false };
       }
 
-      // Quick check passed, perform lightweight verification via creator profile if needed
       return {
         authenticated: true,
         accountLabel: "小红书账号 (已连接)",
@@ -37,18 +48,27 @@ export class BrowserAuthManager {
   }
 
   /**
-   * Check if Twitter / X session is present.
+   * Check if Twitter / X session is present across root and subdomains.
    */
   public async checkX(): Promise<AccountSummary> {
     try {
-      const authToken = await chrome.cookies.get({
+      let authToken = await chrome.cookies.get({
         url: "https://x.com",
         name: "auth_token",
       });
-      const ct0 = await chrome.cookies.get({
+      let ct0 = await chrome.cookies.get({
         url: "https://x.com",
         name: "ct0",
       });
+
+      if (!authToken?.value) {
+        const list = await chrome.cookies.getAll({ domain: "x.com", name: "auth_token" });
+        if (list && list.length > 0) authToken = list[0];
+      }
+      if (!ct0?.value) {
+        const list = await chrome.cookies.getAll({ domain: "x.com", name: "ct0" });
+        if (list && list.length > 0) ct0 = list[0];
+      }
 
       if (!authToken?.value || !ct0?.value) {
         return { authenticated: false };
@@ -64,17 +84,20 @@ export class BrowserAuthManager {
   }
 
   /**
-   * Register cookie change listener to notify Host when user logs out.
+   * Register cookie change listener to notify Host when user logs in OR logs out.
    */
-  public listenCookieChanges(onInvalidated: (platform: "xiaohongshu" | "x") => void): () => void {
+  public listenCookieChanges(onChanged: (platform: "xiaohongshu" | "x", authenticated: boolean) => void): () => void {
     const listener = (changeInfo: chrome.cookies.CookieChangeInfo) => {
       const { cookie, removed } = changeInfo;
-      if (removed) {
-        if (cookie.domain.includes("xiaohongshu.com") && cookie.name === "web_session") {
-          onInvalidated("xiaohongshu");
-        } else if (cookie.domain.includes("x.com") && (cookie.name === "auth_token" || cookie.name === "ct0")) {
-          onInvalidated("x");
-        }
+      const dom = cookie.domain || "";
+
+      if (dom.includes("xiaohongshu.com") && cookie.name === "web_session") {
+        onChanged("xiaohongshu", !removed && Boolean(cookie.value));
+      } else if ((dom.includes("x.com") || dom.includes("twitter.com")) && (cookie.name === "auth_token" || cookie.name === "ct0")) {
+        // When auth_token or ct0 changes, check if both exist
+        this.checkX().then((res) => {
+          onChanged("x", res.authenticated);
+        }).catch(() => {});
       }
     };
 

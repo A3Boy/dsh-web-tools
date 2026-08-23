@@ -13,7 +13,11 @@ export interface StatEntry {
 /** Simple bounded in-memory ring of recent search attempts. */
 export class Stats {
   private entries: StatEntry[] = [];
-  constructor(private readonly max = 200) {}
+  private readonly max: number;
+
+  constructor(max = 200) {
+    this.max = max;
+  }
 
   record(entry: StatEntry) {
     this.entries.push(entry);

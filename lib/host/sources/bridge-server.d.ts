@@ -35,6 +35,11 @@ export declare class BridgeHostServer {
     private validBridgeKeyHashes;
     private pendingCalls;
     private cachedAccountState;
+    private onKeyHashPersist?;
+    /**
+     * Configure persistent storage hook for approved pairing hashes.
+     */
+    setPersistHook(hook: (hash: string) => void, initialHashes?: string[]): void;
     /**
      * Issue a 60-second one-time bootstrap ticket for the React settings UI.
      */
@@ -47,9 +52,9 @@ export declare class BridgeHostServer {
         newBridgeKey?: string;
     };
     /**
-     * Register WebSocket Upgrade route on DSH webServer.
+     * Register WebSocket Upgrade route on DSH webServer with disposer support.
      */
-    registerUpgradeRoute(webServer: WebToolsWebServer): void;
+    registerUpgradeRoute(webServer: WebToolsWebServer): () => void;
     /**
      * Register active connection
      */

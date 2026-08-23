@@ -21,7 +21,7 @@ export declare class BridgeClient {
         url?: string;
     }>;
     /**
-     * Execute platform search via extension
+     * Execute platform search via extension (including SearchHints passthrough)
      */
     executeSearch(platform: SpecializedPlatformId, request: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
     /**

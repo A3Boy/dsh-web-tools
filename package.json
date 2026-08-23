@@ -44,7 +44,8 @@
     }
   },
   "dependencies": {
-    "undici": "^6.26.0"
+    "undici": "^6.26.0",
+    "ws": "^8.18.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -66,13 +67,14 @@
     "build": "node -e \"require('fs').rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown && npm run build:bridge",
     "build:bridge": "tsc -p browser-bridge/tsconfig.json",
     "bundle": "tsdown",
-    "test": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/provider-contracts.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
-    "smoke": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
+    "test": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts test/runtime-wiring.test.ts src/host/logic.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/provider-contracts.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
+    "smoke": "node --experimental-strip-types --test test/version-check.test.ts test/routing-policy.test.ts test/source-routing.test.ts test/bridge.test.ts test/xiaohongshu.test.ts test/x.test.ts test/dom-fixtures.test.ts test/platform-integration.test.ts test/runtime-wiring.test.ts test/section-registration.test.ts test/status-logic.test.ts test/search-mode.test.ts test/tool-registry.integration.test.mjs test/fetch-proxy.test.mjs test/routes.smoke.mjs test/runtime.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "~18.3.31",
+    "@types/ws": "^8.5.14",
     "tsdown": "^0.22.14",
     "typescript": "^5.9.3"
   }

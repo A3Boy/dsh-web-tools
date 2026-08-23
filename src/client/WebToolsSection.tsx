@@ -456,7 +456,14 @@ export function WebToolsSection(props: SectionProps) {
     void load();
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
+
+    // Poll bridge/platforms status periodically so login in browser reflects automatically
+    const timer = setInterval(() => {
+      api.bridgeStatus().then(setBridgeState).catch(() => {});
+    }, 2500);
+
     return () => {
+      clearInterval(timer);
       loadToken.current += 1;
       mounted.current = false;
     };

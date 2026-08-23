@@ -72,7 +72,7 @@ export class BridgeClient {
   }
 
   /**
-   * Execute platform search via extension
+   * Execute platform search via extension (including SearchHints passthrough)
    */
   public async executeSearch(
     platform: SpecializedPlatformId,
@@ -84,6 +84,11 @@ export class BridgeClient {
       platform,
       query: request.query,
       maxResults: request.maxResults,
+      hints: request.hints ? {
+        topic: request.hints.topic,
+        freshness: request.hints.freshness,
+        locale: request.hints.locale,
+      } : undefined,
     });
 
     try {

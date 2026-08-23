@@ -42,6 +42,19 @@ export class BridgeHostServer {
   private validBridgeKeyHashes = new Set<string>(); // sha256 hashes of approved bridgeKeys
   private pendingCalls = new Map<string, PendingCall>(); // requestId -> PendingCall
   private cachedAccountState = new Map<SpecializedPlatformId, SourceAccountInfo>();
+  private onKeyHashPersist?: (hash: string) => void;
+
+  /**
+   * Configure persistent storage hook for approved pairing hashes.
+   */
+  public setPersistHook(hook: (hash: string) => void, initialHashes?: string[]): void {
+    this.onKeyHashPersist = hook;
+    if (initialHashes) {
+      for (const h of initialHashes) {
+        if (h && typeof h === "string") this.validBridgeKeyHashes.add(h);
+      }
+    }
+  }
 
   /**
    * Issue a 60-second one-time bootstrap ticket for the React settings UI.
@@ -68,6 +81,7 @@ export class BridgeHostServer {
         const newBridgeKey = randomBytes(24).toString("hex");
         const hash = createHash("sha256").update(newBridgeKey).digest("hex");
         this.validBridgeKeyHashes.add(hash);
+        this.onKeyHashPersist?.(hash);
         return { success: true, newBridgeKey };
       }
     }
@@ -84,12 +98,12 @@ export class BridgeHostServer {
   }
 
   /**
-   * Register WebSocket Upgrade route on DSH webServer.
+   * Register WebSocket Upgrade route on DSH webServer with disposer support.
    */
-  public registerUpgradeRoute(webServer: WebToolsWebServer): void {
-    if (typeof webServer.registerUpgrade !== "function") return;
+  public registerUpgradeRoute(webServer: WebToolsWebServer): () => void {
+    if (typeof webServer.registerUpgrade !== "function") return () => {};
 
-    webServer.registerUpgrade({
+    const dispose = (webServer.registerUpgrade as any)({
       path: BRIDGE_WS_PATH,
       handler: (req: any, socket: any, head: Buffer | Uint8Array) => {
         // Enforce loopback check
@@ -100,10 +114,12 @@ export class BridgeHostServer {
           return;
         }
 
-        // Dynamically load ws to avoid crashing when not installed / bundling
-        import("ws").then(({ WebSocketServer }) => {
+        // Load ws dynamically (node environment)
+        // @ts-ignore
+        import("ws").then((wsModule: any) => {
+          const WebSocketServer = wsModule?.WebSocketServer || wsModule?.default?.WebSocketServer || wsModule;
           const wss = new WebSocketServer({ noServer: true });
-          wss.handleUpgrade(req, socket, head as Buffer, (ws) => {
+          wss.handleUpgrade(req, socket, head as Buffer, (ws: any) => {
             let isHandshakeComplete = false;
 
             const handshakeTimeout = setTimeout(() => {
@@ -167,6 +183,14 @@ export class BridgeHostServer {
         });
       },
     });
+
+    return () => {
+      if (typeof dispose === "function") dispose();
+      if (this.activeWs) {
+        try { this.activeWs.close(); } catch {}
+        this.activeWs = null;
+      }
+    };
   }
 
   /**

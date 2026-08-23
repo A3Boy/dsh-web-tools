@@ -8,6 +8,16 @@
     "service_worker": "dist/service-worker.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["dist/pairing-relay.js"],
+      "run_at": "document_start"
+    }
+  ],
   "permissions": [
     "tabs",
     "scripting",
