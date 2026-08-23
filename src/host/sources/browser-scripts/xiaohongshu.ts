@@ -102,6 +102,81 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
   return results;
 }
 
+export function extractXhsDetailState(noteId: string): {
+  available: boolean;
+  title?: string;
+  text?: string;
+  authorName?: string;
+  authorUrl?: string;
+  publishedAt?: string;
+  likes?: number;
+  collects?: number;
+  comments?: number;
+  images?: string[];
+} {
+  const state = (window as any).__INITIAL_STATE__;
+  const map = state?.note?.noteDetailMap;
+
+  if (!map || typeof map !== "object") {
+    return { available: false };
+  }
+
+  let entry = map[noteId];
+
+  if (!entry) {
+    entry = Object.values(map).find(
+      (v: any) => v?.note?.noteId === noteId,
+    );
+  }
+
+  const note = entry?.note;
+  if (!note) {
+    return { available: false };
+  }
+
+  function parseCount(t: string | number | undefined): number | undefined {
+    if (t === undefined || t === null) return undefined;
+    if (typeof t === "number") return Number.isFinite(t) ? t : undefined;
+    const raw = String(t).trim().replace(/,/g, "");
+    if (/^\d+$/.test(raw)) return parseInt(raw, 10);
+    const wanMatch = raw.match(/^([\d.]+)\s*[万wW]\+?$/);
+    if (wanMatch) return Math.round(parseFloat(wanMatch[1]) * 10000);
+    const kMatch = raw.match(/^([\d.]+)\s*[kK]\+?$/);
+    if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+    return undefined;
+  }
+
+  const interact = note.interactInfo;
+  const user = note.user;
+
+  let publishedAt: string | undefined;
+  if (typeof note.time === "number") {
+    const ts = note.time > 1e12 ? Math.floor(note.time / 1000) : note.time;
+    if (ts > 0) {
+      publishedAt = new Date(ts * 1000).toISOString();
+    }
+  }
+
+  const images = Array.isArray(note.imageList)
+    ? note.imageList
+        .map((img: any) => img?.urlDefault || img?.urlPre || "")
+        .filter(Boolean)
+    : undefined;
+
+  return {
+    available: true,
+    title: note.title || note.displayTitle,
+    text: note.desc,
+    authorName: user?.nickname || user?.nickName,
+    authorUrl: user?.userId ? `https://www.xiaohongshu.com/user/profile/${encodeURIComponent(user.userId)}` : undefined,
+    publishedAt,
+    likes: parseCount(interact?.likedCount),
+    collects: parseCount(interact?.collectedCount),
+    comments: parseCount(interact?.commentCount),
+    images: images && images.length > 0 ? images : undefined,
+  };
+}
+
 export function extractXhsNoteDetail(): {
   title?: string;
   text?: string;

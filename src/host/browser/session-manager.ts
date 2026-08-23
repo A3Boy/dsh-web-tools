@@ -10,6 +10,7 @@ import { isPidAlive, launchBrowserProcess } from "./process-manager.ts";
 import type {
   BrowserInfo,
   BrowserPlatform,
+  BrowserRunMode,
   BrowserSessionStatus,
   CdpPageLease,
   NativeBrowserRuntime,
@@ -23,6 +24,7 @@ interface RunningSession {
   pid?: number;
   cdp: CdpClient;
   profileDir: string;
+  mode: BrowserRunMode;
   startedAt: number;
   process?: import("node:child_process").ChildProcess;
   idleTimer?: NodeJS.Timeout;
@@ -166,6 +168,7 @@ export class SessionManager implements NativeBrowserRuntime {
             pid: stored.pid,
             cdp,
             profileDir: stored.profileDir,
+            mode: "headless",
             startedAt: stored.startedAt,
           };
           cdp.onClose(() => {
@@ -233,6 +236,15 @@ export class SessionManager implements NativeBrowserRuntime {
     signal?: AbortSignal,
   ): Promise<BrowserSessionStatus> {
     const config = PLATFORM_AUTH_CONFIG[platform];
+
+    // Mode transition: a headless worker session cannot become interactive
+    // (no window exists to "restore"). Stop it and relaunch with the SAME
+    // dedicated profile as a visible browser for user login.
+    const existing = this.sessions.get(platform);
+    if (existing && existing.mode === "headless") {
+      await this.stop(platform);
+    }
+
     const session = await this.ensureSession(platform, config.initialUrl, true, signal);
 
     // Always navigate to the official login page and restore visibility,
@@ -421,6 +433,7 @@ export class SessionManager implements NativeBrowserRuntime {
           pid: spawned.process.pid,
           cdp,
           profileDir,
+          mode: visible ? "interactive" : "headless",
           startedAt: spawned.startedAt,
           process: spawned.process,
         };

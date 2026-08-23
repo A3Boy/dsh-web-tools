@@ -13,6 +13,18 @@ export interface XhsNoteExtraction {
 }
 export declare function extractXhsSearchState(): XhsStructuredSearchExtraction;
 export declare function extractVisibleXhsSearch(): XhsNoteExtraction[];
+export declare function extractXhsDetailState(noteId: string): {
+    available: boolean;
+    title?: string;
+    text?: string;
+    authorName?: string;
+    authorUrl?: string;
+    publishedAt?: string;
+    likes?: number;
+    collects?: number;
+    comments?: number;
+    images?: string[];
+};
 export declare function extractXhsNoteDetail(): {
     title?: string;
     text?: string;

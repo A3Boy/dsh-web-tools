@@ -20,11 +20,14 @@ export type PlatformAuthState =
   | "authenticated"
   | "expired";
 
+export type BrowserRunMode = "headless" | "interactive";
+
 export interface BrowserSessionStatus {
   platform: BrowserPlatform;
   runtimeAvailable: boolean;
   runtimeState: BrowserRuntimeState;
   browser?: BrowserInfo;
+  mode?: BrowserRunMode;
   authState: PlatformAuthState;
   authenticated: boolean;
   /** Whether a dedicated profile session was previously established (non-secret metadata, unverified at cold start). */

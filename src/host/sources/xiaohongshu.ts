@@ -2,6 +2,7 @@ import { createNativeBrowserRuntime, type NativeBrowserRuntime } from "../browse
 import {
   extractXhsSearchState,
   extractVisibleXhsSearch,
+  extractXhsDetailState,
   extractXhsNoteDetail,
   type XhsNoteExtraction,
 } from "./browser-scripts/xiaohongshu.ts";
@@ -44,9 +45,9 @@ export class XiaohongshuSource implements SpecializedSource {
       authenticated: sessionStatus.authenticated,
       sessionEstablished: sessionStatus.sessionEstablished,
       capabilities: {
-        nativeSearch: false,      // XHS search is degraded-web (too environment-sensitive)
-        nativeFetch: true,         // XHS detail fetch using headless native browser
-        webSearchFallback: true,   // general web discovery via site:xiaohongshu.com
+        nativeSearch: isXhsNativeSearchEnabled(),  // experimental — disabled by default
+        nativeFetch: true,                          // XHS detail fetch using headless native browser
+        webSearchFallback: true,                    // general web discovery via site:xiaohongshu.com
       },
       account: sessionStatus.accountLabel
         ? { handle: sessionStatus.accountLabel, name: sessionStatus.accountLabel }
@@ -209,7 +210,33 @@ export class XiaohongshuSource implements SpecializedSource {
       await page.waitForLoad(signal);
       await page.waitForSelector("#detail-title, .title, .security-verify", 8000, signal);
 
-      const detail = await page.call(extractXhsNoteDetail, [], signal);
+      // 1. Structured detail (PRIMARY) — __INITIAL_STATE__.note.noteDetailMap
+      const noteId = extractNoteIdFromUrl(url);
+      let detail: any;
+      if (noteId) {
+        try {
+          const structured = await page.call(extractXhsDetailState, [noteId], signal);
+          if (structured && structured.available) {
+            detail = structured;
+          }
+        } catch {
+          // Structured fallback to DOM
+        }
+      }
+
+      // 2. DOM extraction (FALLBACK)
+      if (!detail) {
+        try {
+          detail = await page.call(extractXhsNoteDetail, [], signal);
+        } catch {
+          // DOM fallback
+        }
+      }
+
+      if (!detail) {
+        return { error: { code: "parse-failed", message: "Could not extract note detail", retryable: true } };
+      }
+
       if (detail.isBlocked) {
         return { error: { code: "blocked", message: "Xiaohongshu CAPTCHA verification required", retryable: false } };
       }
@@ -231,5 +258,16 @@ export class XiaohongshuSource implements SpecializedSource {
     } finally {
       await page.close();
     }
+  }
+}
+
+function extractNoteIdFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    // /explore/<noteId> or /search_result/<noteId>
+    const match = parsed.pathname.match(/\/(?:explore|search_result)\/([a-zA-Z0-9]+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
   }
 }
