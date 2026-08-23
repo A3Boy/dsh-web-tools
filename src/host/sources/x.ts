@@ -63,6 +63,11 @@ export class XSource implements SpecializedSource {
       runtimeState: sessionStatus.runtimeState,
       authenticated: sessionStatus.authenticated,
       sessionEstablished: sessionStatus.sessionEstablished,
+      capabilities: {
+        nativeSearch: true,     // X search via headless native browser
+        nativeFetch: true,      // X tweet detail via headless native browser
+        webSearchFallback: true,
+      },
       account: sessionStatus.accountLabel
         ? { handle: sessionStatus.accountLabel, name: sessionStatus.accountLabel }
         : undefined,

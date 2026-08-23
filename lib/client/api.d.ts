@@ -65,6 +65,11 @@ export declare const api: {
             runtimeState: string;
             authenticated: boolean;
             sessionEstablished?: boolean;
+            capabilities?: {
+                nativeSearch: boolean;
+                nativeFetch: boolean;
+                webSearchFallback: boolean;
+            };
             account?: any;
             lastError?: string;
         }>;

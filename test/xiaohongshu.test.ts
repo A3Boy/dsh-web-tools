@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { XiaohongshuSource } from "../src/host/sources/xiaohongshu.ts";
+import { XiaohongshuSource, setXhsNativeSearchEnabled } from "../src/host/sources/xiaohongshu.ts";
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
@@ -61,11 +61,22 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   const status = await xhs.status();
   assert.equal(status.authenticated, true);
   assert.equal(status.runtimeState, "ready");
+  assert.equal(status.capabilities?.nativeSearch, false, "XHS native search must be disabled in production");
+  assert.equal(status.capabilities?.nativeFetch, true, "XHS native fetch must be enabled");
 
+  // Production default: search signals degraded-web fallback (no browser)
+  setXhsNativeSearchEnabled(false);
+  const fallbackRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
+  assert.equal(fallbackRes.error?.code, "runtime-unavailable");
+  assert.equal(fallbackRes.items.length, 0);
+
+  // Experimental: when explicitly enabled, native search runs through browser
+  setXhsNativeSearchEnabled(true);
   const searchRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
   assert.equal(searchRes.items.length, 1);
   assert.equal(searchRes.items[0].id, "note123");
   assert.ok(searchRes.items[0].url.includes("xsec_token=token123"));
+  setXhsNativeSearchEnabled(false);
 
   const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123?xsec_token=token123");
   assert.equal(fetchRes.item?.title, "小红书笔记标题详情");
@@ -96,10 +107,13 @@ test("XiaohongshuSource: returns auth-required without opening page when unauthe
   };
 
   const xhs = new XiaohongshuSource(fakeRuntime);
+  // Production default: search always returns degraded-web fallback regardless of auth
   const searchRes = await xhs.search("Gemini 3.7");
   assert.equal(openPageCalled, false);
-  assert.equal(searchRes.error?.code, "auth-required");
+  assert.equal(searchRes.error?.code, "runtime-unavailable");
+  assert.equal(searchRes.items.length, 0);
 
+  // Fetch still requires auth
   const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123");
   assert.equal(openPageCalled, false);
   assert.equal(fetchRes.error?.code, "auth-required");

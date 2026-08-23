@@ -6,28 +6,7 @@ import { XiaohongshuSource } from "../src/host/sources/xiaohongshu.ts";
 import { XSource } from "../src/host/sources/x.ts";
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
-test("Integration: web_search on Xiaohongshu query routes to XiaohongshuSource via NativeBrowserRuntime", async () => {
-  const fakePage: CdpPageLease = {
-    targetId: "t1",
-    sessionId: "s1",
-    navigate: async () => {},
-    waitForLoad: async () => {},
-    waitForSelector: async () => {},
-    evaluate: async () => ({} as any),
-    call: async () => [
-      {
-        id: "xhs1",
-        title: "小红书真实测评",
-        url: "https://www.xiaohongshu.com/explore/xhs1?xsec_token=xyz",
-        snippet: "测评内容",
-        authorName: "测评达人",
-        likes: 888,
-      },
-    ],
-    scrollBy: async () => {},
-    close: async () => {},
-  };
-
+test("Integration: web_search on Xiaohongshu query routes via XHS source and degrades to general web discovery", async () => {
   const fakeRuntime: NativeBrowserRuntime = {
     detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
     status: async () => ({
@@ -40,7 +19,9 @@ test("Integration: web_search on Xiaohongshu query routes to XiaohongshuSource v
     login: async () => ({} as any),
     checkAuthentication: async () => true,
     verifyAuthenticationForOperation: async () => true,
-    openPage: async () => fakePage,
+    openPage: async () => {
+      throw new Error("search must NOT open browser in production");
+    },
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
@@ -50,13 +31,21 @@ test("Integration: web_search on Xiaohongshu query routes to XiaohongshuSource v
   const xhsSource = new XiaohongshuSource(fakeRuntime);
   registry.registerSource(xhsSource);
 
+  // General web fallback provider records the query it received
+  let fallbackQuery = "";
+  const mockFallback: any = {
+    search: async (req: any) => {
+      fallbackQuery = req.query;
+      return { sources: [{ title: "Fallback", url: "https://fallback.example/1", snippet: "s" }] };
+    },
+  };
+  registry.setFallbackProviders(mockFallback, undefined);
+
   const query = "小红书上关于 Gemini 3.7 的讨论";
   const hints = extractSearchHints(query);
   assert.equal(hints.platform, "xiaohongshu");
 
   const outcome = await registry.search(hints.cleanQuery || query, { hints });
-  assert.equal(outcome.retrievalMode, "native-browser");
-  assert.equal(outcome.items.length, 1);
-  assert.equal(outcome.items[0].id, "xhs1");
-  assert.ok(outcome.items[0].url.includes("xsec_token=xyz"));
+  assert.equal(outcome.retrievalMode, "degraded-web");
+  assert.ok(fallbackQuery.includes("site:xiaohongshu.com"), "fallback should scope to xiaohongshu.com");
 });

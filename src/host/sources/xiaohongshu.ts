@@ -16,6 +16,14 @@ import type {
   SourceItem,
 } from "./types.ts";
 
+// XHS Native Search is experimental and disabled by default in production.
+// XHS search is environment-sensitive (account/session/IP/browser/risk-control).
+// Enable only for debugging: XHS_NATIVE_SEARCH=1
+// The production path uses general-web fallback (site:xiaohongshu.com).
+let xhsNativeSearchEnabled = (process.env.XHS_NATIVE_SEARCH ?? "0") === "1";
+export function setXhsNativeSearchEnabled(v: boolean) { xhsNativeSearchEnabled = v; }
+export function isXhsNativeSearchEnabled() { return xhsNativeSearchEnabled; }
+
 export class XiaohongshuSource implements SpecializedSource {
   readonly id = "xiaohongshu" as const;
   readonly name = "小红书";
@@ -35,6 +43,11 @@ export class XiaohongshuSource implements SpecializedSource {
       runtimeState: sessionStatus.runtimeState,
       authenticated: sessionStatus.authenticated,
       sessionEstablished: sessionStatus.sessionEstablished,
+      capabilities: {
+        nativeSearch: false,      // XHS search is degraded-web (too environment-sensitive)
+        nativeFetch: true,         // XHS detail fetch using headless native browser
+        webSearchFallback: true,   // general web discovery via site:xiaohongshu.com
+      },
       account: sessionStatus.accountLabel
         ? { handle: sessionStatus.accountLabel, name: sessionStatus.accountLabel }
         : undefined,
@@ -44,6 +57,27 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 
   async search(
+    query: string,
+    req?: SourceSearchRequest,
+    signal?: AbortSignal,
+  ): Promise<SourceSearchOutcome> {
+    // Experimental native search path (disabled by default)
+    if (xhsNativeSearchEnabled) {
+      return this.experimentalNativeSearch(query, req, signal);
+    }
+
+    // Production: do not start browser. Signal registry to use general-web fallback.
+    return {
+      items: [],
+      error: {
+        code: "runtime-unavailable",
+        message: "native search disabled — using general web discovery",
+        retryable: false,
+      },
+    };
+  }
+
+  private async experimentalNativeSearch(
     query: string,
     req?: SourceSearchRequest,
     signal?: AbortSignal,

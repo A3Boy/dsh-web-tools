@@ -11,6 +11,11 @@ export interface SourceAccountInfo {
     url?: string;
     avatarUrl?: string;
 }
+export interface SourceCapabilities {
+    nativeSearch: boolean;
+    nativeFetch: boolean;
+    webSearchFallback: boolean;
+}
 export interface SourceStatus {
     id: SpecializedPlatformId;
     name: string;
@@ -19,6 +24,7 @@ export interface SourceStatus {
     runtimeState: "unavailable" | "stopped" | "starting" | "ready" | "error";
     authenticated: boolean;
     sessionEstablished?: boolean;
+    capabilities?: SourceCapabilities;
     account?: SourceAccountInfo;
     lastError?: string;
     lastCheckedAt?: number;

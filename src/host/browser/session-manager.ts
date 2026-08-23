@@ -398,7 +398,10 @@ export class SessionManager implements NativeBrowserRuntime {
         const config = PLATFORM_AUTH_CONFIG[platform];
         const startUrl = initialUrl || (visible ? config.initialUrl : undefined);
 
-        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, !visible, false);
+        // Worker (non-login) sessions always run headless: Agent never gets a
+        // visible browser window, never steals focus, never shows in the taskbar.
+        // Only explicit interactive login launches a real window.
+        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, false, !visible);
         const wsUrl = await fetchWebSocketDebuggerUrl(spawned.port, 12000, signal);
 
         const cdp = new CdpClient(wsUrl);

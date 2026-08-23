@@ -127,18 +127,6 @@ export class CdpPage implements CdpPageLease {
   }
 
   async close(): Promise<void> {
-    // Minimize the browser window after closing the page
-    try {
-      const boundsRes = await this.client.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: this.targetId });
-      if (boundsRes?.windowId) {
-        await this.client.send("Browser.setWindowBounds", {
-          windowId: boundsRes.windowId,
-          bounds: { windowState: "minimized" },
-        });
-      }
-    } catch {
-      // Non-critical: window may already be minimized
-    }
     await this.onClose();
   }
 }
