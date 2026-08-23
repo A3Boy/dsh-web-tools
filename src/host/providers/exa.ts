@@ -12,9 +12,70 @@
 import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter, type SearchOutcome, type ProviderExecutionContext } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { ExaProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
+
+/**
+ * Build the POST request body for Exa /search.
+ * Supports:
+ *  - query (cleanQuery)
+ *  - type: auto / fast / deep etc.
+ *  - category: "research paper" (research), "news" (news), "financial report" (finance), "company", "people"
+ *  - includeDomains / excludeDomains
+ *  - startPublishedDate / endPublishedDate (ISO 8601)
+ *  - userLocation (country code)
+ */
+export function buildExaSearchBody(
+  query: string,
+  numResults: number,
+  options?: Readonly<ExaProviderOptions>,
+  hints?: Readonly<SearchHints>,
+): Record<string, unknown> {
+  const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+  const body: Record<string, unknown> = {
+    query: cleanQ,
+    type: options?.searchType ?? "auto",
+    numResults,
+    contents: {
+      highlights: true,
+      ...(typeof options?.maxAgeHours === "number" ? { maxAgeHours: options.maxAgeHours } : {}),
+    },
+  };
+
+  // 1. Category mapping
+  if (hints?.topic === "research") {
+    body.category = "research paper";
+  } else if (hints?.topic === "news") {
+    body.category = "news";
+  } else if (hints?.topic === "finance") {
+    body.category = "financial report";
+  }
+
+  // 2. Domain filters
+  if (hints?.domains?.include && hints.domains.include.length > 0) {
+    body.includeDomains = hints.domains.include;
+  }
+  if (hints?.domains?.exclude && hints.domains.exclude.length > 0) {
+    body.excludeDomains = hints.domains.exclude;
+  }
+
+  // 3. Date filters (ISO 8601)
+  if (hints?.freshness?.after) {
+    body.startPublishedDate = `${hints.freshness.after}T00:00:00.000Z`;
+  }
+  if (hints?.freshness?.before) {
+    body.endPublishedDate = `${hints.freshness.before}T23:59:59.999Z`;
+  }
+
+  // 4. User location
+  if (hints?.locale?.country) {
+    body.userLocation = hints.locale.country;
+  }
+
+  return body;
+}
 
 /**
  * Parse an Exa HTTP error response into a classified ProviderError.
@@ -90,25 +151,18 @@ export const ExaProvider: ProviderAdapter = {
   ...EXA_META,
 
   async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
-    const { signal, options } = resolveContext<ExaProviderOptions>(contextOrSignal);
+    const { signal, options, hints } = resolveContext<ExaProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Exa API key is not configured");
     const numResults = typeof maxResults === "number" && maxResults > 0 ? Math.min(maxResults, 25) : 10;
+    const body = buildExaSearchBody(query, numResults, options, hints);
     const res = await fetchWithProxy(EXA_SEARCH_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-api-key": token,
       },
-      body: JSON.stringify({
-        query,
-        type: options?.searchType ?? "auto",
-        numResults,
-        contents: {
-          highlights: true,
-          ...(typeof options?.maxAgeHours === "number" ? { maxAgeHours: options.maxAgeHours } : {}),
-        },
-      }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!res.ok) await throwExaError(res);

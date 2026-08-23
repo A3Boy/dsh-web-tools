@@ -2,10 +2,65 @@ import { providerError, throwIfHttp, classifyHttpStatus, resolveContext, type Pr
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import type { YouProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOU_CONTENTS_URL = "https://ydc-index.io/v1/contents";
 const YOU_BALANCE_URL = "https://api.you.com/v1/billing/account_balance";
+
+/**
+ * Build POST request body for You.com search.
+ * Supports:
+ *  - extraction: { extraction_mode: "highlights" }
+ *  - boost_domains: soft ranking boost for prefer/preferOfficial domains without excluding other results
+ *  - include_domains / exclude_domains (Note: boost_domains & include_domains cannot be combined)
+ *  - freshness: "day" | "week" | "month" | "year"
+ *  - country & language
+ */
+export function buildYouSearchBody(
+  query: string,
+  maxResults: number | undefined,
+  options?: Readonly<YouProviderOptions>,
+  hints?: Readonly<SearchHints>,
+): Record<string, unknown> {
+  const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+  const body: Record<string, unknown> = {
+    query: cleanQ,
+    count: maxResults,
+  };
+
+  if (options?.extractionMode !== "none") {
+    body.extraction = { extraction_mode: "highlights" };
+  }
+
+  // 1. Domain controls (boost_domains vs include_domains)
+  if (hints?.domains?.include && hints.domains.include.length > 0) {
+    // Hard filter wins when explicitly requested via site:
+    body.include_domains = hints.domains.include;
+  } else if (hints?.domains?.prefer && hints.domains.prefer.length > 0) {
+    // Soft preference / boost_domains (You.com native superpower)
+    body.boost_domains = hints.domains.prefer;
+  }
+
+  if (hints?.domains?.exclude && hints.domains.exclude.length > 0) {
+    body.exclude_domains = hints.domains.exclude;
+  }
+
+  // 2. Freshness
+  if (hints?.freshness?.preset) {
+    body.freshness = hints.freshness.preset;
+  }
+
+  // 3. Country & language
+  if (hints?.locale?.country) {
+    body.country = hints.locale.country;
+  }
+  if (hints?.locale?.language) {
+    body.language = hints.locale.language;
+  }
+
+  return body;
+}
 
 export const YOU_META = {
   name: "you",
@@ -37,15 +92,9 @@ export const YouProvider: ProviderAdapter = {
 
   async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
-    const { signal, options } = resolveContext<YouProviderOptions>(contextOrSignal);
+    const { signal, options, hints } = resolveContext<YouProviderOptions>(contextOrSignal);
 
-    const body: Record<string, unknown> = {
-      query,
-      count: maxResults,
-    };
-    if (options?.extractionMode !== "none") {
-      body.extraction = { extraction_mode: "highlights" };
-    }
+    const body = buildYouSearchBody(query, maxResults, options, hints);
 
     const res = await fetchWithProxy(YOU_SEARCH_URL, {
       method: "POST",

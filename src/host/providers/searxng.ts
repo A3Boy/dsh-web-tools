@@ -9,6 +9,7 @@
  */
 import { providerError, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 export const SEARXNG_META = {
   name: "searxng",
@@ -20,18 +21,60 @@ export const SEARXNG_META = {
   defaultBaseUrl: "http://127.0.0.1:8080",
 } as const;
 
+/**
+ * Build SearXNG URL parameters based on query, options, and SearchHints.
+ * Maps:
+ *  - topic=code → categories=it
+ *  - topic=research → categories=science
+ *  - topic=news → categories=news
+ *  - freshness preset → time_range: "day" | "week" | "month" | "year"
+ *  - language → language (e.g. "zh-CN", "en")
+ */
+export function buildSearxngUrl(
+  instanceUrl: string,
+  query: string,
+  apiKey?: string,
+  hints?: Readonly<SearchHints>,
+): URL {
+  const instance = instanceUrl.replace(/\/$/, "");
+  const url = new URL(`${instance}/search`);
+  const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+
+  url.searchParams.set("q", cleanQ);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("safesearch", "0");
+  if (apiKey) url.searchParams.set("api_key", apiKey);
+
+  // 1. Categories
+  if (hints?.topic === "code") {
+    url.searchParams.set("categories", "it");
+  } else if (hints?.topic === "research") {
+    url.searchParams.set("categories", "science");
+  } else if (hints?.topic === "news") {
+    url.searchParams.set("categories", "news");
+  }
+
+  // 2. Time range
+  if (hints?.freshness?.preset) {
+    url.searchParams.set("time_range", hints.freshness.preset);
+  }
+
+  // 3. Language
+  if (hints?.locale?.language) {
+    url.searchParams.set("language", hints.locale.language);
+  }
+
+  return url;
+}
+
 export const SearxngProvider: ProviderAdapter = {
   ...SEARXNG_META,
 
   async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
-    const { signal } = resolveContext(contextOrSignal);
+    const { signal, hints } = resolveContext(contextOrSignal);
     const instance = (baseUrl ?? SEARXNG_META.defaultBaseUrl).replace(/\/$/, "");
     if (!instance) throw providerError("config", "SearXNG base URL is not configured");
-    const url = new URL(`${instance}/search`);
-    url.searchParams.set("q", query);
-    url.searchParams.set("format", "json");
-    url.searchParams.set("safesearch", "0");
-    if (apiKey) url.searchParams.set("api_key", apiKey);
+    const url = buildSearxngUrl(instance, query, apiKey, hints);
     let res: Response;
     try {
       res = await fetchWithProxy(url, { signal });

@@ -10,6 +10,19 @@
  * @module
  */
 import { type ProviderAdapter } from "./types.ts";
+import type { ExaProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
+/**
+ * Build the POST request body for Exa /search.
+ * Supports:
+ *  - query (cleanQuery)
+ *  - type: auto / fast / deep etc.
+ *  - category: "research paper" (research), "news" (news), "financial report" (finance), "company", "people"
+ *  - includeDomains / excludeDomains
+ *  - startPublishedDate / endPublishedDate (ISO 8601)
+ *  - userLocation (country code)
+ */
+export declare function buildExaSearchBody(query: string, numResults: number, options?: Readonly<ExaProviderOptions>, hints?: Readonly<SearchHints>): Record<string, unknown>;
 export declare const EXA_META: {
     readonly name: "exa";
     readonly label: "Exa";

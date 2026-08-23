@@ -74,11 +74,12 @@ export const JinaProvider: ProviderAdapter = {
   ...JINA_META,
 
   async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
-    const { signal } = resolveContext(contextOrSignal);
+    const { signal, hints } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Jina API key is not configured");
     const count = Math.min(Math.max(maxResults ?? 5, 1), JINA_MAX_RESULTS);
-    const url = `${JINA_SEARCH_URL}${encodeURIComponent(query)}?count=${count}`;
+    const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+    const url = `${JINA_SEARCH_URL}${encodeURIComponent(cleanQ)}?count=${count}`;
     const res = await fetchWithProxy(url, {
       method: "GET",
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },

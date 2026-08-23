@@ -20,6 +20,11 @@ import { mergePoolQuota } from "./quota.ts";
 import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
 import { extractSearchHints, calculateAfterDate } from "./search-hints.ts";
 import { buildFirecrawlSearchBody } from "./providers/firecrawl.ts";
+import { buildTavilySearchBody } from "./providers/tavily.ts";
+import { buildYouSearchBody } from "./providers/you.ts";
+import { buildBraveLlmContextBody } from "./providers/brave.ts";
+import { buildExaSearchBody } from "./providers/exa.ts";
+import { buildSearxngUrl } from "./providers/searxng.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -325,6 +330,72 @@ test("extractSearchHints extracts news and day freshness", () => {
 test("extractSearchHints extracts finance topic", () => {
   const hints = extractSearchHints("Nvidia Q2 earnings report and revenue 财报");
   assert.equal(hints.topic, "finance");
+});
+
+// ---- Tavily deep adaptation tests ----
+
+test("buildTavilySearchBody maps topic news, freshness week, and domains", () => {
+  const hints = extractSearchHints("site:reuters.com -site:spam.com OpenAI breaking news this week", new Date("2026-08-23T12:00:00Z"));
+  const body = buildTavilySearchBody("site:reuters.com -site:spam.com OpenAI breaking news this week", 5, { searchDepth: "basic", chunksPerSource: 2 }, hints);
+  
+  assert.equal(body.topic, "news");
+  assert.equal(body.search_depth, "basic");
+  assert.equal(body.chunks_per_source, 2);
+  assert.equal(body.time_range, "week");
+  assert.deepEqual(body.include_domains, ["reuters.com"]);
+  assert.deepEqual(body.exclude_domains, ["spam.com"]);
+});
+
+// ---- You.com deep adaptation tests ----
+
+test("buildYouSearchBody maps soft prefer to boost_domains and sets freshness", () => {
+  const hints = extractSearchHints("latest AI news prefer official documentation", new Date("2026-08-23T12:00:00Z"));
+  const body = buildYouSearchBody("latest AI news prefer official documentation", 10, { extractionMode: "highlights" }, hints);
+  
+  assert.deepEqual(body.extraction, { extraction_mode: "highlights" });
+  assert.equal(body.freshness, "month");
+});
+
+test("buildYouSearchBody maps hard site: to include_domains without boost_domains", () => {
+  const hints = extractSearchHints("site:openai.com GPT-5 model spec");
+  const body = buildYouSearchBody("site:openai.com GPT-5 model spec", 5, undefined, hints);
+  
+  assert.deepEqual(body.include_domains, ["openai.com"]);
+  assert.equal(body.boost_domains, undefined);
+});
+
+// ---- Brave deep adaptation tests ----
+
+test("buildBraveLlmContextBody maps freshness preset to pd/pw/pm/py and country/lang", () => {
+  const hints = extractSearchHints("今日 OpenAI 进展快讯");
+  const body = buildBraveLlmContextBody("今日 OpenAI 进展快讯", 10, undefined, hints);
+  
+  assert.equal(body.freshness, "pd");
+  assert.equal(body.country, "CN");
+  assert.equal(body.search_lang, "zh");
+});
+
+// ---- Exa deep adaptation tests ----
+
+test("buildExaSearchBody maps research topic to research paper category and startPublishedDate", () => {
+  const hints = extractSearchHints("site:arxiv.org AI reasoning benchmark paper this month", new Date("2026-08-23T12:00:00Z"));
+  const body = buildExaSearchBody("site:arxiv.org AI reasoning benchmark paper this month", 10, { searchType: "fast" }, hints);
+  
+  assert.equal(body.category, "research paper");
+  assert.equal(body.type, "fast");
+  assert.deepEqual(body.includeDomains, ["arxiv.org"]);
+  assert.equal(body.startPublishedDate, "2026-07-23T00:00:00.000Z");
+});
+
+// ---- SearXNG deep adaptation tests ----
+
+test("buildSearxngUrl maps code topic to it, time_range to week, and language", () => {
+  const hints = extractSearchHints("TypeScript compiler error this week");
+  const url = buildSearxngUrl("http://127.0.0.1:8080", "TypeScript compiler error this week", undefined, hints);
+  
+  assert.equal(url.searchParams.get("categories"), "it");
+  assert.equal(url.searchParams.get("time_range"), "week");
+  assert.equal(url.searchParams.get("format"), "json");
 });
 
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {

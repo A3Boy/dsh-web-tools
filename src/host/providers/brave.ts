@@ -16,9 +16,63 @@ import { providerError, throwIfHttp, classifyHttpStatus, resolveContext, type Pr
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { BraveProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 const BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context";
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+
+/**
+ * Map SearchHints freshness preset to Brave's freshness parameter:
+ * pd = past 24 hours, pw = past 7 days, pm = past 31 days, py = past 365 days
+ */
+export function mapBraveFreshness(hints?: Readonly<SearchHints>): string | undefined {
+  if (!hints?.freshness?.preset) return undefined;
+  switch (hints.freshness.preset) {
+    case "day": return "pd";
+    case "week": return "pw";
+    case "month": return "pm";
+    case "year": return "py";
+  }
+}
+
+/**
+ * Build the LLM Context request body.
+ */
+export function buildBraveLlmContextBody(
+  query: string,
+  maxResults: number | undefined,
+  options?: Readonly<BraveProviderOptions>,
+  hints?: Readonly<SearchHints>,
+): Record<string, unknown> {
+  const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+  const body: Record<string, unknown> = {
+    q: cleanQ,
+    count: Math.min(Math.max(maxResults ?? 10, 20), 50),
+  };
+  if (maxResults !== undefined) {
+    body.maximum_number_of_urls = Math.min(Math.max(maxResults, 1), 50);
+  }
+  if (options?.contextThresholdMode) {
+    body.context_threshold_mode = options.contextThresholdMode;
+  }
+  if (typeof options?.contextTokenBudget === "number") {
+    body.maximum_number_of_tokens = options.contextTokenBudget;
+  }
+
+  // Freshness & locale
+  const freshness = mapBraveFreshness(hints);
+  if (freshness) {
+    body.freshness = freshness;
+  }
+  if (hints?.locale?.country) {
+    body.country = hints.locale.country;
+  }
+  if (hints?.locale?.language) {
+    body.search_lang = hints.locale.language;
+  }
+
+  return body;
+}
 
 export const BRAVE_META = {
   name: "brave",
@@ -35,27 +89,14 @@ export const BraveProvider: ProviderAdapter = {
   async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Brave API key is not configured");
-    const { signal, options } = resolveContext<BraveProviderOptions>(contextOrSignal);
+    const { signal, options, hints } = resolveContext<BraveProviderOptions>(contextOrSignal);
 
     const preferClassic = options?.endpointPreference === "web-search";
 
     // --- Preferred path: LLM Context endpoint (agent-optimized), skipped if user chose web-search ---
     if (!preferClassic) {
       try {
-        const body: Record<string, unknown> = {
-          q: query,
-          count: Math.min(Math.max(maxResults ?? 10, 20), 50), // candidate pool: at least 20 for LLM Context rank
-        };
-        // DSH maxResults controls the final URL count, not the candidate pool.
-        if (maxResults !== undefined) {
-          body.maximum_number_of_urls = Math.min(Math.max(maxResults, 1), 50);
-        }
-        if (options?.contextThresholdMode) {
-          body.context_threshold_mode = options.contextThresholdMode;
-        }
-        if (typeof options?.contextTokenBudget === "number") {
-          body.maximum_number_of_tokens = options.contextTokenBudget;
-        }
+        const body = buildBraveLlmContextBody(query, maxResults, options, hints);
         const res = await fetchWithProxy(BRAVE_LLM_CONTEXT_URL, {
           method: "POST",
           headers: {

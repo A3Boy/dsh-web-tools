@@ -14,6 +14,19 @@
  * @module
  */
 import { type ProviderAdapter } from "./types.ts";
+import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
+/**
+ * Build the POST request body for Tavily's /search endpoint.
+ * Supports:
+ *  - search_depth: "basic" | "advanced" | "fast" | "ultra-fast"
+ *  - chunks_per_source: supported on basic, advanced, fast (not ultra-fast)
+ *  - topic: "news" | "finance" | "general" from hints
+ *  - time_range: "day" | "week" | "month" | "year"
+ *  - start_date: RFC3339 / YYYY-MM-DD from hints
+ *  - include_domains / exclude_domains
+ */
+export declare function buildTavilySearchBody(query: string, maxResults: number | undefined, options?: Readonly<TavilyProviderOptions>, hints?: Readonly<SearchHints>): Record<string, unknown>;
 export declare const TAVILY_META: {
     readonly name: "tavily";
     readonly label: "Tavily";

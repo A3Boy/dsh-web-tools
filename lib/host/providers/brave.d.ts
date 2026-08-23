@@ -14,6 +14,17 @@
  */
 import { type ProviderAdapter } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import type { BraveProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
+/**
+ * Map SearchHints freshness preset to Brave's freshness parameter:
+ * pd = past 24 hours, pw = past 7 days, pm = past 31 days, py = past 365 days
+ */
+export declare function mapBraveFreshness(hints?: Readonly<SearchHints>): string | undefined;
+/**
+ * Build the LLM Context request body.
+ */
+export declare function buildBraveLlmContextBody(query: string, maxResults: number | undefined, options?: Readonly<BraveProviderOptions>, hints?: Readonly<SearchHints>): Record<string, unknown>;
 export declare const BRAVE_META: {
     readonly name: "brave";
     readonly label: "Brave";
