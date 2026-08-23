@@ -8,7 +8,7 @@
 
 DeepSeek Harness 的统一多 Provider Web Runtime。
 
-继续使用 DSH 原生 `web_search` / `web_fetch`，在 Host 层提供多搜索源、自动 fallback、多 API Key、额度与健康状态、Provider 原生搜索偏好、页面正文读取和 Search Mode。
+对齐 DSH 原生 `web_search` / `web_fetch` 工具契约，在 Host 宿主层提供多搜索源聚合、自动 Fallback、多 API Key 轮询管理、配额与健康状态监控、Provider 原生参数偏好配置、正文提取抓取及会话级 Search Mode。
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -31,392 +31,191 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
   <img src="assets/overview.png" width="900" alt="dsh-web-tools 设置页" />
 </p>
 
-## 现在它不只是“接了 8 个搜索 API”
+## 特性
 
-当前版本已经把搜索、正文读取和运行时调度整合到同一套 DSH 原生 Web contract 后面：
+- **8 大主流搜索源**：集成 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina 与自托管 SearXNG。
+- **完全兼容 DSH 原生工具**：不增加 `web_search_exa` 等特定工具，Agent 无感调用官方标准 `web_search` 与 `web_fetch`。
+- **多 Query 并发支持**：适配 DSH 原生 `queries[]` 数组，在存在多个独立检索维度时并行请求。
+- **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低负载 Key，鉴权失败自动切换备用 Key。
+- **确定性 Provider Fallback**：遇到网络异常、超时、5xx 服务端错误、429 限流或配额耗尽时，自动降级至链条中的下一搜索源。
+- **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免频繁重试造成无效请求积压。
+- **搜索路由策略**：支持顺序（Ordered）、轮询（Round-Robin）、随机（Random）三种首选源调度方式。
+- **Provider 原生参数深度适配**：对齐各平台官方特色接口（Exa 语义检索与高亮、Tavily 深度/分块、Brave LLM Context、Jina Reader 引擎与 Token 控制、Firecrawl 正文提取等），提供易懂的偏好选项。
+- **一键搜索偏好预设**：提供 快速响应（Fast）、深度检索（Deep）、经济节省（Economy）与默认推荐，支持随时一键切换或还原。
+- **原生正文提取（Extract / Scrape）**：`web_fetch` 会自动调用支持 Provider 的原生提取接口（如 Exa `/contents`、Tavily `/extract`、Firecrawl `/scrape`、Parallel `/v1/extract`、You.com `/v1/contents`、Jina Reader）。
+- **会话级「联网搜索」（Search Mode）**：输入框支持快捷切换联网策略，开启后在 Agent 回复前强制先进行联网检索与验证。
+- **代理与自托管支持**：完整支持系统代理、`HTTP(S)_PROXY`、`NO_PROXY` 规范以及免 API Key 的自建 SearXNG 实例。
 
-- **8 个搜索源**：Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG
-- **DSH 原生工具**：不新增 `web_search_exa` 之类的 Provider 私有工具，Agent 继续只用 `web_search` / `web_fetch`
-- **多 query 并行**：适配 DSH `queries[]`，默认最多 4 条；Prompt 更偏向 1 条精确 query，只有真实存在多个独立未知量时才并行
-- **多 API Key 池**：并发 reservation、认证失败自动切同 Provider 下一把 Key
-- **Provider fallback**：超时、网络错误、5xx、限流、额度问题自动尝试下一家
-- **429 Retry-After cooldown**：Provider 被限流后进入临时冷却，冷却期间零 HTTP，直接走下一家，避免下一轮重复撞 429
-- **深度适配各搜索源原生能力**：Exa 智能搜索、Tavily 深度检索、Brave 快速搜索、Jina 网页解析、Firecrawl 内容提取——不只是简单调用 API，而是按每个搜索源的官方能力做适配；设置页用“搜索偏好”呈现代理，不暴露内部参数名
-- **全局搜索模式**：推荐 / 快速 / 精准 / 节省 一键切换，自动为各搜索源应用合适的原生参数和搜索顺序；也可以切到“自定义”手动调整
-- **原生正文 / Extract 后端**：Search 找 URL，Fetch 读取页面正文；不同 Provider 会调用自己的 Contents / Extract / Scrape / Reader 接口
-- **Search Mode**：会话级「联网搜索」开关，强制当前回答先完成联网研究；失败时会明确告诉 Agent 哪些信息没有完成联网验证
-- **代理 / SearXNG**：支持系统代理、`HTTP(S)_PROXY`、`NO_PROXY` 和完全自托管的 SearXNG
+> 本插件不提供公共中转服务或共享 API Key，所有请求均由本地 DSH Host 直接与目标 Provider 官方 API 通信。
 
-插件不提供共享 API Key 或中转服务。请求由本地 DSH Host 直接访问对应 Provider。
+## 安装与更新
 
-## 安装
+### 安装
 
 ```bash
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
 ```
 
-重启 `dsh web` 后打开：
+重启 `dsh web`，在左侧侧边栏进入：
 
 ```text
 Settings → Web Search
 ```
 
-更新：
+### 更新
 
 ```bash
 dsh plugin --profile web update dsh-web-tools
 ```
 
-设置页会在后台检查 GitHub Release；发现高于当前安装版本的正式版本时，会显示更新提示和发布说明入口。检查失败不会影响搜索或插件启动。
+设置页会在后台静默检测 GitHub Releases 最新稳定版本，若有新版本将在界面提示更新。
 
-移除：
+### 卸载
 
 ```bash
 dsh plugin --profile web remove dsh-web-tools
 ```
 
-当前开发分支已经在 DSH rc.8 运行环境完成 P5 实测；`package.json` 仍保持兼容 rc.6 peer range。
+## Provider 支持矩阵
 
-## Provider 能力
-
-| Provider | Search | Page / Extract | 主要适配 |
-| --- | :---: | :---: | --- |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | `auto` / `fast` / deep 系列、query-aware highlights、内容新鲜度 |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | basic / advanced / fast / ultra-fast、auto parameters |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | Search discovery、正文清洗、`onlyMainContent`、缓存策略 |
-| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | advanced / basic / turbo、LLM-ranked excerpts、`max_chars_total` |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context 优先，Classic Web Search 自动回退 |
-| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | Search highlights、Markdown 正文读取、抓取超时/缓存 |
-| [Jina](https://jina.ai) | ✅ | ✅ Reader | Search + Reader、LLM-friendly 页面内容 |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | 自托管 meta-search，无 API Key |
-
-> Parallel 当前官方公开文档列出的正式 Search modes 是 `turbo` / `basic` / `advanced`。Turbo 当前官方注明主要支持英文和日文查询，因此本项目不把它设成全局默认。
+| Provider | 搜索 (Search) | 抓取/提取 (Fetch / Extract) | 核心特性与适配能力 | 配额查询 (Quota) |
+| --- | :---: | :---: | --- | :---: |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | 语义检索 (`auto` / `fast` / `deep` 系列)、Query-aware 高亮切片、时效性过滤 | 控制台自查 |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | 深度检索 (`basic` / `advanced` / `fast` / `ultra-fast`)、智能参数、分块提取 | ✅ 官方 API |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | 结构化搜索、Clean Markdown 提取、`onlyMainContent` 过滤、缓存策略 | ✅ 官方 API |
+| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent 针对性优化检索 (`advanced` / `basic` / `turbo`)、LLM 评分切片、全文提取 | 控制台自查 |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | 默认优先 LLM Context 预提取模式，不支持时自动回退至 Classic Web Search | ✅ 响应头自动捕获 |
+| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | 搜索高亮片段提取、Markdown 正文接口、抓取超时与缓存控制 | ✅ 官方 API (USD) |
+| [Jina](https://jina.ai) | ✅ | ✅ Reader | 搜索与 Reader 网页解析、ReaderLM-v2 高精度 Markdown 转换、Token 预算与截断控制 | 尽力解析 (Reader) |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | 开源自托管元搜索引擎，无需 API Key，保护隐私 | 自建实例无限制 |
 
 <p align="center">
   <img src="assets/providerDetail.png" width="900" alt="Provider 配置与搜索偏好" />
 </p>
 
-## 推荐起点
+## 快速选型指南
 
-新安装默认 Provider 现在是 **Exa**。这是项目自己的 P5 固定任务评测得出的产品默认，不代表对所有场景的绝对排名。
+新安装默认首选 Provider 为 **Exa**（基于项目 P5 基准测试评估结果）。
 
-| 用途 | 可以先试 |
-| --- | --- |
-| 默认 / 技术搜索 | **Exa** |
-| 低延迟 Agent grounding | Brave LLM Context |
-| Search + Extract | Tavily / Parallel |
-| 正文抓取 | Firecrawl / Jina / You.com |
-| Web / News | You.com |
-| 自托管 | SearXNG |
+| 需求场景 | 推荐首选 | 说明 |
+| --- | --- | --- |
+| 综合默认 / 技术文档检索 | **Exa** | 语义匹配度高，切片精准 |
+| 低延迟 Agent 上下文召回 | **Brave Search** (LLM Context) | 检索速度快，直接返回整合片段 |
+| 深度研究与结构化 Extract | **Tavily** / **Parallel** | 适合复杂问题调研与正文二次解析 |
+| 高质量网页 Markdown 抓取 | **Firecrawl** / **Jina** / **You.com** | 页面主体内容清洗能力强 |
+| 新闻与通用时事 | **You.com** | 新鲜度与通用 Web 覆盖度好 |
+| 内部局域网 / 隐私自托管 | **SearXNG** | 无需外部 API Key，完全私有化部署 |
 
-只配置一个 Provider 就可以使用；配置多个后会得到自动 fallback。
+## 调度策略与容灾机制
 
-## P5：不是凭感觉调默认值
+### 1. 搜索路由策略 (Search Routing Policy)
 
-这一版专门跑了一轮固定评测：
+可在设置页选择当前请求的首选 Provider 决定逻辑：
+- **顺序模式 (Ordered - 默认)**：始终优先请求列表第一位的 Provider。
+- **轮询模式 (Round-Robin)**：每轮查询依次轮换首选 Provider，均匀分摊多个 Provider 之间的请求量。
+- **随机模式 (Random)**：每轮查询随机选择初始 Provider。
 
-- 7 个 Provider × 36 条固定任务
-- 252 次默认档搜索
-- 132 次 Provider 配置 A/B
-- multi-query、fallback、Key trim、Provider options isolation
+> 无论采用何种路由策略，当初始 Provider 失败时，均会自动沿剩余可用链路执行 Fallback。
 
-当前默认档 Top-3 answer-bearing rate：
+### 2. 自动 Fallback 链路
 
-| Provider | Top-1 | Top-3 | Official source | 泛泛率 | 中位延迟 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **Exa** | **72.2%** | **97.2%** | **75.0%** | **0%** | 1.35s |
-| Brave | 50.0% | 94.4% | 50.0% | 2.8% | **0.90s** |
-| You.com | 55.6% | 91.7% | 55.6% | **0%** | 1.26s |
-| Parallel | 52.8% | 88.9% | 58.3% | 5.6% | 1.95s |
-| Tavily | 47.2% | 88.9% | 47.2% | 5.6% | 2.18s |
+支持拖拽调整 Provider 的 Fallback 顺序。当遇到以下异常时自动顺延至下一可用 Provider：
+- 请求超时（可在设置中配置单次尝试超时时间，默认 10s）
+- 网络连接中断或 DNS 解析失败
+- Provider 服务端 5xx 错误
+- 429 请求频次超限 / 额度耗尽（402 / 432 / 433）
 
-完整报告和原始输出在：
+### 3. 429 智能冷却 (Cooldown)
 
-```text
-reports/p5/
-```
+当某 Provider 返回 429 且附带 `Retry-After` 标头时，插件会自动将该 Provider 标记为冷却状态。在冷却周期结束前，后续请求将直接跳过该 Provider，不产生额外无效 HTTP 往返。
 
-重点结论：
+### 4. 多 API Key 轮询与并发隔离
 
-- Exa 是当前综合最稳的默认候选，因此新安装默认从 Tavily 调整为 Exa
-- Exa `fast` 更快，但完整证据还不足以取代官方推荐的 `auto`，所以默认继续 `auto`
-- Tavily `basic` 在本轮 A/B 里比 `advanced` 更划算，因此没有因为“advanced”名字更高级就强行升默认
-- 2 条独立 query 是 multi-query 的明显甜点；4 条更多是在增加 URL 多样性和成本
-- 同义改写 spam 不值得，因此 Prompt 明确禁止拿多个近义 query 填满数组
-- Firecrawl 更适合作为正文读取 / fallback，而不是默认搜索源
+针对单个 Provider，可添加多个 API Key：
+- 并发请求优先指派当前 `inFlight` 数量最少的可用 Key。
+- 遇 401/403 鉴权失败时，自动将该 Key 标记为异常并尝试同 Provider 下的其它备用 Key。
+- 前端页面对 API Key 全程脱敏展示，保障凭据安全。
 
-这些数字只代表本项目固定 corpus、当时账户和 API 状态下的结果，不是第三方 Provider 的通用排行榜。
+## 搜索模式 (Search Mode)
 
-## Provider 搜索偏好
+在 Web 对话输入框左侧提供了会话级「联网搜索」快捷开关：
 
-每个 Provider 的底层参数保持原生，但 UI 不要求用户查 API 文档。
-
-例如：
-
-```text
-Exa
-自动平衡 / 快速响应 / 深度检索
-
-Tavily
-平衡 / 高质量 / 快速 / 极速
-
-Brave
-智能上下文 / 传统网页搜索
-
-You.com
-AI 相关片段 / 简短摘要
-
-Parallel
-高质量 / 平衡 / 极速
-```
-
-设置页只保存你真正修改过的 override；点「恢复推荐」会删除 override，重新跟随当前版本的推荐默认。
-
-## Search + Extract / Fetch
-
-搜索只是第一步。当前插件已经给多家 Provider 接入了它们原生的正文/Extract 接口：
-
-```text
-Exa        /contents
-Tavily     /extract
-Firecrawl  /scrape
-Parallel   /v1/extract
-You.com    /v1/contents
-Jina       Reader
-```
-
-典型流程：
-
-```text
-web_search
-    ↓
-找到相关 URL
-    ↓
-web_fetch
-    ↓
-读取正文 / Extract 后的页面内容
-```
-
-Search 和 Fetch 不要求使用同一家 Provider。例如：
-
-```text
-Brave LLM Context
-    ↓
-找到页面
-    ↓
-Parallel Extract
-```
-
-下一条长期路线会继续研究 query-aware focused extraction，而不是只增加更多 Search 参数。
-
-## 搜索顺序与 fallback
-
-Provider 可以拖动排序。第一项是默认搜索源。
-
-例如：
-
-```text
-Exa → Brave → You.com → Tavily → Parallel → Firecrawl → Jina
-```
-
-如果当前 Provider 出现：
-
-```text
-限流
-超时
-网络错误
-5xx
-额度不足
-```
-
-插件会尝试下一家。
-
-API Key 认证失败时，如果同一个 Provider 配置了多把 Key，会先尝试下一把可用 Key。
-
-### Retry-After cooldown
-
-如果 Provider 返回 429 且带 `Retry-After`：
-
-```text
-Provider A
-   ↓ 429 + Retry-After
-进入临时 cooldown
-   ↓
-当前请求 fallback 到 Provider B
-```
-
-在 cooldown 到期前，后续搜索不会再次向 A 发 HTTP 请求，而是直接跳过，避免重复撞限流。
-
-## 多 API Key
-
-每个 Hosted Provider 可以配置多个 API Key：
-
-```text
-Exa
-├── Key A
-├── Key B
-└── Key C
-```
-
-并发搜索会优先分散到低 `inFlight` 的可用 Key；完整 Key 不会返回给浏览器端。
-
-## Quota
-
-当前额度支持：
-
-| Provider | Quota |
-| --- | :---: |
-| Tavily | ✅ |
-| Firecrawl | ✅ |
-| Brave | ✅（Search response headers） |
-| You.com | ✅ |
-| Jina | Best effort |
-| Exa | — |
-| Parallel | Dashboard only |
-| SearXNG | Self-hosted |
-
-Quota 主要用于设置页展示，不会因为估算余额自动改变你的 Provider 顺序。
-
-## Test Search
-
-设置页可以直接测试真实 Provider chain，并显示：
-
-- 最终使用的 Provider
-- 搜索耗时
-- 结果数量
-- 每次 Provider attempt
-- success / timeout / rate limit / authentication failure
-- 搜索结果
-
-<p align="center">
-  <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search" />
-</p>
-
-Test Search 和 Agent 使用同一套 Registry / Provider settings。
-
-## 会话「联网搜索」
-
-输入框左侧有「联网搜索」开关：
-
-- **关闭**：让 Agent 自己判断当前问题是否需要联网
-- **开启**：每轮回答前至少完成一次联网研究；给了具体 URL 时优先 `web_fetch`，否则使用 `web_search`
-- 一个明确事实默认用 1 条精确 query
-- 只有两个独立未知量 / 两个真实 source angle 时才建议同时发 2 条 query
-- 3–4 条只用于确实存在对应数量独立事实的任务
-- 不用同义改写填满 `queries[]`
-- 第一轮泛泛时只做一次更精确的 reformulation
-- 搜索失败时要求 Agent 明确说明哪些当前事实没有完成联网验证
+- **关闭 (Auto)**：由 Agent 自主根据上下文判断是否调用联网工具。
+- **开启 (Required)**：在当前轮次生成最终回答前，强制 Agent 必须先通过 `web_search` 或 `web_fetch` 获取外部信息；若检索完全失败，要求 Agent 明确说明未经验证的事实。
 
 <p align="center">
   <img src="assets/searchMode.png" width="480" alt="联网搜索开关" />
 </p>
 
-## 免费额度参考
+## 设置页测试 (Test Search)
 
-<details>
-<summary>免费额度 / 新用户额度（请始终以各 Provider 官方当前规则为准）</summary>
+在设置页底部提供实测调试面板，可直接向当前配置的 Fallback 链路发送测试 Query：
+- 实时反馈最终胜出的 Provider
+- 展示全链路耗时与召回条数
+- 显示每一次尝试的详细状态（命中成功、超时、鉴权失败、限流等）
+- 预览检索结果与摘要片段
 
-免费额度变化很快，本项目不把它作为稳定 API contract。设置前建议直接查看对应 Provider 官方 Pricing / Billing 页面。
+<p align="center">
+  <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search" />
+</p>
 
-</details>
+## 代理配置
 
-## 网络代理
-
-支持：
+插件内置 Proxy 支持，支持以下环境变量与规则：
 
 ```text
-HTTPS_PROXY
-HTTP_PROXY
-Windows 系统代理
+HTTP_PROXY / HTTPS_PROXY
+Windows 系统代理设置
 NO_PROXY
 ```
 
-本地地址默认绕过代理：
+本地回环地址（`localhost`、`127.0.0.1`、`::1`、`*.local`）默认自动绕过代理。
 
-```text
-localhost
-127.0.0.1
-::1
-*.local
-```
+## 安全与隐私说明
 
-## SearXNG
+- **本地存储与调用**：API Key 仅保存在本地 DSH 凭据系统，由宿主进程直接向 Provider 发起通信，无第三方服务器中转。
+- **敏感数据脱敏**：Web 前端不回传完整 API Key，运行时日志及测试输出中自动过滤 Authorization 等鉴权标头。
+- **自托管支持**：可搭配本地 SearXNG 实例实现完全离线的私有化元检索。
 
-SearXNG 不需要 API Key，只需要自己的实例 URL：
-
-```text
-http://127.0.0.1:8080
-```
-
-既可以单独使用，也可以放在 fallback chain 最后。
-
-## 安全
-
-- API Key 只在 DSH Host 侧使用
-- 浏览器端不会拿到完整 API Key
-- 日志不输出完整 Key
-- 请求不经过本项目中转服务器
-- 不上传搜索使用记录
-- 支持完全自托管 SearXNG
-- Provider 错误和运行时状态不会包含 Authorization / API Key 明文
-
-## 开发
-
-安装依赖：
+## 本地开发
 
 ```bash
-npm install
+# 安装依赖
+pnpm install
+
+# 运行测试套件
+pnpm test
+
+# 类型检查
+pnpm run typecheck
+
+# 编译构建
+pnpm run build
 ```
 
-测试：
+> 修改 `src/` 下的代码后需执行 `pnpm run build` 生成 `lib/` 产物。更多开发规范请参考 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-```bash
-npm test
-```
+## 常见问题
 
-类型检查：
+<details>
+<summary><b>更新插件重启后界面仍显示旧版本？</b></summary>
 
-```bash
-npm run typecheck
-```
-
-构建：
-
-```bash
-npm run build
-```
-
-改动 `src/` 后请重新 build，并把生成的 `lib/` 一起提交。包没有 `prepare` 脚本，GitHub 安装会直接使用仓库里已提交的 build 产物。
-
-Provider adapters：
-
-```text
-src/host/providers/
-```
-
-P5 评测资产：
-
-```text
-reports/p5/
-```
-
-更多开发说明见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 更新后还是旧代码？
-
-更新插件并重启后仍表现为旧版本时：
+若使用 `file:` 方式或本地包升级遇到缓存问题，可前往 Profile 目录重新安装：
 
 ```bash
 cd ~/.dsh/profiles/web
 pnpm install
 ```
 
-本地开发建议使用 `link:`，避免 `file:` 安装加载旧快照。
+本地开发建议使用软链接方式（`link:`）载入。
+</details>
 
-## Contributing
+<details>
+<summary><b>为什么部分 Provider 的配额显示“控制台自查”？</b></summary>
 
-欢迎 Issue / Pull Request，也欢迎新的 Provider、Extract 能力和真实 benchmark 数据。
+部分服务商（如 Exa、Parallel）暂未开放轻量级的账户余额查询公开 API，配额查询属于非必要辅助功能，不影响正常检索与 Fallback。
+</details>
 
-## License
+## 许可
 
 [MIT](LICENSE) © A3Boy
