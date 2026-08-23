@@ -408,6 +408,16 @@ async function handleBridgeBootstrap(): Promise<{ ticket: string; expiresAt: num
   return { ticket, expiresAt: Date.now() + 60000 };
 }
 
+async function handleBridgeConnectAuth(payload: unknown): Promise<{ status: string; url?: string }> {
+  const platform = (payload as any)?.platform;
+  if (platform === "xiaohongshu") {
+    return { status: "login_opened", url: "https://creator.xiaohongshu.com/" };
+  } else if (platform === "x") {
+    return { status: "login_opened", url: "https://x.com/i/flow/login" };
+  }
+  return { status: "unknown_platform" };
+}
+
 async function handleBridgeStatus(): Promise<{ connected: boolean; platforms: Record<string, unknown> }> {
   const connected = defaultBridgeServer.isConnected();
   const statuses = await defaultSourceRegistry.probeAll();
@@ -446,6 +456,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
   "bridge/bootstrap": () => handleBridgeBootstrap(),
+  "bridge/connect-auth": (_deps, payload) => handleBridgeConnectAuth(payload),
   "bridge/status": () => handleBridgeStatus(),
 };
 

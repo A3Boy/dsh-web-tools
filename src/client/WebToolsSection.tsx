@@ -707,18 +707,23 @@ export function WebToolsSection(props: SectionProps) {
             subtitle={
               bridgeState?.platforms?.xiaohongshu?.authenticated
                 ? `${t("platformAccountPrefix")}${bridgeState.platforms.xiaohongshu.account?.accountLabel ?? t("platformConnected")}`
-                : t("xiaohongshuDesc")
+                : undefined
             }
             trailing={
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
                 {bridgeState?.platforms?.xiaohongshu?.authenticated ? (
                   <StateDot state="done" size={6} />
                 ) : (
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      window.open("https://creator.xiaohongshu.com/", "_blank");
+                    }}
+                  >
+                    {t("loginButton")}
+                  </Button>
                 )}
-                <span style={{ fontSize: 12, color: bridgeState?.platforms?.xiaohongshu?.authenticated ? text.primary : text.tertiary }}>
-                  {bridgeState?.platforms?.xiaohongshu?.authenticated ? t("platformConnected") : t("platformNotConnected")}
-                </span>
               </div>
             }
           />
@@ -734,18 +739,23 @@ export function WebToolsSection(props: SectionProps) {
             subtitle={
               bridgeState?.platforms?.x?.authenticated
                 ? `${t("platformAccountPrefix")}${bridgeState.platforms.x.account?.accountLabel ?? t("platformConnected")}`
-                : t("xDesc")
+                : undefined
             }
             trailing={
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
                 {bridgeState?.platforms?.x?.authenticated ? (
                   <StateDot state="done" size={6} />
                 ) : (
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      window.open("https://x.com/i/flow/login", "_blank");
+                    }}
+                  >
+                    {t("loginButton")}
+                  </Button>
                 )}
-                <span style={{ fontSize: 12, color: bridgeState?.platforms?.x?.authenticated ? text.primary : text.tertiary }}>
-                  {bridgeState?.platforms?.x?.authenticated ? t("platformConnected") : t("platformNotConnected")}
-                </span>
               </div>
             }
             isLast

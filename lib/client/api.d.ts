@@ -70,4 +70,8 @@ export declare const api: {
         ticket: string;
         expiresAt: number;
     }>;
+    bridgeConnectAuth: (platform: string) => Promise<{
+        status: string;
+        url?: string;
+    }>;
 };

@@ -76,4 +76,5 @@ export const api = {
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
   bridgeStatus: () => call<{ connected: boolean; platforms: Record<string, { enabled: boolean; authenticated: boolean; bridgeConnected: boolean; account?: any; lastError?: string }> }>("bridge/status"),
   bridgeBootstrap: () => call<{ ticket: string; expiresAt: number }>("bridge/bootstrap"),
+  bridgeConnectAuth: (platform: string) => call<{ status: string; url?: string }>("bridge/connect-auth", { platform }),
 };
