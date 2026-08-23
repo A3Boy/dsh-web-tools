@@ -7,6 +7,6 @@ export interface SpawnedBrowserProcess {
     browserKind: "edge" | "chrome";
     startedAt: number;
 }
-export declare function buildSafeLaunchArgs(profileDir: string, port: number, initialUrl?: string, minimized?: boolean): string[];
-export declare function launchBrowserProcess(browser: BrowserInfo, profileDir: string, initialUrl?: string, minimized?: boolean): Promise<SpawnedBrowserProcess>;
+export declare function buildSafeLaunchArgs(profileDir: string, port: number, initialUrl?: string, minimized?: boolean, headless?: boolean): string[];
+export declare function launchBrowserProcess(browser: BrowserInfo, profileDir: string, initialUrl?: string, minimized?: boolean, headless?: boolean): Promise<SpawnedBrowserProcess>;
 export declare function isPidAlive(pid: number): boolean;

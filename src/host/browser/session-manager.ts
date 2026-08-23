@@ -398,7 +398,7 @@ export class SessionManager implements NativeBrowserRuntime {
         const config = PLATFORM_AUTH_CONFIG[platform];
         const startUrl = initialUrl || (visible ? config.initialUrl : undefined);
 
-        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, !visible);
+        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, !visible, !visible);
         const wsUrl = await fetchWebSocketDebuggerUrl(spawned.port, 12000, signal);
 
         const cdp = new CdpClient(wsUrl);

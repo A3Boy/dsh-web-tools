@@ -3,19 +3,25 @@ import test from "node:test";
 import { buildSafeLaunchArgs } from "../src/host/browser/process-manager.ts";
 import { validatePlatformUrl } from "../src/host/browser/paths.ts";
 
-test("ProcessManager: safe args enforce security invariants and start-minimized", () => {
-  const args = buildSafeLaunchArgs("C:\\profiles\\xhs", 9222, "https://www.xiaohongshu.com/explore", true);
+test("ProcessManager: safe args enforce security invariants, start-minimized and headless", () => {
+  const argsMinimized = buildSafeLaunchArgs("C:\\profiles\\xhs", 9222, "https://www.xiaohongshu.com/explore", true, false);
+  assert.ok(argsMinimized.includes("--start-minimized"));
+  assert.ok(!argsMinimized.includes("--headless=new"));
 
-  assert.ok(args.includes("--user-data-dir=C:\\profiles\\xhs"));
-  assert.ok(args.includes("--remote-debugging-address=127.0.0.1"));
-  assert.ok(args.includes("--remote-debugging-port=9222"));
-  assert.ok(args.includes("--start-minimized"));
+  const argsHeadless = buildSafeLaunchArgs("C:\\profiles\\xhs", 9222, undefined, false, true);
+  assert.ok(argsHeadless.includes("--headless=new"));
+  assert.ok(!argsHeadless.includes("--start-minimized"));
 
   // Check forbidden dangerous flags
-  assert.ok(!args.some((a) => a.includes("--disable-web-security")));
-  assert.ok(!args.some((a) => a.includes("--no-sandbox")));
-  assert.ok(!args.some((a) => a.includes("--remote-allow-origins=*")));
-  assert.ok(!args.some((a) => a.includes("--ignore-certificate-errors")));
+  for (const args of [argsMinimized, argsHeadless]) {
+    assert.ok(args.includes("--user-data-dir=C:\\profiles\\xhs"));
+    assert.ok(args.includes("--remote-debugging-address=127.0.0.1"));
+    assert.ok(args.includes("--remote-debugging-port=9222"));
+    assert.ok(!args.some((a) => a.includes("--disable-web-security")));
+    assert.ok(!args.some((a) => a.includes("--no-sandbox")));
+    assert.ok(!args.some((a) => a.includes("--remote-allow-origins=*")));
+    assert.ok(!args.some((a) => a.includes("--ignore-certificate-errors")));
+  }
 });
 
 test("Paths: URL allowlist strictly guards platforms, rejects http/ftp and lookalikes", () => {
