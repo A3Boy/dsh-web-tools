@@ -376,51 +376,41 @@ async function handleHostMessage(msg: BridgeHostMessage): Promise<void> {
   ws?.send(JSON.stringify(errRes));
 }
 
-let connectingPromise: Promise<void> | null = null;
-let currentPendingHelloId: string | null = null;
-let handshakeResolve: (() => void) | null = null;
-let handshakeReject: ((err: Error) => void) | null = null;
+class ConnectionAttempt {
+  public promise: Promise<void>;
+  private resolve!: () => void;
+  private reject!: (err: Error) => void;
+  private pendingHelloId: string | null = null;
+  private timer: any = null;
+  private socket: WebSocket | null = null;
+  private isSettled = false;
 
-/**
- * Connect to DSH Local WebSocket Server and await verified handshake.
- */
-export async function connectToHost(port?: number, ticket?: string): Promise<void> {
-  if (connectingPromise) return connectingPromise;
+  constructor(public port: number, public ticket?: string, public bridgeKey?: string) {
+    this.promise = new Promise<void>((res, rej) => {
+      this.resolve = res;
+      this.reject = rej;
+    });
+  }
 
-  connectingPromise = new Promise<void>(async (resolve, reject) => {
-    handshakeResolve = resolve;
-    handshakeReject = reject;
-
-    const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
-    const activePort = port || stored.dshPort || 3080;
-    const bridgeKey = stored.bridgeKey;
-
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      try { ws.close(); } catch {}
-      ws = null;
-    }
-
-    const url = `ws://127.0.0.1:${activePort}/web-tools/bridge/ws`;
+  public async start(): Promise<void> {
+    const url = `ws://127.0.0.1:${this.port}/web-tools/bridge/ws`;
     const socket = new WebSocket(url);
+    this.socket = socket;
     ws = socket;
 
-    const handshakeTimer = setTimeout(() => {
-      if (handshakeReject) {
-        handshakeReject(new Error("Handshake timeout after 8000ms"));
-        handshakeResolve = null;
-        handshakeReject = null;
-      }
+    this.timer = setTimeout(() => {
+      this.fail(new Error("Handshake timeout after 8000ms"), true);
     }, 8000);
 
     socket.onopen = () => {
       startKeepAlive();
-      currentPendingHelloId = crypto.randomUUID();
+      this.pendingHelloId = crypto.randomUUID();
       const hello: BridgeExtensionMessage = {
-        id: currentPendingHelloId,
+        id: this.pendingHelloId,
         kind: "hello",
         payload: {
-          ticket,
-          bridgeKey,
+          ticket: this.ticket,
+          bridgeKey: this.bridgeKey,
           extensionVersion: EXTENSION_VERSION,
         },
       };
@@ -431,57 +421,30 @@ export async function connectToHost(port?: number, ticket?: string): Promise<voi
       try {
         const msg: any = JSON.parse(event.data);
 
-        // Check if this is the pending handshake reply
-        if (msg.kind === "result" && (msg.id === currentPendingHelloId || msg.payload?.paired)) {
-          clearTimeout(handshakeTimer);
-          currentPendingHelloId = null;
-
-          // Save durable bridgeKey and port together!
-          const toSave: Record<string, any> = { dshPort: activePort };
-          if (msg.payload?.bridgeKey) {
-            toSave.bridgeKey = msg.payload.bridgeKey;
-          }
-          await chrome.storage.local.set(toSave);
-
-          if (handshakeResolve) {
-            handshakeResolve();
-            handshakeResolve = null;
-            handshakeReject = null;
-          }
-
-          // Broadcast existing cookies/login status immediately
-          await broadcastInitialAuthState();
+        // Strict Hello matching: msg.id MUST match pendingHelloId
+        if (msg.kind === "result" && msg.id === this.pendingHelloId && msg.payload?.paired) {
+          this.succeed(msg.payload.bridgeKey);
           return;
         }
 
-        if (msg.kind === "error" && msg.id === currentPendingHelloId) {
-          clearTimeout(handshakeTimer);
-          if (handshakeReject) {
-            handshakeReject(new Error(msg.error?.message ?? "Handshake rejected by Host"));
-            handshakeResolve = null;
-            handshakeReject = null;
-          }
+        if (msg.kind === "error" && msg.id === this.pendingHelloId) {
+          this.fail(new Error(msg.error?.message ?? "Handshake rejected by Host"), true);
           return;
         }
 
         await handleHostMessage(msg);
       } catch {
-        // Malformed message
+        // Ignore malformed frame
       }
     };
 
     socket.onclose = () => {
-      clearTimeout(handshakeTimer);
+      this.fail(new Error("WebSocket closed before handshake"), false);
       stopKeepAlive();
       if (ws === socket) {
         ws = null;
       }
-      if (handshakeReject) {
-        handshakeReject(new Error("WebSocket closed before handshake"));
-        handshakeResolve = null;
-        handshakeReject = null;
-      }
-      connectingPromise = null;
+      currentAttempt = null;
 
       // Auto-reconnect after 3s
       setTimeout(() => {
@@ -490,13 +453,59 @@ export async function connectToHost(port?: number, ticket?: string): Promise<voi
     };
 
     socket.onerror = () => {
-      clearTimeout(handshakeTimer);
+      this.fail(new Error("WebSocket connection error"), true);
     };
-  }).finally(() => {
-    connectingPromise = null;
-  });
+  }
 
-  return connectingPromise;
+  private async succeed(newBridgeKey?: string): Promise<void> {
+    if (this.isSettled) return;
+    this.isSettled = true;
+    clearTimeout(this.timer);
+
+    const toSave: Record<string, any> = { dshPort: this.port };
+    if (newBridgeKey) {
+      toSave.bridgeKey = newBridgeKey;
+    }
+    await chrome.storage.local.set(toSave);
+
+    this.resolve();
+    currentAttempt = null;
+    await broadcastInitialAuthState();
+  }
+
+  private fail(err: Error, closeSocket: boolean): void {
+    if (this.isSettled) return;
+    this.isSettled = true;
+    clearTimeout(this.timer);
+    if (closeSocket && this.socket) {
+      try { this.socket.close(); } catch {}
+    }
+    this.reject(err);
+    currentAttempt = null;
+  }
+}
+
+let currentAttempt: ConnectionAttempt | null = null;
+
+/**
+ * Connect to DSH Local WebSocket Server and await verified handshake.
+ */
+export async function connectToHost(port?: number, ticket?: string): Promise<void> {
+  if (currentAttempt) return currentAttempt.promise;
+
+  const stored = await chrome.storage.local.get(["bridgeKey", "dshPort"]);
+  const activePort = port || stored.dshPort || 3080;
+  const bridgeKey = stored.bridgeKey;
+
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    try { ws.close(); } catch {}
+    ws = null;
+  }
+
+  const attempt = new ConnectionAttempt(activePort, ticket, bridgeKey);
+  currentAttempt = attempt;
+  void attempt.start();
+  return attempt.promise;
 }
 
 // Listen for messages from pairing-relay content script

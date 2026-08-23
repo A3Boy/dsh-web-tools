@@ -141,7 +141,7 @@ function ProviderRow(props: {
   // Status: "ready" is the quiet default — only anomalies get a label.
   const base = providerStatusOf(p, quota, inOrder);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
-  const statusText = {
+  const statusText = status === "ready" ? "" : {
     "rate-limited": t("rateLimited"),
     "auth-error": t("authError"),
     "unreachable": t("unreachable"),
@@ -318,7 +318,7 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: stateColor.success, fontSize: 13 }}>
               <StateDot state="done" size={8} />
               <span style={{ fontWeight: 600 }}>
-                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {(result.latencyMs / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
+                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {((result.latencyMs ?? 0) / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
               </span>
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
@@ -493,32 +493,48 @@ export function WebToolsSection(props: SectionProps) {
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
 
+  // Pair extension using Promise-based window.postMessage with pairing relay ACK
+  const pairExtension = (ticket: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onMessage);
+        resolve(false);
+      }, 4000);
+
+      const onMessage = (event: MessageEvent) => {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (data && data.type === "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK") {
+          clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          resolve(Boolean(data.ok));
+        }
+      };
+
+      window.addEventListener("message", onMessage);
+      window.postMessage({
+        type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
+        ticket,
+        port: window.location.port ? Number(window.location.port) : 3080,
+      }, "*");
+    });
+  };
+
   // Trigger pairing relay with Extension and connect platform
   const connectPlatform = async (platform: "xiaohongshu" | "x") => {
     try {
-      let currentStatus = await api.bridgeStatus().catch(() => ({ connected: false, platforms: {} }));
+      const currentStatus = await api.bridgeStatus().catch(() => ({ connected: false, platforms: {} }));
       if (!currentStatus.connected) {
         // Issue pairing ticket
         const { ticket } = await api.bridgeBootstrap();
-
-        // Dispatch pairing relay event to content script
-        window.postMessage({
-          type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
-          ticket,
-          port: window.location.port ? Number(window.location.port) : 3080,
-        }, "*");
-
-        // Wait up to 2 seconds for pairing relay to establish
-        await new Promise((r) => setTimeout(r, 1200));
+        // Wait for explicit pairing relay ACK
+        await pairExtension(ticket);
       }
 
-      // Trigger official connect auth endpoint
-      const res = await api.bridgeConnectAuth(platform);
-      if (res?.url) {
-        window.open(res.url, "_blank");
-      }
+      // Trigger official connect auth endpoint (extension handles opening login tab)
+      await api.bridgeConnectAuth(platform);
     } catch {
-      // Fallback direct open
+      // Fallback direct open if extension is entirely unavailable
       const fallbackUrl = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
       window.open(fallbackUrl, "_blank");
     }
@@ -528,7 +544,7 @@ export function WebToolsSection(props: SectionProps) {
     void save({ providerEnabled });
   };
   const setBaseUrl = (name: string, baseUrl: string) => {
-    const providerBaseUrls = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
+    const providerBaseUrls: Record<string, string> = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
     providerBaseUrls[name] = baseUrl;
     void save({ providerBaseUrls });
   };

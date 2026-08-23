@@ -195,6 +195,24 @@ export function apply(ctx: WebToolsContext) {
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
 
+  // Load and persist durable bridgeKey hash via credentials service BEFORE opening upgrade route
+  const BRIDGE_HASH_REF = "dsh-web-tools:bridge_key_hash";
+  defaultBridgeServer.setPersistHook(
+    (hash) => {
+      void writeCredential(ctx, BRIDGE_HASH_REF, hash);
+    },
+  );
+  void readCredential(ctx, BRIDGE_HASH_REF).then((persisted) => {
+    if (persisted.value) {
+      defaultBridgeServer.setPersistHook(
+        (hash) => {
+          void writeCredential(ctx, BRIDGE_HASH_REF, hash);
+        },
+        [persisted.value],
+      );
+    }
+  }).catch(() => {});
+
   // Register WebSocket upgrade route for Browser Bridge if supported by host webServer
   if (typeof ctx.webServer.registerUpgrade === "function") {
     ctx.effect(
@@ -202,17 +220,6 @@ export function apply(ctx: WebToolsContext) {
       "dsh-web-tools: browser-bridge websocket",
     );
   }
-
-  // Load and persist durable bridgeKey hash via credentials service
-  const BRIDGE_HASH_REF = "dsh-web-tools:bridge_key_hash";
-  void readCredential(ctx, BRIDGE_HASH_REF).then((persisted) => {
-    defaultBridgeServer.setPersistHook(
-      (hash) => {
-        void writeCredential(ctx, BRIDGE_HASH_REF, hash);
-      },
-      persisted.value ? [persisted.value] : [],
-    );
-  }).catch(() => {});
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {

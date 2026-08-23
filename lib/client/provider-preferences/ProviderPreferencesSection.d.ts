@@ -15,5 +15,5 @@ interface Props {
     onRestoreDraft?: (restore: () => void) => void;
     onCustomizedChange?: (customized: boolean) => void;
 }
-export declare function ProviderPreferencesSection(props: Props): import("react").JSX.Element;
+export declare function ProviderPreferencesSection(props: Props): import("react").JSX.Element | null;
 export {};

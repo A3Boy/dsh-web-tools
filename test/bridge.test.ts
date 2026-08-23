@@ -119,3 +119,24 @@ test("P7.1 BridgeClient: handles auth.changed push notification from extension",
 
   assert.equal(server.getAccountInfo("x"), undefined);
 });
+
+test("P7.1 BridgeHostServer: upgrade route disposer cleans up active socket", () => {
+  const server = new BridgeHostServer();
+  let registeredRoute: any = null;
+
+  const mockWebServer: any = {
+    registerUpgrade(route: any) {
+      registeredRoute = route;
+      return () => {
+        registeredRoute = null;
+      };
+    },
+  };
+
+  const dispose = server.registerUpgradeRoute(mockWebServer);
+  assert.ok(registeredRoute, "Upgrade route must be registered");
+
+  dispose();
+  assert.equal(registeredRoute, null, "Upgrade route must be disposed");
+});
+

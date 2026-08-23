@@ -36,12 +36,14 @@ export declare class BridgeHostServer {
     private pendingCalls;
     private cachedAccountState;
     private onKeyHashPersist?;
+    private activeWss;
     /**
      * Configure persistent storage hook for approved pairing hashes.
      */
     setPersistHook(hook: (hash: string) => void, initialHashes?: string[]): void;
     /**
      * Issue a 60-second one-time bootstrap ticket for the React settings UI.
+     * Also cleans up expired tickets to avoid memory accumulation.
      */
     issuePairingTicket(): string;
     /**

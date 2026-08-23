@@ -44,6 +44,8 @@ export class BridgeHostServer {
   private cachedAccountState = new Map<SpecializedPlatformId, SourceAccountInfo>();
   private onKeyHashPersist?: (hash: string) => void;
 
+  private activeWss: any = null;
+
   /**
    * Configure persistent storage hook for approved pairing hashes.
    */
@@ -58,10 +60,17 @@ export class BridgeHostServer {
 
   /**
    * Issue a 60-second one-time bootstrap ticket for the React settings UI.
+   * Also cleans up expired tickets to avoid memory accumulation.
    */
   public issuePairingTicket(): string {
+    const now = Date.now();
+    // Clean expired tickets
+    for (const [t, exp] of this.pendingTickets.entries()) {
+      if (now > exp) this.pendingTickets.delete(t);
+    }
+
     const ticket = randomBytes(16).toString("hex");
-    const expiresAt = Date.now() + 60000;
+    const expiresAt = now + 60000;
     this.pendingTickets.set(ticket, expiresAt);
     return ticket;
   }
@@ -103,6 +112,18 @@ export class BridgeHostServer {
   public registerUpgradeRoute(webServer: WebToolsWebServer): () => void {
     if (typeof webServer.registerUpgrade !== "function") return () => {};
 
+    // Single WebSocketServer instance for the lifetime of this route
+    let wssInstance: any = null;
+
+    // @ts-ignore
+    import("ws").then((wsModule: any) => {
+      const WebSocketServer = wsModule?.WebSocketServer || wsModule?.default?.WebSocketServer || wsModule;
+      if (WebSocketServer) {
+        wssInstance = new WebSocketServer({ noServer: true });
+        this.activeWss = wssInstance;
+      }
+    }).catch(() => {});
+
     const dispose = (webServer.registerUpgrade as any)({
       path: BRIDGE_WS_PATH,
       handler: (req: any, socket: any, head: Buffer | Uint8Array) => {
@@ -114,11 +135,7 @@ export class BridgeHostServer {
           return;
         }
 
-        // Load ws dynamically (node environment)
-        // @ts-ignore
-        import("ws").then((wsModule: any) => {
-          const WebSocketServer = wsModule?.WebSocketServer || wsModule?.default?.WebSocketServer || wsModule;
-          const wss = new WebSocketServer({ noServer: true });
+        const handleWithWss = (wss: any) => {
           wss.handleUpgrade(req, socket, head as Buffer, (ws: any) => {
             let isHandshakeComplete = false;
 
@@ -178,9 +195,21 @@ export class BridgeHostServer {
               this.detachConnection(ws);
             });
           });
-        }).catch(() => {
-          socket.destroy();
-        });
+        };
+
+        if (wssInstance) {
+          handleWithWss(wssInstance);
+        } else {
+          // @ts-ignore
+          import("ws").then((wsModule: any) => {
+            const WebSocketServer = wsModule?.WebSocketServer || wsModule?.default?.WebSocketServer || wsModule;
+            wssInstance = new WebSocketServer({ noServer: true });
+            this.activeWss = wssInstance;
+            handleWithWss(wssInstance);
+          }).catch(() => {
+            socket.destroy();
+          });
+        }
       },
     });
 
@@ -190,6 +219,11 @@ export class BridgeHostServer {
         try { this.activeWs.close(); } catch {}
         this.activeWs = null;
       }
+      if (wssInstance) {
+        try { wssInstance.close(); } catch {}
+        wssInstance = null;
+      }
+      this.activeWss = null;
     };
   }
 

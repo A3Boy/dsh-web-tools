@@ -315,7 +315,7 @@ function CredentialList(props: {
         <div style={{ fontSize: 12, color: testResult.ok ? stateColor.success : stateColor.danger, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
           <StateDot state={testResult.ok ? "done" : "error"} size={8} />
           {testResult.ok
-            ? `${t("testOk")} · ${t("testLatencySec", { s: (testResult.latencyMs / 1000).toFixed(2) })} · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
+            ? `${t("testOk")} · ${t("testLatencySec", { s: ((testResult.latencyMs ?? 0) / 1000).toFixed(2) })} · ${t("resultCount", { n: testResult.resultCount ?? 0 })}`
             : `${t("testFail")}: ${testResult.error?.message ?? ""}`}
         </div>
       )}

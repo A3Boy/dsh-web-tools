@@ -8,7 +8,7 @@ export declare function QuotaInline(props: {
     quota?: QuotaView;
     providerName?: string;
     t?: TFunc;
-}): import("react").JSX.Element;
+}): import("react").JSX.Element | null;
 export declare function QuotaCard(props: {
     quota?: QuotaView;
     providerName?: string;
