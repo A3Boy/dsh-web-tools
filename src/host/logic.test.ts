@@ -344,7 +344,28 @@ test("extractSearchHints extracts finance topic", () => {
   assert.equal(hints.topic, "finance");
 });
 
+test("extractSearchHints avoids single-country bias for multi-country or global queries", () => {
+  // 1. Multi-country query should not bias to any single country
+  const multiCountryHints = extractSearchHints("比较中国和美国 AI 政策与市场");
+  assert.equal(multiCountryHints.locale?.language, "zh");
+  assert.equal(multiCountryHints.locale?.country, undefined);
+
+  // 2. Global / International scope query should suppress country bias
+  const globalHints = extractSearchHints("国内外最新 AI 新闻");
+  assert.equal(globalHints.locale?.language, "zh");
+  assert.equal(globalHints.locale?.country, undefined);
+
+  const worldwideHints = extractSearchHints("worldwide AI market trends in US and China");
+  assert.equal(worldwideHints.locale?.country, undefined);
+});
+
 // ---- Tavily deep adaptation tests ----
+
+test("buildTavilySearchBody never emits invalid finance topic and falls back to general search", () => {
+  const hints = extractSearchHints("Nvidia earnings 财报");
+  const body = buildTavilySearchBody("Nvidia earnings 财报", 5, undefined, hints);
+  assert.equal(body.topic, undefined, "finance topic must not be emitted to Tavily");
+});
 
 test("buildTavilySearchBody maps topic news, freshness week, and domains", () => {
   const hints = extractSearchHints("site:reuters.com -site:spam.com OpenAI breaking news this week", new Date("2026-08-23T12:00:00Z"));

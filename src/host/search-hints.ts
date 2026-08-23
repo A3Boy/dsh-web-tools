@@ -141,6 +141,12 @@ const OFFICIAL_PREFERENCE_INDICATORS = [
   /(?:官方文档|官网|官方|权威来源|正规文档|官方指南)/,
 ];
 
+// Multi-country / Global suppressors: when user specifies multiple countries or global terms, avoid biasing to a single country.
+const GLOBAL_SCOPE_INDICATORS = [
+  /\b(international|worldwide|global|globally)\b/i,
+  /(?:国内外|海内外|全球|世界范围|跨国|国际)/,
+];
+
 // Country indicators (only assign country when explicitly mentioned in the query)
 const EXPLICIT_COUNTRY_PATTERNS: Array<{ re: RegExp; country: string }> = [
   { re: /(?:美国|美股|美联储|United States|USA|\bUS\b)/i, country: "US" },
@@ -271,9 +277,13 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   }
 
   let country: string | undefined;
-  const explicitCountry = EXPLICIT_COUNTRY_PATTERNS.find((p) => p.re.test(rawQuery));
-  if (explicitCountry) {
-    country = explicitCountry.country;
+  const isGlobalScope = GLOBAL_SCOPE_INDICATORS.some((re) => re.test(rawQuery));
+  if (!isGlobalScope) {
+    const matchedCountries = EXPLICIT_COUNTRY_PATTERNS.filter((p) => p.re.test(rawQuery)).map((p) => p.country);
+    const uniqueCountries = [...new Set(matchedCountries)];
+    if (uniqueCountries.length === 1) {
+      country = uniqueCountries[0];
+    }
   }
 
   const locale: LocaleHint | undefined = language || country ? { language, country } : undefined;

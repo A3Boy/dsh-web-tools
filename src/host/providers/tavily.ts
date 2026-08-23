@@ -26,7 +26,7 @@ const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
  * Supports:
  *  - search_depth: "basic" | "advanced" | "fast" | "ultra-fast"
  *  - chunks_per_source: supported on basic, advanced, fast (not ultra-fast)
- *  - topic: "news" | "finance" | "general" from hints
+ *  - topic: "news" from hints (finance/code fall back to general)
  *  - time_range: "day" | "week" | "month" | "year"
  *  - start_date: RFC3339 / YYYY-MM-DD from hints
  *  - include_domains / exclude_domains

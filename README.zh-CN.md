@@ -37,10 +37,10 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
 - **8 大主流搜索源深度适配**：
   - **Parallel**：双层语义优化（`objective` 软引导 + `search_queries` 纯净词）与 `source_policy` 域名/时效过滤。
   - **Firecrawl**：代码与技术查询直连 **Developer Index**（`categories: ["developer"]`），支持论文 `research` 与 `tbs` 时效过滤。
-  - **Exa**：精确分类映射（`research paper` / `news` / `financial report`）、ISO 日期范围与域名限制。
+  - **Exa**：精确分类映射（`publication` / `news` / `financial report`）、ISO 日期范围与域名限制。
   - **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
   - **Brave Search**：LLM Context 预提取端点支持 `pd/pw/pm/py` 时效、国家与搜索语言。
-  - **Tavily**：全档位 `chunks_per_source` 分块控制，`news/finance` 话题与时间区间过滤。
+  - **Tavily**：全档位 `chunks_per_source` 分块控制，`news` 话题与时间区间过滤（finance/code 智能回退通用检索）。
   - **SearXNG**：自建元搜索支持 `categories`（it/science/news）与 `time_range`。
   - **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
 - **完全兼容 DSH 原生工具**：不增加 `web_search_exa` 等特定工具，Agent 无感调用官方标准 `web_search` 与 `web_fetch`。
@@ -88,8 +88,8 @@ dsh plugin --profile web remove dsh-web-tools
 
 | Provider | 搜索 (Search) | 抓取/提取 (Fetch / Extract) | 核心特性与深度适配能力 | 配额查询 (Quota) |
 | --- | :---: | :---: | --- | :---: |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | 语义检索 (`auto` / `fast` / `deep` 系列)、`category` 垂直分类映射（research paper / news / financial report）、Query-aware 高亮切片、ISO 日期范围与域名限制 | 控制台自查 |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | 深度检索 (`basic` / `advanced` / `fast` / `ultra-fast`)、全档位分块控制、`news/finance` 话题与时间区间过滤、智能参数 | ✅ 官方 API |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | 语义检索 (`auto` / `fast` / `deep` 系列)、`category` 垂直分类映射（publication / news / financial report）、Query-aware 高亮切片、ISO 日期范围与域名限制 | 控制台自查 |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | 深度检索 (`basic` / `advanced` / `fast` / `ultra-fast`)、全档位分块控制、`news` 话题与时间区间过滤、智能参数 | ✅ 官方 API |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | 结构化搜索、代码查询直连 **Developer Index**、`research` 分类、`tbs` 时效过滤、Clean Markdown 提取、`onlyMainContent` 过滤 | ✅ 官方 API |
 | [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent 针对性双层语义检索 (`advanced` / `basic` / `turbo`)、`objective` 软引导、`source_policy` 域名与时效过滤、LLM 评分切片、全文提取 | 控制台自查 |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | 默认优先 LLM Context 预提取模式，支持 `pd/pw/pm/py` 时效过滤与区域语言，不支持时自动回退至 Classic Web Search | ✅ 响应头自动捕获 |

@@ -37,10 +37,10 @@ Preserves the native DSH `web_search` / `web_fetch` tool contracts while providi
 - **8 Search Providers Deeply Adapted**:
   - **Parallel**: Dual-layer semantics (`objective` soft-steering + clean `search_queries`) and `source_policy` domain/freshness filters.
   - **Firecrawl**: Coding/technical queries query the **Developer Index** (`categories: ["developer"]`), supporting `research` and `tbs` time filters.
-  - **Exa**: Exact category mapping (`research paper` / `news` / `financial report`), ISO-8601 date ranges, and domain constraints.
+  - **Exa**: Exact category mapping (`publication` / `news` / `financial report`), ISO-8601 date ranges, and domain constraints.
   - **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
   - **Brave Search**: LLM Context endpoint with `pd/pw/pm/py` freshness filters, country, and search language.
-  - **Tavily**: Full-tier `chunks_per_source` chunking control, `news/finance` topic mapping, and time range filtering.
+  - **Tavily**: Full-tier `chunks_per_source` chunking control, `news` topic and time range filtering (gracefully falls back to general search for finance/code).
   - **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
   - **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
 - **Native DSH Tool Compatibility**: No bespoke tools like `web_search_exa`; agents invoke standard `web_search` and `web_fetch` contracts seamlessly.
@@ -88,8 +88,8 @@ dsh plugin --profile web remove dsh-web-tools
 
 | Provider | Search | Fetch / Extract | Key Integrations & Deep Adaptations | Quota Inspection |
 | --- | :---: | :---: | --- | :---: |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | Semantic retrieval (`auto` / `fast` / `deep`), `category` mappings (research paper / news / financial report), query-aware highlights, ISO-8601 date ranges, domain filters | Dashboard only |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | Search depth (`basic` / `advanced` / `fast` / `ultra-fast`), full-tier `chunks_per_source` control, `news/finance` topic & time range filters, auto parameters | ✅ Official API |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | Semantic retrieval (`auto` / `fast` / `deep`), `category` mappings (publication / news / financial report), query-aware highlights, ISO-8601 date ranges, domain filters | Dashboard only |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | Search depth (`basic` / `advanced` / `fast` / `ultra-fast`), full-tier `chunks_per_source` control, `news` topic & time range filters, auto parameters | ✅ Official API |
 | [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | Structured search, coding queries routed to **Developer Index**, `research` category, `tbs` time filters, clean markdown scraping, `onlyMainContent` filter | ✅ Official API |
 | [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent-optimized dual-layer search (`advanced` / `basic` / `turbo`), `objective` soft-steering, `source_policy` domain/freshness filters, LLM-ranked excerpts, full content extraction | Dashboard only |
 | [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context endpoint preferred, `pd/pw/pm/py` freshness presets, country & search language targeting, automatic fallback to Classic Web Search | ✅ Response headers |

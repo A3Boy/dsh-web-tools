@@ -17,7 +17,7 @@ import type { SearchHints } from "../search-hints.ts";
  * Supports:
  *  - query (cleanQuery)
  *  - type: auto / fast / deep etc.
- *  - category: "research paper" (research), "news" (news), "financial report" (finance), "company", "people"
+ *  - category: "publication" (research), "news" (news), "financial report" (finance), "company", "people"
  *  - includeDomains / excludeDomains
  *  - startPublishedDate / endPublishedDate (ISO 8601)
  *  - userLocation (country code)
