@@ -103,25 +103,29 @@ export const FirecrawlProvider: ProviderAdapter = {
     });
     throwIfHttp("Firecrawl", res);
     const raw = await res.json();
-    // v2 search returns { success, data: { web: [{url,title,description,markdown,...}] } }
-    // or array directly in data[].
+    // Firecrawl /search returns results in `data.web` or `data.developer` (Developer Index) or `data` directly.
     const results = Array.isArray(raw?.data?.web)
       ? raw.data.web
-      : Array.isArray(raw?.data)
-        ? raw.data
-        : [];
+      : Array.isArray(raw?.data?.developer)
+        ? raw.data.developer
+        : Array.isArray(raw?.data)
+          ? raw.data
+          : [];
     const sources = results
       .map((r: Record<string, unknown>) => {
         const url = typeof r?.url === "string" ? r.url : "";
         if (!url) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // Prefer rich excerpt/markdown slice > description
-        const text = typeof r.markdown === "string" && r.markdown
-          ? r.markdown.slice(0, 1500)
-          : typeof r.description === "string"
-            ? r.description.slice(0, 500)
-            : undefined;
+        // Prefer rich excerpt/markdown slice > matched passages > description
+        let text: string | undefined;
+        if (typeof r.markdown === "string" && r.markdown) {
+          text = r.markdown.slice(0, 1500);
+        } else if (Array.isArray(r.passages)) {
+          text = r.passages.filter((p): p is string => typeof p === "string").join("\n\n").slice(0, 1200);
+        } else if (typeof r.description === "string") {
+          text = r.description.slice(0, 500);
+        }
         if (text) s.snippet = text;
         if (typeof r.publishedDate === "string") s.publishedAt = r.publishedDate;
         return s;

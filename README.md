@@ -33,14 +33,22 @@ Preserves the native DSH `web_search` / `web_fetch` tool contracts while providi
 
 ## Features
 
-- **8 Search Providers**: Exa, Tavily, Firecrawl, Parallel, Brave Search, You.com, Jina, and self-hosted SearXNG.
-- **Native DSH Tool Compatibility**: No bespoke tools like `web_search_exa`; agents invoke the standard `web_search` and `web_fetch` contracts seamlessly.
+- **Zero-Overhead SearchHints Semantic Layer**: Built-in deterministic intent extraction directly from queries (coding, academic research, news freshness, and domain constraints like `site:github.com` or `after:YYYY-MM-DD`), intelligently mapping to native parameters and specialized indices without LLM planning overhead or latency.
+- **8 Search Providers Deeply Adapted**:
+  - **Parallel**: Dual-layer semantics (`objective` soft-steering + clean `search_queries`) and `source_policy` domain/freshness filters.
+  - **Firecrawl**: Coding/technical queries query the **Developer Index** (`categories: ["developer"]`), supporting `research` and `tbs` time filters.
+  - **Exa**: Exact category mapping (`research paper` / `news` / `financial report`), ISO-8601 date ranges, and domain constraints.
+  - **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
+  - **Brave Search**: LLM Context endpoint with `pd/pw/pm/py` freshness filters, country, and search language.
+  - **Tavily**: Full-tier `chunks_per_source` chunking control, `news/finance` topic mapping, and time range filtering.
+  - **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
+  - **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
+- **Native DSH Tool Compatibility**: No bespoke tools like `web_search_exa`; agents invoke standard `web_search` and `web_fetch` contracts seamlessly.
 - **Multi-Query Support**: Handles DSH `queries[]` payloads concurrently across independent search dimensions.
 - **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.
 - **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
 - **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately without redundant network overhead.
 - **Configurable Routing Policies**: Supports Ordered, Round-Robin, and Random initial provider routing.
-- **Provider-Native Capability Tuning**: Deeply adapts to official platform strengths (Exa semantic search & highlights, Tavily depth & chunking, Brave LLM Context, Jina Reader token budgeting & ReaderLM-v2, Firecrawl clean markdown scraping) via intuitive preferences.
 - **One-Click Preference Presets**: Offers Fast, Deep, Economy, and Recommended presets to quickly adjust execution parameters across providers.
 - **Native Page Extraction (Extract / Scrape)**: Transparently routes `web_fetch` to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader).
 - **Session-Level Search Mode**: Chat input toggle that forces the agent to complete web research before generating answers.
@@ -78,20 +86,33 @@ dsh plugin --profile web remove dsh-web-tools
 
 ## Provider Capabilities
 
-| Provider | Search | Fetch / Extract | Key Integrations & Features | Quota Inspection |
+| Provider | Search | Fetch / Extract | Key Integrations & Deep Adaptations | Quota Inspection |
 | --- | :---: | :---: | --- | :---: |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | Semantic retrieval (`auto` / `fast` / `deep` modes), query-aware highlights, date freshness | Dashboard only |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | Search depth (`basic` / `advanced` / `fast` / `ultra-fast`), auto parameters, chunk extraction | ✅ Official API |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | Discovery search, clean markdown scraping, `onlyMainContent` filter, caching controls | ✅ Official API |
-| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent-optimized search (`advanced` / `basic` / `turbo`), LLM-ranked excerpts, full content extraction | Dashboard only |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context endpoint preferred, automatic fallback to Classic Web Search | ✅ Response headers |
-| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | AI highlights extraction, Markdown contents endpoint, crawl timeouts & cache control | ✅ Official API (USD) |
-| [Jina](https://jina.ai) | ✅ | ✅ Reader | Search + Reader page parsing, ReaderLM-v2 markdown conversion, token budget guards | Best effort (Reader) |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | Open-source meta-search engine, keyless and privacy-focused | Self-hosted (unlimited) |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | Semantic retrieval (`auto` / `fast` / `deep`), `category` mappings (research paper / news / financial report), query-aware highlights, ISO-8601 date ranges, domain filters | Dashboard only |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | Search depth (`basic` / `advanced` / `fast` / `ultra-fast`), full-tier `chunks_per_source` control, `news/finance` topic & time range filters, auto parameters | ✅ Official API |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | Structured search, coding queries routed to **Developer Index**, `research` category, `tbs` time filters, clean markdown scraping, `onlyMainContent` filter | ✅ Official API |
+| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent-optimized dual-layer search (`advanced` / `basic` / `turbo`), `objective` soft-steering, `source_policy` domain/freshness filters, LLM-ranked excerpts, full content extraction | Dashboard only |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context endpoint preferred, `pd/pw/pm/py` freshness presets, country & search language targeting, automatic fallback to Classic Web Search | ✅ Response headers |
+| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | AI highlights extraction, native **`boost_domains`** soft-weighting, freshness & geo targeting, Markdown contents endpoint | ✅ Official API (USD) |
+| [Jina](https://jina.ai) | ✅ | ✅ Reader | Query noise reduction, ReaderLM-v2 markdown conversion, token budget guards | Best effort (Reader) |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | Open-source meta-search engine, category mappings (it/science/news) & `time_range`, keyless and privacy-focused | Self-hosted (unlimited) |
 
 <p align="center">
   <img src="assets/providerDetail.png" width="900" alt="Provider settings and search preferences" />
 </p>
+
+## Configuration & Feature Matrix
+
+| Setting | Location | Options / Format | Impact & Behavior |
+| :--- | :--- | :--- | :--- |
+| **Master Toggle (Enabled)** | Header row | Switch toggle | Globally enables or disables the multi-provider Web runtime. When off, reverts to standard DSH behavior. |
+| **Search Routing Policy** | Header strategy bar | Ordered / Round-Robin / Random | **Ordered**: always starts from preferred; **Round-Robin**: rotates starting source per query to balance load; **Random**: picks starting source randomly. All cascade on failure. |
+| **Provider Order & Fallback** | Provider list | Drag handle (`⋮⋮`) | Reorders failover sequence; top item is the primary default provider. |
+| **Multi-Key Pool** | Provider modal | Add/remove keys (masked) | In-flight key load balancing; routes to lowest `inFlight` key and fails over to secondary keys on 401 errors. |
+| **Preference Presets** | Settings panel | Recommended / Fast / Deep / Economy / Custom | One-click application of native execution parameters across all providers (e.g. latency priority vs exhaustive retrieval). |
+| **Provider Attempt Timeout** | Advanced settings | 1000ms – 60000ms (default 10s) | Per-attempt budget before aborting and triggering fallback to the next provider. |
+| **Per-Session Search Mode** | Chat input row | Auto / Required | When **Required**, enforces at least one `web_search`/`web_fetch` call before the agent finalizes an answer. |
+| **Proxy Configuration** | System / Env vars | `HTTP(S)_PROXY` / `NO_PROXY` | System and environment proxy support. Loopback and local targets (`localhost`, `127.0.0.1`, SearXNG) automatically bypass. |
 
 ## Quick Selection Guide
 

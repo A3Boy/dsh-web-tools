@@ -33,14 +33,22 @@ DeepSeek Harness 的统一多 Provider Web Runtime。
 
 ## 特性
 
-- **8 大主流搜索源**：集成 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina 与自托管 SearXNG。
+- **零开销 SearchHints 语义层**：内置纯代码确定性意图提取，自动从 Query 识别技术代码、论文研究、新闻时效及域名约束（如 `site:github.com`、`after:YYYY-MM-DD`），智能映射至各大 Provider 的原生参数与专属索引，不增加额外 LLM 调用延迟。
+- **8 大主流搜索源深度适配**：
+  - **Parallel**：双层语义优化（`objective` 软引导 + `search_queries` 纯净词）与 `source_policy` 域名/时效过滤。
+  - **Firecrawl**：代码与技术查询直连 **Developer Index**（`categories: ["developer"]`），支持论文 `research` 与 `tbs` 时效过滤。
+  - **Exa**：精确分类映射（`research paper` / `news` / `financial report`）、ISO 日期范围与域名限制。
+  - **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
+  - **Brave Search**：LLM Context 预提取端点支持 `pd/pw/pm/py` 时效、国家与搜索语言。
+  - **Tavily**：全档位 `chunks_per_source` 分块控制，`news/finance` 话题与时间区间过滤。
+  - **SearXNG**：自建元搜索支持 `categories`（it/science/news）与 `time_range`。
+  - **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
 - **完全兼容 DSH 原生工具**：不增加 `web_search_exa` 等特定工具，Agent 无感调用官方标准 `web_search` 与 `web_fetch`。
 - **多 Query 并发支持**：适配 DSH 原生 `queries[]` 数组，在存在多个独立检索维度时并行请求。
 - **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低负载 Key，鉴权失败自动切换备用 Key。
 - **确定性 Provider Fallback**：遇到网络异常、超时、5xx 服务端错误、429 限流或配额耗尽时，自动降级至链条中的下一搜索源。
 - **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免频繁重试造成无效请求积压。
-- **搜索路由策略**：支持顺序（Ordered）、轮询（Round-Robin）、随机（Random）三种首选源调度方式。
-- **Provider 原生参数深度适配**：对齐各平台官方特色接口（Exa 语义检索与高亮、Tavily 深度/分块、Brave LLM Context、Jina Reader 引擎与 Token 控制、Firecrawl 正文提取等），提供易懂的偏好选项。
+- **搜索路由策略**：支持顺序模式（Ordered）、轮询模式（Round-Robin）、随机模式（Random）三种首选源调度方式。
 - **一键搜索偏好预设**：提供 快速响应（Fast）、深度检索（Deep）、经济节省（Economy）与默认推荐，支持随时一键切换或还原。
 - **原生正文提取（Extract / Scrape）**：`web_fetch` 会自动调用支持 Provider 的原生提取接口（如 Exa `/contents`、Tavily `/extract`、Firecrawl `/scrape`、Parallel `/v1/extract`、You.com `/v1/contents`、Jina Reader）。
 - **会话级「联网搜索」（Search Mode）**：输入框支持快捷切换联网策略，开启后在 Agent 回复前强制先进行联网检索与验证。
@@ -78,20 +86,33 @@ dsh plugin --profile web remove dsh-web-tools
 
 ## Provider 支持矩阵
 
-| Provider | 搜索 (Search) | 抓取/提取 (Fetch / Extract) | 核心特性与适配能力 | 配额查询 (Quota) |
+| Provider | 搜索 (Search) | 抓取/提取 (Fetch / Extract) | 核心特性与深度适配能力 | 配额查询 (Quota) |
 | --- | :---: | :---: | --- | :---: |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | 语义检索 (`auto` / `fast` / `deep` 系列)、Query-aware 高亮切片、时效性过滤 | 控制台自查 |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | 深度检索 (`basic` / `advanced` / `fast` / `ultra-fast`)、智能参数、分块提取 | ✅ 官方 API |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | 结构化搜索、Clean Markdown 提取、`onlyMainContent` 过滤、缓存策略 | ✅ 官方 API |
-| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent 针对性优化检索 (`advanced` / `basic` / `turbo`)、LLM 评分切片、全文提取 | 控制台自查 |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | 默认优先 LLM Context 预提取模式，不支持时自动回退至 Classic Web Search | ✅ 响应头自动捕获 |
-| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | 搜索高亮片段提取、Markdown 正文接口、抓取超时与缓存控制 | ✅ 官方 API (USD) |
-| [Jina](https://jina.ai) | ✅ | ✅ Reader | 搜索与 Reader 网页解析、ReaderLM-v2 高精度 Markdown 转换、Token 预算与截断控制 | 尽力解析 (Reader) |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | 开源自托管元搜索引擎，无需 API Key，保护隐私 | 自建实例无限制 |
+| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | 语义检索 (`auto` / `fast` / `deep` 系列)、`category` 垂直分类映射（research paper / news / financial report）、Query-aware 高亮切片、ISO 日期范围与域名限制 | 控制台自查 |
+| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | 深度检索 (`basic` / `advanced` / `fast` / `ultra-fast`)、全档位分块控制、`news/finance` 话题与时间区间过滤、智能参数 | ✅ 官方 API |
+| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | 结构化搜索、代码查询直连 **Developer Index**、`research` 分类、`tbs` 时效过滤、Clean Markdown 提取、`onlyMainContent` 过滤 | ✅ 官方 API |
+| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent 针对性双层语义检索 (`advanced` / `basic` / `turbo`)、`objective` 软引导、`source_policy` 域名与时效过滤、LLM 评分切片、全文提取 | 控制台自查 |
+| [Brave Search](https://brave.com/search/api/) | ✅ | — | 默认优先 LLM Context 预提取模式，支持 `pd/pw/pm/py` 时效过滤与区域语言，不支持时自动回退至 Classic Web Search | ✅ 响应头自动捕获 |
+| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | 搜索高亮片段提取、原生 **`boost_domains`** 软加权、时效与国家语言过滤、Markdown 正文接口 | ✅ 官方 API (USD) |
+| [Jina](https://jina.ai) | ✅ | ✅ Reader | 搜索关键词降噪、ReaderLM-v2 高精度 Markdown 转换、Token 预算与截断控制 | 尽力解析 (Reader) |
+| [SearXNG](https://docs.searxng.org) | ✅ | — | 开源自托管元搜索引擎，映射 `categories` (it/science/news) 与 `time_range`，无需 API Key 保护隐私 | 自建实例无限制 |
 
 <p align="center">
   <img src="assets/providerDetail.png" width="900" alt="Provider 配置与搜索偏好" />
 </p>
+
+## 插件配置与功能效果对照
+
+| 配置项 | 所在位置 | 可选值 / 格式 | 功能效果与实际表现 |
+| :--- | :--- | :--- | :--- |
+| **主开关 (Enabled)** | 设置页顶部 | 开关 (Toggle) | 全局启用或停用此多源检索 Runtime，关闭后回退至 DSH 内置默认检索行为。 |
+| **搜索路由策略** | 设置页顶部策略栏 | 顺序模式 / 轮询模式 / 随机模式 | **顺序**：每次均从首选源开始；**轮询**：每轮查询顺序轮换起点分摊负载；**随机**：每次随机挑一起点。失败时均自动 Fallback。 |
+| **搜索源拖拽排序** | 搜索源与用量列表 | 拖拽 handle (`⋮⋮`) | 自定义 Provider 的默认优先级与 Fallback 降级顺序，排在第一位者为首选源。 |
+| **API 密钥池管理** | Provider 详情弹窗 | 支持添加多把 Key（脱敏显示） | 单 Provider 内部多 Key 轮询与负载均衡，并发时分配给低 `inFlight` 的 Key，遇 401 自动切备用 Key。 |
+| **搜索偏好预设** | 设置页 / 偏好面板 | 推荐 / 快速 / 深度 / 节省 / 自定义 | 一键调整所有 Provider 的底层原生检索深度与提取模式（如快速响应优先 vs 深入深度检索）。 |
+| **单搜索源超时时间** | 底部高级设置栏 | 1000ms – 60000ms（默认 10s） | 单个 Provider 调用的最大等待时间，超时自动中断并立即尝试下一家，避免 Agent 被慢接口卡死。 |
+| **会话联网搜索 (Search Mode)** | 聊天输入框左侧 | 自动 (Auto) / 必选 (Required) | **必选**时强制 Agent 在回答前必须先调 `web_search`/`web_fetch` 进行验证，未验证需如实说明。 |
+| **网络代理 (Proxy)** | 环境变量 / 系统代理 | `HTTP(S)_PROXY` / `NO_PROXY` | 自动识别环境代理，本地回环地址（`localhost`、`127.0.0.1`、SearXNG 本地实例）自动 Bypass。 |
 
 ## 快速选型指南
 

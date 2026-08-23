@@ -57,11 +57,9 @@ export function buildTavilySearchBody(
     }
   }
 
-  // 1. Topic mapping
+  // 1. Topic mapping: Tavily API strictly accepts 'general' | 'news'. Other topics (e.g. finance/code) must omit topic or use 'general'.
   if (hints?.topic === "news") {
     requestBody.topic = "news";
-  } else if (hints?.topic === "finance") {
-    requestBody.topic = "finance";
   }
 
   // 2. Freshness & date filtering

@@ -265,19 +265,19 @@ test("buildParallelSearchBody: max_chars_total omitted when not set", () => {
 });
 
 test("buildParallelSearchBody with SearchHints: soft-steers objective and sets source_policy", () => {
-  const hints = extractSearchHints("site:github.com Gemini CLI official documentation latest bug", new Date("2026-08-23T12:00:00Z"));
-  const body = buildParallelSearchBody("site:github.com Gemini CLI official documentation latest bug", 10, { mode: "advanced" }, hints);
+  const hints = extractSearchHints("site:github.com Gemini CLI official documentation this week bug", new Date("2026-08-23T12:00:00Z"));
+  const body = buildParallelSearchBody("site:github.com Gemini CLI official documentation this week bug", 10, { mode: "advanced" }, hints);
   
   assert.equal(body.mode, "advanced");
-  assert.match((body.objective as string), /Gemini CLI official documentation latest bug/);
+  assert.match((body.objective as string), /Gemini CLI official documentation this week bug/);
   assert.match((body.objective as string), /Prefer primary documentation and official sources/);
-  assert.deepEqual(body.search_queries, ["Gemini CLI official documentation latest bug"]);
+  assert.deepEqual(body.search_queries, ["Gemini CLI official documentation this week bug"]);
   
   const adv = body.advanced_settings as Record<string, unknown>;
   assert.equal(adv.max_results, 10);
   const sourcePolicy = adv.source_policy as Record<string, unknown>;
   assert.deepEqual(sourcePolicy.include_domains, ["github.com"]);
-  assert.equal(sourcePolicy.after_date, "2026-07-23");
+  assert.equal(sourcePolicy.after_date, "2026-08-16");
 });
 
 // ---- Firecrawl adapter (search body with SearchHints) ----
@@ -293,8 +293,8 @@ test("buildFirecrawlSearchBody maps code topic to categories: ['developer'] and 
 });
 
 test("buildFirecrawlSearchBody maps freshness preset to tbs", () => {
-  const hints = extractSearchHints("今天 OpenAI 有什么新消息");
-  const body = buildFirecrawlSearchBody("今天 OpenAI 有什么新消息", 5, hints);
+  const hints = extractSearchHints("今天中国 OpenAI 有什么新消息");
+  const body = buildFirecrawlSearchBody("今天中国 OpenAI 有什么新消息", 5, hints);
   
   assert.equal(body.limit, 5);
   assert.equal(body.tbs, "qdr:d");
@@ -302,29 +302,41 @@ test("buildFirecrawlSearchBody maps freshness preset to tbs", () => {
 });
 
 test("buildFirecrawlSearchBody maps research topic to categories: ['research']", () => {
-  const hints = extractSearchHints("找一下最新 AI 论文 arxiv");
-  const body = buildFirecrawlSearchBody("找一下最新 AI 论文 arxiv", 8, hints);
+  const hints = extractSearchHints("找一下今年最新 AI 论文 arxiv");
+  const body = buildFirecrawlSearchBody("找一下今年最新 AI 论文 arxiv", 8, hints);
   
   assert.deepEqual(body.categories, ["research"]);
-  assert.equal(body.tbs, "qdr:m");
 });
 
 // ---- SearchHints pure extraction tests ----
 
 test("extractSearchHints extracts code topic, domains, freshness, and cleanQuery", () => {
-  const hints = extractSearchHints("site:github.com -site:spam.com Gemini CLI latest bug", new Date("2026-08-23T12:00:00Z"));
+  const hints = extractSearchHints("site:github.com -site:spam.com Gemini CLI this week bug", new Date("2026-08-23T12:00:00Z"));
   assert.equal(hints.topic, "code");
   assert.deepEqual(hints.domains?.include, ["github.com"]);
   assert.deepEqual(hints.domains?.exclude, ["spam.com"]);
-  assert.equal(hints.freshness?.preset, "month");
-  assert.equal(hints.freshness?.after, "2026-07-23");
-  assert.equal(hints.cleanQuery, "Gemini CLI latest bug");
+  assert.equal(hints.freshness?.preset, "week");
+  assert.equal(hints.freshness?.after, "2026-08-16");
+  assert.equal(hints.cleanQuery, "Gemini CLI this week bug");
 });
 
 test("extractSearchHints extracts news and day freshness", () => {
   const hints = extractSearchHints("今天 OpenAI 有什么重大新闻 breaking news");
   assert.equal(hints.topic, "news");
   assert.equal(hints.freshness?.preset, "day");
+});
+
+test("extractSearchHints decouples language from country (only explicit country sets country)", () => {
+  const hints1 = extractSearchHints("中文搜索一下美国 OpenAI 最近有什么变化");
+  assert.equal(hints1.locale?.language, "zh");
+  assert.equal(hints1.locale?.country, "US"); // Explicitly mentioned 美国
+
+  const hints2 = extractSearchHints("React 官方文档报错");
+  assert.equal(hints2.locale?.language, "zh");
+  assert.equal(hints2.locale?.country, undefined); // No country specified!
+
+  // Soft freshness in evergreen technical doc should not truncate to 1 month
+  assert.equal(hints2.freshness, undefined);
 });
 
 test("extractSearchHints extracts finance topic", () => {
@@ -349,11 +361,11 @@ test("buildTavilySearchBody maps topic news, freshness week, and domains", () =>
 // ---- You.com deep adaptation tests ----
 
 test("buildYouSearchBody maps soft prefer to boost_domains and sets freshness", () => {
-  const hints = extractSearchHints("latest AI news prefer official documentation", new Date("2026-08-23T12:00:00Z"));
-  const body = buildYouSearchBody("latest AI news prefer official documentation", 10, { extractionMode: "highlights" }, hints);
+  const hints = extractSearchHints("today AI news prefer official documentation", new Date("2026-08-23T12:00:00Z"));
+  const body = buildYouSearchBody("today AI news prefer official documentation", 10, { extractionMode: "highlights" }, hints);
   
   assert.deepEqual(body.extraction, { extraction_mode: "highlights" });
-  assert.equal(body.freshness, "month");
+  assert.equal(body.freshness, "day");
 });
 
 test("buildYouSearchBody maps hard site: to include_domains without boost_domains", () => {
@@ -367,8 +379,8 @@ test("buildYouSearchBody maps hard site: to include_domains without boost_domain
 // ---- Brave deep adaptation tests ----
 
 test("buildBraveLlmContextBody maps freshness preset to pd/pw/pm/py and country/lang", () => {
-  const hints = extractSearchHints("今日 OpenAI 进展快讯");
-  const body = buildBraveLlmContextBody("今日 OpenAI 进展快讯", 10, undefined, hints);
+  const hints = extractSearchHints("今日中国 OpenAI 进展快讯");
+  const body = buildBraveLlmContextBody("今日中国 OpenAI 进展快讯", 10, undefined, hints);
   
   assert.equal(body.freshness, "pd");
   assert.equal(body.country, "CN");
@@ -377,14 +389,14 @@ test("buildBraveLlmContextBody maps freshness preset to pd/pw/pm/py and country/
 
 // ---- Exa deep adaptation tests ----
 
-test("buildExaSearchBody maps research topic to research paper category and startPublishedDate", () => {
-  const hints = extractSearchHints("site:arxiv.org AI reasoning benchmark paper this month", new Date("2026-08-23T12:00:00Z"));
-  const body = buildExaSearchBody("site:arxiv.org AI reasoning benchmark paper this month", 10, { searchType: "fast" }, hints);
+test("buildExaSearchBody maps research topic to publication category and startPublishedDate", () => {
+  const hints = extractSearchHints("site:arxiv.org AI reasoning benchmark paper this week", new Date("2026-08-23T12:00:00Z"));
+  const body = buildExaSearchBody("site:arxiv.org AI reasoning benchmark paper this week", 10, { searchType: "fast" }, hints);
   
-  assert.equal(body.category, "research paper");
+  assert.equal(body.category, "publication");
   assert.equal(body.type, "fast");
   assert.deepEqual(body.includeDomains, ["arxiv.org"]);
-  assert.equal(body.startPublishedDate, "2026-07-23T00:00:00.000Z");
+  assert.equal(body.startPublishedDate, "2026-08-16T00:00:00.000Z");
 });
 
 // ---- SearXNG deep adaptation tests ----

@@ -44,9 +44,9 @@ export function buildExaSearchBody(
     },
   };
 
-  // 1. Category mapping
+  // 1. Category mapping (Exa officially uses "publication" for papers/academic, "news", "financial report")
   if (hints?.topic === "research") {
-    body.category = "research paper";
+    body.category = "publication";
   } else if (hints?.topic === "news") {
     body.category = "news";
   } else if (hints?.topic === "finance") {

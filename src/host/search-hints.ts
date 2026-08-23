@@ -141,6 +141,18 @@ const OFFICIAL_PREFERENCE_INDICATORS = [
   /(?:官方文档|官网|官方|权威来源|正规文档|官方指南)/,
 ];
 
+// Country indicators (only assign country when explicitly mentioned in the query)
+const EXPLICIT_COUNTRY_PATTERNS: Array<{ re: RegExp; country: string }> = [
+  { re: /(?:美国|美股|美联储|United States|USA|\bUS\b)/i, country: "US" },
+  { re: /(?:中国|国内|A股|China|\bCN\b)/i, country: "CN" },
+  { re: /(?:日本|日经|Japan|\bJP\b)/i, country: "JP" },
+  { re: /(?:英国|United Kingdom|\bUK\b|\bGB\b)/i, country: "GB" },
+  { re: /(?:新加坡|Singapore|\bSG\b)/i, country: "SG" },
+  { re: /(?:德国|Germany|\bDE\b)/i, country: "DE" },
+  { re: /(?:法国|France|\bFR\b)/i, country: "FR" },
+  { re: /(?:加拿大|Canada|\bCA\b)/i, country: "CA" },
+];
+
 /**
  * Extract structured SearchHints from a raw query.
  * Pure function: deterministic, fast, testable, zero side-effects.
@@ -189,30 +201,7 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     cleanQuery = cleanQuery.replace(BEFORE_DATE_RE, " ");
   }
 
-  // 3. Extract freshness preset
-  let freshnessPreset: FreshnessPreset | undefined;
-  if (!afterDate && !beforeDate) {
-    if (DAY_INDICATORS.some((re) => re.test(rawQuery))) {
-      freshnessPreset = "day";
-    } else if (WEEK_INDICATORS.some((re) => re.test(rawQuery))) {
-      freshnessPreset = "week";
-    } else if (MONTH_INDICATORS.some((re) => re.test(rawQuery))) {
-      freshnessPreset = "month";
-    } else if (YEAR_INDICATORS.some((re) => re.test(rawQuery))) {
-      freshnessPreset = "year";
-    }
-  }
-
-  const freshness: FreshnessHint | undefined =
-    freshnessPreset || afterDate || beforeDate
-      ? {
-          preset: freshnessPreset,
-          after: afterDate ?? (freshnessPreset ? calculateAfterDate(freshnessPreset, now) : undefined),
-          before: beforeDate,
-        }
-      : undefined;
-
-  // 4. Topic classification
+  // 3. Topic classification (needed before freshness rules to avoid over-constraining evergreen technical queries)
   let topic: SearchTopic = "general";
   if (includeDomains.some((d) => d.includes("github.com") || d.includes("gitlab.com") || d.includes("stackoverflow.com")) ||
       CODE_INDICATORS.some((re) => re.test(rawQuery))) {
@@ -225,6 +214,32 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   } else if (NEWS_INDICATORS.some((re) => re.test(rawQuery))) {
     topic = "news";
   }
+
+  // 4. Extract freshness preset:
+  // Hard freshness (day/week): applied across all topics.
+  // Soft freshness (month/year keywords like latest/recent/current): applied ONLY if topic === "news"
+  // or when explicit after/before is given, to avoid truncating evergreen docs like "latest React docs".
+  let freshnessPreset: FreshnessPreset | undefined;
+  if (!afterDate && !beforeDate) {
+    if (DAY_INDICATORS.some((re) => re.test(rawQuery))) {
+      freshnessPreset = "day";
+    } else if (WEEK_INDICATORS.some((re) => re.test(rawQuery))) {
+      freshnessPreset = "week";
+    } else if (topic === "news" && MONTH_INDICATORS.some((re) => re.test(rawQuery))) {
+      freshnessPreset = "month";
+    } else if (topic === "news" && YEAR_INDICATORS.some((re) => re.test(rawQuery))) {
+      freshnessPreset = "year";
+    }
+  }
+
+  const freshness: FreshnessHint | undefined =
+    freshnessPreset || afterDate || beforeDate
+      ? {
+          preset: freshnessPreset,
+          after: afterDate ?? (freshnessPreset ? calculateAfterDate(freshnessPreset, now) : undefined),
+          before: beforeDate,
+        }
+      : undefined;
 
   // 5. Official / Prefer domains
   const preferOfficial = OFFICIAL_PREFERENCE_INDICATORS.some((re) => re.test(rawQuery));
@@ -244,15 +259,24 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
         }
       : undefined;
 
-  // 6. Locale hint detection (simple language / country cues)
-  let locale: LocaleHint | undefined;
+  // 6. Locale hint detection (language decoupled from country!)
+  // ONLY set country when explicitly mentioned in query text.
+  let language: string | undefined;
   const hasChinese = /[\u4e00-\u9fa5]/.test(rawQuery);
   const hasJapanese = /[\u3040-\u30ff]/.test(rawQuery);
   if (hasChinese) {
-    locale = { language: "zh", country: "CN" };
+    language = "zh";
   } else if (hasJapanese) {
-    locale = { language: "ja", country: "JP" };
+    language = "ja";
   }
+
+  let country: string | undefined;
+  const explicitCountry = EXPLICIT_COUNTRY_PATTERNS.find((p) => p.re.test(rawQuery));
+  if (explicitCountry) {
+    country = explicitCountry.country;
+  }
+
+  const locale: LocaleHint | undefined = language || country ? { language, country } : undefined;
 
   // Clean extra whitespaces in cleanQuery
   cleanQuery = cleanQuery.replace(/\s+/g, " ").trim();
