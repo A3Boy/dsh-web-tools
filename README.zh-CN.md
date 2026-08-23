@@ -115,6 +115,10 @@ dsh plugin --profile web remove dsh-web-tools
 - **轮询模式 (Round-Robin)**：每轮查询依次轮换首选 Provider，均匀分摊多个 Provider 之间的请求量。
 - **随机模式 (Random)**：每轮查询随机选择初始 Provider。
 
+<p align="center">
+  <img src="assets/searchOrderAndRouting.png" width="900" alt="搜索策略与顺序调整" />
+</p>
+
 > 无论采用何种路由策略，当初始 Provider 失败时，均会自动沿剩余可用链路执行 Fallback。
 
 ### 2. 自动 Fallback 链路

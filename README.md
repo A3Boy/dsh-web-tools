@@ -115,6 +115,10 @@ Choose how the runtime selects the initial search provider:
 - **Round-Robin**: Rotates the initial provider sequentially per query to distribute request load across multiple providers.
 - **Random**: Randomly selects a provider as the starting point.
 
+<p align="center">
+  <img src="assets/searchOrderAndRouting.png" width="900" alt="Search routing policies and order editing" />
+</p>
+
 > When the initial provider fails, the runtime always cascades through the remaining providers in order regardless of the routing policy.
 
 ### 2. Automatic Fallback Chain
