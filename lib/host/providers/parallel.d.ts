@@ -26,6 +26,7 @@
  */
 import { type ProviderAdapter, type Source } from "./types.ts";
 import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
 export declare const PARALLEL_META: {
     readonly name: "parallel";
     readonly label: "Parallel";
@@ -43,12 +44,12 @@ export declare function clampParallelCount(maxResults: number | undefined): numb
  */
 export declare function normalizeParallelQuery(query: string): string;
 /**
- * Build the /v1/search request body. `objective` carries the full natural
- * language goal; `search_queries` carries at least one derived query (the
- * docs recommend 2–3 but accept one). Mode is pinned to "basic" — see the
- * module doc. Count is the ALREADY clamped value.
+ * Build the /v1/search request body. `objective` carries the natural
+ * language goal (with soft steering for preferred sources); `search_queries`
+ * carries clean keyword queries without syntax junk. `advanced_settings`
+ * carries hard constraints (source_policy, max_results).
  */
-export declare function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown>;
+export declare function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>, hints?: Readonly<SearchHints>): Record<string, unknown>;
 /**
  * Parse Parallel's search envelope ({ results: [...] }) into normalized
  * sources. `url` is required per item; `excerpts` (an array of LLM-ranked

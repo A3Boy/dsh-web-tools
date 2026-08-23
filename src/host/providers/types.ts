@@ -76,14 +76,17 @@ export interface ProviderMeta {
   defaultBaseUrl?: string;
 }
 
+import type { SearchHints } from "../search-hints.ts";
+
 /**
  * Per-execution context passed to provider search / fetch adapters.
- * Encapsulates the cancellation signal and any user-configured options
- * for this specific provider (no universal cross-provider parameters).
+ * Encapsulates the cancellation signal, user-configured options,
+ * and high-confidence semantic search hints extracted from the query.
  */
 export interface ProviderExecutionContext<TOptions = unknown> {
   readonly signal?: AbortSignal;
   readonly options?: Readonly<TOptions>;
+  readonly hints?: Readonly<SearchHints>;
 }
 
 /** One configured adapter instance. */
@@ -115,10 +118,11 @@ export interface ProviderAdapter extends ProviderMeta {
   ): Promise<{ text: string }>;
 }
 
-/** Helper to extract signal and typed options from an execution context or bare signal. */
+/** Helper to extract signal, typed options, and hints from an execution context or bare signal. */
 export function resolveContext<T = unknown>(contextOrSignal?: AbortSignal | ProviderExecutionContext<T>): {
   signal?: AbortSignal;
   options?: Readonly<T>;
+  hints?: Readonly<SearchHints>;
 } {
   if (!contextOrSignal) return {};
   if (typeof contextOrSignal === "object" && ("aborted" in contextOrSignal || "addEventListener" in contextOrSignal)) {
@@ -128,6 +132,7 @@ export function resolveContext<T = unknown>(contextOrSignal?: AbortSignal | Prov
   return {
     signal: ctx.signal,
     options: ctx.options,
+    hints: ctx.hints,
   };
 }
 

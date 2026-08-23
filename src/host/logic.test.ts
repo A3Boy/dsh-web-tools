@@ -18,6 +18,8 @@ import { braveQuotaFromHeaders } from "./providers/brave.ts";
 import { classifyHttpStatus } from "./providers/types.ts";
 import { mergePoolQuota } from "./quota.ts";
 import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
+import { extractSearchHints, calculateAfterDate } from "./search-hints.ts";
+import { buildFirecrawlSearchBody } from "./providers/firecrawl.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -255,6 +257,74 @@ test("buildParallelSearchBody: max_chars_total omitted when not set", () => {
   const body = buildParallelSearchBody("test", 5, { mode: "basic" });
   assert.equal(body.max_chars_total, undefined);
   assert.deepEqual(body.advanced_settings, { max_results: 5 });
+});
+
+test("buildParallelSearchBody with SearchHints: soft-steers objective and sets source_policy", () => {
+  const hints = extractSearchHints("site:github.com Gemini CLI official documentation latest bug", new Date("2026-08-23T12:00:00Z"));
+  const body = buildParallelSearchBody("site:github.com Gemini CLI official documentation latest bug", 10, { mode: "advanced" }, hints);
+  
+  assert.equal(body.mode, "advanced");
+  assert.match((body.objective as string), /Gemini CLI official documentation latest bug/);
+  assert.match((body.objective as string), /Prefer primary documentation and official sources/);
+  assert.deepEqual(body.search_queries, ["Gemini CLI official documentation latest bug"]);
+  
+  const adv = body.advanced_settings as Record<string, unknown>;
+  assert.equal(adv.max_results, 10);
+  const sourcePolicy = adv.source_policy as Record<string, unknown>;
+  assert.deepEqual(sourcePolicy.include_domains, ["github.com"]);
+  assert.equal(sourcePolicy.after_date, "2026-07-23");
+});
+
+// ---- Firecrawl adapter (search body with SearchHints) ----
+
+test("buildFirecrawlSearchBody maps code topic to categories: ['developer'] and site: to includeDomains", () => {
+  const hints = extractSearchHints("site:github.com DeepSeek Harness tool calling issue");
+  const body = buildFirecrawlSearchBody("site:github.com DeepSeek Harness tool calling issue", 10, hints);
+  
+  assert.equal(body.query, "DeepSeek Harness tool calling issue");
+  assert.equal(body.limit, 10);
+  assert.deepEqual(body.categories, ["developer"]);
+  assert.deepEqual(body.includeDomains, ["github.com"]);
+});
+
+test("buildFirecrawlSearchBody maps freshness preset to tbs", () => {
+  const hints = extractSearchHints("今天 OpenAI 有什么新消息");
+  const body = buildFirecrawlSearchBody("今天 OpenAI 有什么新消息", 5, hints);
+  
+  assert.equal(body.limit, 5);
+  assert.equal(body.tbs, "qdr:d");
+  assert.equal(body.country, "CN");
+});
+
+test("buildFirecrawlSearchBody maps research topic to categories: ['research']", () => {
+  const hints = extractSearchHints("找一下最新 AI 论文 arxiv");
+  const body = buildFirecrawlSearchBody("找一下最新 AI 论文 arxiv", 8, hints);
+  
+  assert.deepEqual(body.categories, ["research"]);
+  assert.equal(body.tbs, "qdr:m");
+});
+
+// ---- SearchHints pure extraction tests ----
+
+test("extractSearchHints extracts code topic, domains, freshness, and cleanQuery", () => {
+  const hints = extractSearchHints("site:github.com -site:spam.com Gemini CLI latest bug", new Date("2026-08-23T12:00:00Z"));
+  assert.equal(hints.topic, "code");
+  assert.deepEqual(hints.domains?.include, ["github.com"]);
+  assert.deepEqual(hints.domains?.exclude, ["spam.com"]);
+  assert.equal(hints.freshness?.preset, "month");
+  assert.equal(hints.freshness?.after, "2026-07-23");
+  assert.equal(hints.cleanQuery, "Gemini CLI latest bug");
+});
+
+test("extractSearchHints extracts news and day freshness", () => {
+  const hints = extractSearchHints("今天 OpenAI 有什么重大新闻 breaking news");
+  assert.equal(hints.topic, "news");
+  assert.equal(hints.freshness?.preset, "day");
+});
+
+test("extractSearchHints extracts finance topic", () => {
+  const hints = extractSearchHints("Nvidia Q2 earnings report and revenue 财报");
+  assert.equal(hints.topic, "finance");
 });
 
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {

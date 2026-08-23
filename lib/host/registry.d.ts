@@ -84,6 +84,7 @@ export interface ProviderAdapterLike {
     search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | {
         signal?: AbortSignal;
         options?: unknown;
+        hints?: unknown;
     }): Promise<{
         sources: Array<{
             url: string;
@@ -95,6 +96,7 @@ export interface ProviderAdapterLike {
     fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | {
         signal?: AbortSignal;
         options?: unknown;
+        hints?: unknown;
     }): Promise<{
         text: string;
     }>;

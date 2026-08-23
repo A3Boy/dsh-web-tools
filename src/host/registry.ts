@@ -15,6 +15,7 @@ import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
+import { extractSearchHints } from "./search-hints.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
@@ -115,8 +116,8 @@ export interface ProviderAdapterLike {
   name: string;
   needsBaseUrl: boolean;
   fetchCapable: boolean;
-  search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown }): Promise<{ sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }> }>;
-  fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown }): Promise<{ text: string }>;
+  search(query: string, maxResults: number | undefined, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown; hints?: unknown }): Promise<{ sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }> }>;
+  fetch(url: string, apiKey: string, baseUrl: string | undefined, contextOrSignal?: AbortSignal | { signal?: AbortSignal; options?: unknown; hints?: unknown }): Promise<{ text: string }>;
 }
 
 /** Build a WebToolsSearchProvider for `ctx.web.registerSearchProvider`.
@@ -181,6 +182,7 @@ export function createSearchProvider(
 
       const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
       let lastError: ProviderError | undefined;
+      const searchHints = extractSearchHints(request.query);
 
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
@@ -232,6 +234,7 @@ export function createSearchProvider(
                 adapter.search(request.query, maxResults, entry?.key ?? "", cfg.providerBaseUrls[providerName], {
                   signal: s,
                   options: providerOptions,
+                  hints: searchHints,
                 }),
               cfg.providerAttemptTimeoutMs,
               signal,

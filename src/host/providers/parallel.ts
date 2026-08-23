@@ -27,6 +27,7 @@
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 const PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1/search";
 const PARALLEL_EXTRACT_URL = "https://api.parallel.ai/v1/extract";
@@ -55,12 +56,12 @@ export const ParallelProvider: ProviderAdapter = {
   async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Parallel API key is not configured");
-    const { signal, options } = resolveContext<ParallelProviderOptions>(contextOrSignal);
+    const { signal, options, hints } = resolveContext<ParallelProviderOptions>(contextOrSignal);
     const count = clampParallelCount(maxResults);
     const res = await fetchWithProxy(PARALLEL_SEARCH_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": token },
-      body: JSON.stringify(buildParallelSearchBody(query, count, options)),
+      body: JSON.stringify(buildParallelSearchBody(query, count, options, hints)),
       signal,
     });
     throwIfHttp("Parallel", res);
@@ -113,21 +114,55 @@ export function normalizeParallelQuery(query: string): string {
 }
 
 /**
- * Build the /v1/search request body. `objective` carries the full natural
- * language goal; `search_queries` carries at least one derived query (the
- * docs recommend 2–3 but accept one). Mode is pinned to "basic" — see the
- * module doc. Count is the ALREADY clamped value.
+ * Build the /v1/search request body. `objective` carries the natural
+ * language goal (with soft steering for preferred sources); `search_queries`
+ * carries clean keyword queries without syntax junk. `advanced_settings`
+ * carries hard constraints (source_policy, max_results).
  */
-export function buildParallelSearchBody(query: string, count: number, options?: Readonly<ParallelProviderOptions>): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    objective: query,
-    search_queries: [normalizeParallelQuery(query)],
-    mode: options?.mode ?? "advanced",
-    advanced_settings: { max_results: count },
+export function buildParallelSearchBody(
+  query: string,
+  count: number,
+  options?: Readonly<ParallelProviderOptions>,
+  hints?: Readonly<SearchHints>,
+): Record<string, unknown> {
+  let objective = query;
+  const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
+
+  // Soft steering via objective (Parallel official best practice)
+  if (hints?.domains?.preferOfficial) {
+    objective += "\nPrefer primary documentation and official sources when available.";
+  } else if (hints?.domains?.prefer && hints.domains.prefer.length > 0 && !hints.domains.include) {
+    objective += `\nPrefer sources from: ${hints.domains.prefer.join(", ")}.`;
+  }
+
+  // Advanced settings & source policy
+  const advancedSettings: Record<string, unknown> = {
+    max_results: count,
   };
+
+  const sourcePolicy: Record<string, unknown> = {};
+  if (hints?.domains?.include && hints.domains.include.length > 0) {
+    sourcePolicy.include_domains = hints.domains.include;
+  }
+  if (hints?.domains?.exclude && hints.domains.exclude.length > 0) {
+    sourcePolicy.exclude_domains = hints.domains.exclude;
+  }
+  if (hints?.freshness?.after) {
+    sourcePolicy.after_date = hints.freshness.after;
+  }
+
+  if (Object.keys(sourcePolicy).length > 0) {
+    advancedSettings.source_policy = sourcePolicy;
+  }
+
+  const body: Record<string, unknown> = {
+    objective,
+    search_queries: [normalizeParallelQuery(cleanQ)],
+    mode: options?.mode ?? "advanced",
+    advanced_settings: advancedSettings,
+  };
+
   // max_chars_total is a top-level /v1/search field (docs.parallel.ai).
-  // Putting it in advanced_settings — as the original code did — causes
-  // HTTP 422. Only send it when the user explicitly overrides it.
   if (typeof options?.maxCharsTotal === "number") {
     body.max_chars_total = options.maxCharsTotal;
   }
