@@ -207,7 +207,7 @@ export function apply(ctx: WebToolsContext) {
 
   // Wrap fetch provider with SpecializedSourceRouter
   const routedFetchProvider = {
-    id: PROVIDER_ID,
+    id: `${PROVIDER_ID}-fetch`,
     available: () => generalFetchProvider.available(),
     fetch: async (request: { url: string }, signal?: AbortSignal) => {
       const outcome = await defaultSourceRegistry.fetch(request.url, signal);

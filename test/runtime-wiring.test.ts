@@ -63,6 +63,8 @@ test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async
 
   assert.ok(registeredSearchProvider, "Search provider must be registered on ctx.web");
   assert.ok(registeredFetchProvider, "Fetch provider must be registered on ctx.web");
+  assert.equal(registeredSearchProvider.id, "dsh-web-tools", "Search provider id must match patch config");
+  assert.equal(registeredFetchProvider.id, "dsh-web-tools-fetch", "Fetch provider id must be dsh-web-tools-fetch");
 
   // Verify that registered search provider routes XHS query to SpecializedSource
   let xhsHandled = false;
