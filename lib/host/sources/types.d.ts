@@ -42,8 +42,10 @@ export interface SourceItem {
     author?: SourceAccountInfo;
     publishedAt?: string;
     likes?: number;
+    collects?: number;
     retweets?: number;
     replies?: number;
+    images?: string[];
     coverImage?: string;
     platform: SpecializedPlatformId | "general";
 }

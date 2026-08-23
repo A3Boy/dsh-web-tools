@@ -27,7 +27,14 @@ export class StateStore {
         typeof parsed.browserKind === "string" &&
         typeof parsed.profileDir === "string"
       ) {
-        return parsed as RunningBrowserState;
+        return {
+          pid: parsed.pid,
+          port: parsed.port,
+          browserKind: parsed.browserKind,
+          profileDir: parsed.profileDir,
+          mode: parsed.mode === "interactive" ? "interactive" : "headless",
+          startedAt: typeof parsed.startedAt === "number" ? parsed.startedAt : Date.now(),
+        };
       }
       return null;
     } catch {

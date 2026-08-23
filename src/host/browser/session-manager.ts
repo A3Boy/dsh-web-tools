@@ -168,7 +168,7 @@ export class SessionManager implements NativeBrowserRuntime {
             pid: stored.pid,
             cdp,
             profileDir: stored.profileDir,
-            mode: "headless",
+            mode: stored.mode,
             startedAt: stored.startedAt,
           };
           cdp.onClose(() => {
@@ -389,9 +389,16 @@ export class SessionManager implements NativeBrowserRuntime {
     visible = false,
     signal?: AbortSignal,
   ): Promise<RunningSession> {
+    const desiredMode: BrowserRunMode = visible ? "interactive" : "headless";
+
     const existing = this.sessions.get(platform);
     if (existing) {
-      return existing;
+      if (existing.mode === desiredMode) {
+        return existing;
+      }
+      // Mode mismatch (e.g. interactive login -> headless fetch, or headless worker -> interactive login)
+      // Stop the existing browser and relaunch with the same dedicated profile in the desired mode
+      await this.stop(platform);
     }
 
     const starting = this.startingPromises.get(platform);
@@ -443,6 +450,7 @@ export class SessionManager implements NativeBrowserRuntime {
           port: spawned.port,
           browserKind: browser.kind,
           profileDir,
+          mode: visible ? "interactive" : "headless",
           startedAt: spawned.startedAt,
         };
         this.stateStore.saveState(platform, state);

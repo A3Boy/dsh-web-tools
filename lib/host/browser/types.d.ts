@@ -26,6 +26,7 @@ export interface RunningBrowserState {
     port: number;
     browserKind: "edge" | "chrome";
     profileDir: string;
+    mode: BrowserRunMode;
     startedAt: number;
 }
 export interface CdpPageLease {

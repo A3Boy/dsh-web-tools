@@ -24,10 +24,21 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
           },
         ];
       }
+      if (fn.name === "extractXhsDetailState") {
+        return {
+          available: true,
+          title: "结构化标题 (Primary)",
+          text: "结构化正文内容",
+          authorName: "测试博主",
+          likes: 666,
+          collects: 188,
+          comments: 25,
+        };
+      }
       if (fn.name === "extractXhsNoteDetail") {
         return {
-          title: "小红书笔记标题详情",
-          text: "这是小红书笔记正文内容",
+          title: "小红书DOM笔记标题",
+          text: "这是小红书DOM笔记正文内容",
           authorName: "测试博主",
           likes: 520,
           isBlocked: false,
@@ -79,8 +90,11 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   setXhsNativeSearchEnabled(false);
 
   const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123?xsec_token=token123");
-  assert.equal(fetchRes.item?.title, "小红书笔记标题详情");
-  assert.equal(fetchRes.item?.text, "这是小红书笔记正文内容");
+  assert.equal(fetchRes.item?.title, "结构化标题 (Primary)", "Must use structured detail when available");
+  assert.equal(fetchRes.item?.text, "结构化正文内容");
+  assert.equal(fetchRes.item?.likes, 666);
+  assert.equal(fetchRes.item?.collects, 188);
+  assert.equal(fetchRes.item?.replies, 25);
 });
 
 test("XiaohongshuSource: returns auth-required without opening page when unauthenticated", async () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractXhsSearchState } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
+import { extractXhsSearchState, extractXhsDetailState } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
 import { buildXhsNoteUrl } from "../src/host/sources/xiaohongshu/query.ts";
 import { parseXhsMetricNumber, isNoteFeed, normalizeXhsFeed } from "../src/host/sources/xiaohongshu/normalize.ts";
 import type { XhsRawSearchFeed } from "../src/host/sources/xiaohongshu/types.ts";
@@ -147,4 +147,46 @@ test("extractXhsSearchState: extracts feeds from window.__INITIAL_STATE__.search
   const res4 = extractXhsSearchState();
   assert.equal(res4.available, false);
   assert.equal(res4.feeds.length, 0);
+});
+
+test("extractXhsDetailState: extracts note detail from noteDetailMap (direct key and Object.values fallback)", () => {
+  // Case 1: Direct key match
+  (globalThis as any).window = {
+    __INITIAL_STATE__: {
+      note: {
+        noteDetailMap: {
+          note_123: {
+            note: {
+              noteId: "note_123",
+              title: "结构化笔记详情",
+              desc: "正文内容很丰富",
+              time: 1724400000000,
+              user: { nickname: "科技达人", userId: "u_999" },
+              interactInfo: { likedCount: "1.2万", collectedCount: "3500", commentCount: "88" },
+              imageList: [{ urlDefault: "https://ci.xiaohongshu.com/img1.jpg" }],
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const res1 = extractXhsDetailState("note_123");
+  assert.equal(res1.available, true);
+  assert.equal(res1.title, "结构化笔记详情");
+  assert.equal(res1.text, "正文内容很丰富");
+  assert.equal(res1.authorName, "科技达人");
+  assert.equal(res1.likes, 12000);
+  assert.equal(res1.collects, 3500);
+  assert.equal(res1.comments, 88);
+  assert.ok(res1.publishedAt);
+  assert.equal(res1.images?.[0], "https://ci.xiaohongshu.com/img1.jpg");
+
+  // Case 2: Object.values fallback
+  const res2 = extractXhsDetailState("note_123");
+  assert.equal(res2.available, true);
+
+  // Case 3: Missing entry
+  const res3 = extractXhsDetailState("note_non_exist");
+  assert.equal(res3.available, false);
 });

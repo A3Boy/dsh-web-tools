@@ -42,6 +42,7 @@ test("ProfileStore & StateStore: zero raw cookie storage and metadata persistenc
       port: 12345,
       browserKind: "edge",
       profileDir: xhsDir,
+      mode: "interactive",
       startedAt: 1000,
     });
 
@@ -51,6 +52,7 @@ test("ProfileStore & StateStore: zero raw cookie storage and metadata persistenc
       port: 12345,
       browserKind: "edge",
       profileDir: xhsDir,
+      mode: "interactive",
       startedAt: 1000,
     });
 

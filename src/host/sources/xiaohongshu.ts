@@ -208,28 +208,36 @@ export class XiaohongshuSource implements SpecializedSource {
 
     try {
       await page.waitForLoad(signal);
-      await page.waitForSelector("#detail-title, .title, .security-verify", 8000, signal);
 
-      // 1. Structured detail (PRIMARY) — __INITIAL_STATE__.note.noteDetailMap
       const noteId = extractNoteIdFromUrl(url);
       let detail: any;
+
+      // 1. Structured detail (PRIMARY) — poll __INITIAL_STATE__.note.noteDetailMap directly
+      // Does NOT wait for DOM selectors; if structured state is present, returns immediately
       if (noteId) {
-        try {
-          const structured = await page.call(extractXhsDetailState, [noteId], signal);
-          if (structured && structured.available) {
-            detail = structured;
+        const structStart = Date.now();
+        while (Date.now() - structStart < 3500) {
+          if (signal?.aborted) break;
+          try {
+            const structured = await page.call(extractXhsDetailState, [noteId], signal);
+            if (structured && structured.available && (structured.title || structured.text)) {
+              detail = structured;
+              break;
+            }
+          } catch {
+            // Retry next tick
           }
-        } catch {
-          // Structured fallback to DOM
+          await new Promise((r) => setTimeout(r, 250));
         }
       }
 
-      // 2. DOM extraction (FALLBACK)
+      // 2. DOM extraction (FALLBACK only when structured state is unavailable)
       if (!detail) {
         try {
+          await page.waitForSelector("#detail-title, .title, .security-verify, #detail-desc, .desc", 5000, signal);
           detail = await page.call(extractXhsNoteDetail, [], signal);
         } catch {
-          // DOM fallback
+          // DOM fallback failed
         }
       }
 
@@ -250,6 +258,9 @@ export class XiaohongshuSource implements SpecializedSource {
           author: detail.authorName ? { name: detail.authorName, url: detail.authorUrl } : undefined,
           publishedAt: detail.publishedAt,
           likes: detail.likes,
+          collects: detail.collects,
+          replies: detail.comments,
+          images: detail.images,
           platform: "xiaohongshu",
         },
       };
