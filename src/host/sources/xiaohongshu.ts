@@ -187,6 +187,15 @@ export class XiaohongshuSource implements SpecializedSource {
       const items = Array.from(collectedMap.values()).slice(0, maxResults);
       return { items };
     } catch (err: any) {
+      if (signal?.aborted) {
+        return { items: [], error: { code: "aborted", message: "Search operation was aborted", retryable: false } };
+      }
+      if (err.name === "UrlDisallowedError") {
+        return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
+      }
+      if (err.name === "NavigationTimeoutError" || err.name === "SelectorTimeoutError") {
+        return { items: [], error: { code: "navigation-timeout", message: err.message, retryable: true } };
+      }
       return { items: [], error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
       await page.close();
@@ -265,6 +274,15 @@ export class XiaohongshuSource implements SpecializedSource {
         },
       };
     } catch (err: any) {
+      if (signal?.aborted) {
+        return { error: { code: "aborted", message: "Fetch operation was aborted", retryable: false } };
+      }
+      if (err.name === "UrlDisallowedError") {
+        return { error: { code: "blocked", message: err.message, retryable: false } };
+      }
+      if (err.name === "NavigationTimeoutError" || err.name === "SelectorTimeoutError") {
+        return { error: { code: "navigation-timeout", message: err.message, retryable: true } };
+      }
       return { error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
       await page.close();

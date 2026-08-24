@@ -44,29 +44,52 @@ export class SpecializedSourceRegistry {
     this.fallbackFetchProvider = fetch;
   }
 
+  private inFlightStatus?: Promise<SourceStatus[]>;
+
   async getPlatformStatuses(): Promise<SourceStatus[]> {
-    const statuses: SourceStatus[] = [];
-    for (const source of this.sources.values()) {
-      try {
-        const s = await source.status();
-        statuses.push({
-          ...s,
-          enabled: this.isPlatformEnabled(source.id),
-        });
-      } catch (err: any) {
-        statuses.push({
-          id: source.id,
-          name: source.name,
-          enabled: this.isPlatformEnabled(source.id),
-          runtimeAvailable: false,
-          runtimeState: "error",
-          authenticated: false,
-          lastError: err?.message || String(err),
-          lastCheckedAt: Date.now(),
-        });
-      }
+    if (this.inFlightStatus) {
+      return this.inFlightStatus;
     }
-    return statuses;
+    this.inFlightStatus = (async () => {
+      try {
+        const platformIds: SpecializedPlatformId[] = ["xiaohongshu", "x"];
+        const statusPromises = platformIds.map(async (id): Promise<SourceStatus> => {
+          const source = this.sources.get(id);
+          if (!source) {
+            return {
+              id,
+              name: id === "xiaohongshu" ? "小红书" : "Twitter / X",
+              enabled: this.isPlatformEnabled(id),
+              runtimeAvailable: false,
+              runtimeState: "unavailable",
+              authenticated: false,
+            };
+          }
+          try {
+            const s = await source.status();
+            return {
+              ...s,
+              enabled: this.isPlatformEnabled(id),
+            };
+          } catch (err: any) {
+            return {
+              id,
+              name: source.name,
+              enabled: this.isPlatformEnabled(id),
+              runtimeAvailable: false,
+              runtimeState: "error",
+              authenticated: false,
+              lastError: err?.message || String(err),
+              lastCheckedAt: Date.now(),
+            };
+          }
+        });
+        return await Promise.all(statusPromises);
+      } finally {
+        this.inFlightStatus = undefined;
+      }
+    })();
+    return this.inFlightStatus;
   }
 
   async routeSearch(
@@ -171,5 +194,3 @@ export class SpecializedSourceRegistry {
     return fallbackFetchToGeneralWeb(url, this.fallbackFetchProvider, signal);
   }
 }
-
-export const defaultSourceRegistry = new SpecializedSourceRegistry();

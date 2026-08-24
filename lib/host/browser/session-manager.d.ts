@@ -1,12 +1,24 @@
+import { CdpClient } from "./cdp/client.ts";
+import { type SpawnedBrowserProcess } from "./process-manager.ts";
 import type { BrowserInfo, BrowserPlatform, BrowserSessionStatus, CdpPageLease, NativeBrowserRuntime } from "./types.ts";
+export type ProcessLauncher = (browser: BrowserInfo, profileDir: string, initialUrl?: string, minimized?: boolean, headless?: boolean) => Promise<SpawnedBrowserProcess>;
+export type CdpClientFactory = (port: number, signal?: AbortSignal) => Promise<CdpClient>;
+export type PidChecker = (pid: number) => boolean;
+export type PidKiller = (pid: number) => void;
 export declare class SessionManager implements NativeBrowserRuntime {
-    private sessions;
-    private startingPromises;
+    private records;
     private profileStore;
     private stateStore;
     private readonly browserChoice;
     private readonly idleShutdownMs;
-    constructor(browserChoice?: "auto" | "edge" | "chrome" | string, baseDirOverride?: string, idleShutdownMs?: number);
+    private readonly launcher;
+    private readonly cdpFactory;
+    private readonly isPidAliveFn;
+    private readonly killPidFn;
+    private disposed;
+    constructor(browserChoice?: "auto" | "edge" | "chrome" | string, baseDirOverride?: string, idleShutdownMs?: number, launcher?: ProcessLauncher, cdpFactory?: CdpClientFactory, isPidAliveFn?: PidChecker, killPidFn?: PidKiller);
+    private getRecord;
+    private enqueue;
     detect(): Promise<BrowserInfo | null>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
     verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal): Promise<boolean>;
@@ -15,15 +27,13 @@ export declare class SessionManager implements NativeBrowserRuntime {
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
-    /**
-     * Create a blank (about:blank) attached page WITHOUT navigating. This is the
-     * only way to install network capture listeners before the platform SPA
-     * fires its API requests (e.g. X SearchTimeline fires immediately on boot).
-     */
     createPage(platform: BrowserPlatform, signal?: AbortSignal): Promise<CdpPageLease>;
-    private ensureSession;
-    private resetIdleTimer;
-    resetSession(platform: BrowserPlatform): Promise<void>;
+    private retainLease;
+    private releaseLease;
+    private scheduleIdleTimer;
+    private acquireSession;
+    private internalStop;
     stop(platform: BrowserPlatform): Promise<void>;
+    resetSession(platform: BrowserPlatform): Promise<void>;
     dispose(): Promise<void>;
 }

@@ -6,6 +6,8 @@ export declare class CdpClient {
     private eventListeners;
     private closed;
     constructor(wsUrl: string | WebSocket);
+    isClosed(): boolean;
+    pendingCount(): number;
     connect(timeoutMs?: number): Promise<void>;
     private setupSocketHandlers;
     send<T = any>(method: string, params?: Record<string, unknown>, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T>;

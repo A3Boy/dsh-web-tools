@@ -8,6 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { registerRoutes, API_PREFIX } from "../src/host/routes.ts";
+import { SpecializedSourceRegistry } from "../src/host/sources/registry.ts";
 
 /** Minimal mock webServer that captures the registered handler. */
 function mockServer() {
@@ -54,6 +55,11 @@ const deps = {
   testProviderSearch: async (provider, query) => ({ ok: true, provider, query, latencyMs: 100, resultCount: 3 }),
   testFullSearch: async (query, provider) => ({ ok: true, backend: provider ?? "tavily", latencyMs: 200, resultCount: 3, attempts: [{ provider: "tavily", outcome: "success", latencyMs: 200 }] }),
   describeQuotas: async () => ({ tavily: { supported: true, authoritative: true, unit: "credits", remaining: 950, limit: 1000, source: "api", fetchedAt: Date.now() } }),
+  nativeRuntime: {
+    verifyAuthenticationForOperation: async () => true,
+    status: async () => ({ runtimeAvailable: true, runtimeState: "ready", authenticated: true }),
+  },
+  sourceRegistry: new SpecializedSourceRegistry(),
   searchMode: (() => {
     let mode = "auto";
     return {
@@ -119,6 +125,58 @@ test("quota/describe returns the authoritative snapshot", async () => {
   assert.equal(status, 200);
   assert.equal(body.value.quotas.tavily.remaining, 950);
   assert.equal(body.value.quotas.tavily.authoritative, true);
+});
+
+test("platform/status automatically verifies persisted sessions before responding", async () => {
+  const localRegistry = new SpecializedSourceRegistry();
+  let verified = false;
+  const statusOf = (id, name) => ({
+    id,
+    name,
+    enabled: true,
+    runtimeAvailable: true,
+    runtimeState: verified ? "ready" : "stopped",
+    authenticated: verified,
+    sessionEstablished: true,
+  });
+
+  localRegistry.registerSource({
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => statusOf("xiaohongshu", "小红书"),
+    search: async () => ({ items: [] }),
+    fetch: async () => ({}),
+  });
+  localRegistry.registerSource({
+    id: "x",
+    name: "Twitter / X",
+    status: async () => statusOf("x", "Twitter / X"),
+    search: async () => ({ items: [] }),
+    fetch: async () => ({}),
+  });
+
+  const verifyCalls = [];
+  const platformDeps = {
+    ...deps,
+    sourceRegistry: localRegistry,
+    nativeRuntime: {
+      verifyAuthenticationForOperation: async (platform) => {
+        verifyCalls.push(platform);
+        verified = true;
+        return true;
+      },
+    },
+  };
+  const { server: s, getHandler: g } = mockServer();
+  registerRoutes({ webServer: s, webRuntime: { trustedHosts: [] } }, platformDeps);
+
+  const { req, res } = fakeReqRes("POST", `${API_PREFIX}/platform/status`, {});
+  await g()(req, res);
+  const body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.deepEqual(verifyCalls.sort(), ["x", "xiaohongshu"]);
+  assert.equal(body.value.platforms.x.authenticated, true);
+  assert.equal(body.value.platforms.xiaohongshu.authenticated, true);
 });
 
 test("test/search reports backend and attempts", async () => {

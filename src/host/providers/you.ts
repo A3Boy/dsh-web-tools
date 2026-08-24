@@ -1,4 +1,4 @@
-import { providerError, throwIfHttp, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import type { YouProviderOptions } from "../../shared/provider-options.ts";

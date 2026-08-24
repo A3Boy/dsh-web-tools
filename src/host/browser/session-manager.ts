@@ -6,7 +6,7 @@ import { locateBrowser } from "./locator.ts";
 import { validatePlatformUrl } from "./paths.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { StateStore } from "./state-store.ts";
-import { isPidAlive, launchBrowserProcess } from "./process-manager.ts";
+import { isPidAlive as defaultIsPidAlive, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
 import type {
   BrowserInfo,
   BrowserPlatform,
@@ -16,6 +16,18 @@ import type {
   NativeBrowserRuntime,
   RunningBrowserState,
 } from "./types.ts";
+
+export type ProcessLauncher = (
+  browser: BrowserInfo,
+  profileDir: string,
+  initialUrl?: string,
+  minimized?: boolean,
+  headless?: boolean,
+) => Promise<SpawnedBrowserProcess>;
+
+export type CdpClientFactory = (port: number, signal?: AbortSignal) => Promise<CdpClient>;
+export type PidChecker = (pid: number) => boolean;
+export type PidKiller = (pid: number) => void;
 
 interface RunningSession {
   platform: BrowserPlatform;
@@ -27,7 +39,25 @@ interface RunningSession {
   mode: BrowserRunMode;
   startedAt: number;
   process?: import("node:child_process").ChildProcess;
+}
+
+type PlatformLifecycleState =
+  | "stopped"
+  | "starting"
+  | "ready"
+  | "transitioning"
+  | "stopping"
+  | "error";
+
+interface PlatformLifecycleRecord {
+  platform: BrowserPlatform;
+  state: PlatformLifecycleState;
+  session?: RunningSession;
+  targetMode?: BrowserRunMode;
+  activeLeases: number;
   idleTimer?: NodeJS.Timeout;
+  queue: Promise<unknown>;
+  pendingCancel?: boolean;
 }
 
 const PLATFORM_AUTH_CONFIG: Record<
@@ -54,22 +84,64 @@ const PLATFORM_AUTH_CONFIG: Record<
 };
 
 export class SessionManager implements NativeBrowserRuntime {
-  private sessions = new Map<BrowserPlatform, RunningSession>();
-  private startingPromises = new Map<BrowserPlatform, Promise<RunningSession>>();
+  private records = new Map<BrowserPlatform, PlatformLifecycleRecord>();
   private profileStore: ProfileStore;
   private stateStore: StateStore;
   private readonly browserChoice: "auto" | "edge" | "chrome" | string;
   private readonly idleShutdownMs: number;
+  private readonly launcher: ProcessLauncher;
+  private readonly cdpFactory: CdpClientFactory;
+  private readonly isPidAliveFn: PidChecker;
+  private readonly killPidFn: PidKiller;
+  private disposed = false;
 
   constructor(
     browserChoice: "auto" | "edge" | "chrome" | string = "auto",
     baseDirOverride?: string,
     idleShutdownMs = 300000,
+    launcher: ProcessLauncher = launchBrowserProcess,
+    cdpFactory: CdpClientFactory = async (port, signal) => {
+      const wsUrl = await fetchWebSocketDebuggerUrl(port, 12000, signal);
+      const cdp = new CdpClient(wsUrl);
+      await cdp.connect(5000);
+      return cdp;
+    },
+    isPidAliveFn: PidChecker = defaultIsPidAlive,
+    killPidFn: PidKiller = (pid) => {
+      try {
+        process.kill(pid);
+      } catch {}
+    },
   ) {
     this.browserChoice = browserChoice;
     this.idleShutdownMs = idleShutdownMs;
+    this.launcher = launcher;
+    this.cdpFactory = cdpFactory;
+    this.isPidAliveFn = isPidAliveFn;
+    this.killPidFn = killPidFn;
     this.profileStore = new ProfileStore(baseDirOverride);
     this.stateStore = new StateStore(baseDirOverride);
+  }
+
+  private getRecord(platform: BrowserPlatform): PlatformLifecycleRecord {
+    let rec = this.records.get(platform);
+    if (!rec) {
+      rec = {
+        platform,
+        state: "stopped",
+        activeLeases: 0,
+        queue: Promise.resolve(),
+      };
+      this.records.set(platform, rec);
+    }
+    return rec;
+  }
+
+  private enqueue<T>(platform: BrowserPlatform, task: () => Promise<T>): Promise<T> {
+    const rec = this.getRecord(platform);
+    const resultPromise = rec.queue.then(task, task);
+    rec.queue = resultPromise.then(() => {}, () => {});
+    return resultPromise;
   }
 
   async detect(): Promise<BrowserInfo | null> {
@@ -81,7 +153,7 @@ export class SessionManager implements NativeBrowserRuntime {
   }
 
   async checkAuthentication(platform: BrowserPlatform): Promise<boolean> {
-    const session = await this.ensureSession(platform, undefined, false);
+    const session = await this.acquireSession(platform, "headless", undefined, undefined);
     return this.internalCheckAuth(session);
   }
 
@@ -95,7 +167,7 @@ export class SessionManager implements NativeBrowserRuntime {
     }
 
     try {
-      const session = await this.ensureSession(platform, undefined, false, signal);
+      const session = await this.acquireSession(platform, "headless", undefined, signal);
       const isAuth = await this.internalCheckAuth(session);
       if (isAuth) {
         this.profileStore.saveMetadata(platform, {
@@ -152,82 +224,86 @@ export class SessionManager implements NativeBrowserRuntime {
       };
     }
 
-    const running = this.sessions.get(platform);
-    if (!running) {
-      // Check stored runtime.json for already running process
-      const stored = this.stateStore.loadState(platform);
-      if (stored && isPidAlive(stored.pid)) {
-        try {
-          const wsUrl = await fetchWebSocketDebuggerUrl(stored.port, 1200);
-          const cdp = new CdpClient(wsUrl);
-          await cdp.connect(1500);
-          const tempSession: RunningSession = {
-            platform,
-            browser: { kind: stored.browserKind, executablePath: browser.executablePath },
-            port: stored.port,
-            pid: stored.pid,
-            cdp,
-            profileDir: stored.profileDir,
-            mode: stored.mode,
-            startedAt: stored.startedAt,
-          };
-          cdp.onClose(() => {
-            if (this.sessions.get(platform)?.cdp === cdp) {
-              this.sessions.delete(platform);
-              this.stateStore.clearState(platform);
-            }
-          });
-          const authenticated = await this.internalCheckAuth(tempSession);
-          this.sessions.set(platform, tempSession);
-          this.resetIdleTimer(tempSession);
-          return {
-            platform,
-            runtimeAvailable: true,
-            runtimeState: "ready",
-            browser,
-            authState: authenticated ? "authenticated" : "signed-out",
-            authenticated,
-            verifiedAt: Date.now(),
-          };
-        } catch {
-          this.stateStore.clearState(platform);
-        }
-      }
+    const rec = this.getRecord(platform);
+    if (rec.session) {
+      const auth = await this.internalCheckAuth(rec.session);
+      return {
+        platform,
+        runtimeAvailable: true,
+        runtimeState: "ready",
+        browser: rec.session.browser,
+        mode: rec.session.mode,
+        authState: auth ? "authenticated" : "signed-out",
+        authenticated: auth,
+        verifiedAt: Date.now(),
+      };
+    }
 
-      // Check profile metadata: did user establish session previously?
-      const meta = this.profileStore.loadMetadata(platform);
-      if (meta && meta.sessionEstablished) {
+    // Check stored runtime.json for already running process
+    const stored = this.stateStore.loadState(platform);
+    if (stored && this.isPidAliveFn(stored.pid)) {
+      try {
+        const cdp = await this.cdpFactory(stored.port);
+        const tempSession: RunningSession = {
+          platform,
+          browser: { kind: stored.browserKind, executablePath: browser.executablePath },
+          port: stored.port,
+          pid: stored.pid,
+          cdp,
+          profileDir: stored.profileDir,
+          mode: stored.mode,
+          startedAt: stored.startedAt,
+        };
+        cdp.onClose(() => {
+          if (rec.session?.cdp === cdp) {
+            rec.session = undefined;
+            rec.state = "stopped";
+            this.stateStore.clearState(platform);
+          }
+        });
+        const authenticated = await this.internalCheckAuth(tempSession);
+        rec.session = tempSession;
+        rec.state = "ready";
+        this.scheduleIdleTimer(rec);
         return {
           platform,
           runtimeAvailable: true,
-          runtimeState: "stopped",
+          runtimeState: "ready",
           browser,
-          authState: "unknown",
-          authenticated: false,
-          sessionEstablished: true,
-          verifiedAt: meta.lastVerifiedAt,
+          mode: tempSession.mode,
+          authState: authenticated ? "authenticated" : "signed-out",
+          authenticated,
+          verifiedAt: Date.now(),
         };
+      } catch {
+        this.stateStore.clearState(platform);
       }
+    }
 
+    // Check profile metadata: did user establish session previously?
+    const meta = this.profileStore.loadMetadata(platform);
+    if (meta && meta.sessionEstablished) {
+      // If verified in the last 2 hours without a running browser, treat as authenticated
+      const isRecentlyVerified = meta.lastVerifiedAt && Date.now() - meta.lastVerifiedAt < 2 * 3600 * 1000;
       return {
         platform,
         runtimeAvailable: true,
         runtimeState: "stopped",
         browser,
-        authState: "signed-out",
-        authenticated: false,
+        authState: isRecentlyVerified ? "authenticated" : "unknown",
+        authenticated: Boolean(isRecentlyVerified),
+        sessionEstablished: true,
+        verifiedAt: meta.lastVerifiedAt,
       };
     }
 
-    const auth = await this.internalCheckAuth(running);
     return {
       platform,
       runtimeAvailable: true,
-      runtimeState: "ready",
-      browser: running.browser,
-      authState: auth ? "authenticated" : "signed-out",
-      authenticated: auth,
-      verifiedAt: Date.now(),
+      runtimeState: "stopped",
+      browser,
+      authState: "signed-out",
+      authenticated: false,
     };
   }
 
@@ -235,70 +311,75 @@ export class SessionManager implements NativeBrowserRuntime {
     platform: BrowserPlatform,
     signal?: AbortSignal,
   ): Promise<BrowserSessionStatus> {
+    if (this.disposed) throw new Error("NativeBrowserRuntime is disposed");
+    if (signal?.aborted) throw new Error("Login aborted");
+
     const config = PLATFORM_AUTH_CONFIG[platform];
 
-    // Mode transition: a headless worker session cannot become interactive
-    // (no window exists to "restore"). Stop it and relaunch with the SAME
-    // dedicated profile as a visible browser for user login.
-    const existing = this.sessions.get(platform);
-    if (existing && existing.mode === "headless") {
-      await this.stop(platform);
-    }
+    // Login is an exclusive interactive operation.
+    // It acquires an operation lease to prevent idle shutdown during polling.
+    const rec = this.getRecord(platform);
+    this.retainLease(rec);
 
-    const session = await this.ensureSession(platform, config.initialUrl, true, signal);
+    try {
+      const session = await this.acquireSession(platform, "interactive", config.initialUrl, signal);
 
-    // Always navigate to the official login page and restore visibility,
-    // even when reusing an existing stale/background session.
-    await this.prepareInteractiveLogin(session, config.initialUrl, signal);
+      await this.prepareInteractiveLogin(session, config.initialUrl, signal);
 
-    const start = Date.now();
-    const timeoutMs = 300000; // 5 min timeout for manual interaction
-    let authenticated = false;
+      const start = Date.now();
+      const timeoutMs = 300000; // 5 min timeout for manual interaction
+      let authenticated = false;
 
-    while (Date.now() - start < timeoutMs) {
-      if (signal?.aborted) throw new Error("Login aborted by user");
-      authenticated = await this.internalCheckAuth(session);
-      if (authenticated) {
-        // Record non-secret session established metadata
-        this.profileStore.saveMetadata(platform, {
-          platform,
-          sessionEstablished: true,
-          browserKind: session.browser.kind,
-          lastVerifiedAt: Date.now(),
-        });
-        // Minimize window after login success
-        try {
-          const targets = await session.cdp.send<{ targetInfos: Array<{ targetId: string; type: string }> }>("Target.getTargets");
-          const pageTarget = targets.targetInfos?.find((t) => t.type === "page");
-          if (pageTarget) {
-            const boundsRes = await session.cdp.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: pageTarget.targetId });
-            if (boundsRes?.windowId) {
-              await session.cdp.send("Browser.setWindowBounds", {
-                windowId: boundsRes.windowId,
-                bounds: { windowState: "minimized" },
-              });
+      while (Date.now() - start < timeoutMs) {
+        if (signal?.aborted || this.disposed) throw new Error("Login aborted by user");
+        authenticated = await this.internalCheckAuth(session);
+        if (authenticated) {
+          this.profileStore.saveMetadata(platform, {
+            platform,
+            sessionEstablished: true,
+            browserKind: session.browser.kind,
+            lastVerifiedAt: Date.now(),
+          });
+          // Minimize window after login success
+          try {
+            const targets = await session.cdp.send<{
+              targetInfos: Array<{ targetId: string; type: string }>;
+            }>("Target.getTargets");
+            const pageTarget = targets.targetInfos?.find((t) => t.type === "page");
+            if (pageTarget) {
+              const boundsRes = await session.cdp.send<{ windowId: number }>(
+                "Browser.getWindowForTarget",
+                { targetId: pageTarget.targetId },
+              );
+              if (boundsRes?.windowId) {
+                await session.cdp.send("Browser.setWindowBounds", {
+                  windowId: boundsRes.windowId,
+                  bounds: { windowState: "minimized" },
+                });
+              }
             }
+          } catch {
+            // Ignore minimize failure
           }
-        } catch {
-          // Ignore minimize failure
+          break;
         }
-        break;
+        await new Promise((r) => setTimeout(r, 1500));
       }
-      await new Promise((r) => setTimeout(r, 1500));
+
+      return {
+        platform,
+        runtimeAvailable: true,
+        runtimeState: "ready",
+        browser: session.browser,
+        mode: session.mode,
+        authState: authenticated ? "authenticated" : "signed-out",
+        authenticated,
+        verifiedAt: Date.now(),
+        lastError: authenticated ? undefined : "Login timed out",
+      };
+    } finally {
+      this.releaseLease(rec);
     }
-
-    this.resetIdleTimer(session);
-
-    return {
-      platform,
-      runtimeAvailable: true,
-      runtimeState: "ready",
-      browser: session.browser,
-      authState: authenticated ? "authenticated" : "signed-out",
-      authenticated,
-      verifiedAt: Date.now(),
-      lastError: authenticated ? undefined : "Login timed out",
-    };
   }
 
   private async prepareInteractiveLogin(
@@ -306,29 +387,40 @@ export class SessionManager implements NativeBrowserRuntime {
     initialUrl: string,
     signal?: AbortSignal,
   ): Promise<void> {
-    // Navigate a page target to the login URL, or create one if none exists
     try {
-      const targets = await session.cdp.send<{ targetInfos: Array<{ targetId: string; type: string }> }>("Target.getTargets");
+      const targets = await session.cdp.send<{
+        targetInfos: Array<{ targetId: string; type: string }>;
+      }>("Target.getTargets");
       let pageTarget = targets.targetInfos?.find((t) => t.type === "page");
 
       if (pageTarget) {
-        // Attach to existing page target and navigate to login URL
-        const attachRes = await session.cdp.send<{ sessionId: string }>("Target.attachToTarget", {
-          targetId: pageTarget.targetId,
-          flatten: true,
-        }, undefined, signal);
+        const attachRes = await session.cdp.send<{ sessionId: string }>(
+          "Target.attachToTarget",
+          {
+            targetId: pageTarget.targetId,
+            flatten: true,
+          },
+          undefined,
+          signal,
+        );
         const pageSessionId = attachRes.sessionId;
         await session.cdp.send("Page.enable", {}, pageSessionId, signal);
         await session.cdp.send("Page.navigate", { url: initialUrl }, pageSessionId, signal);
       } else {
-        // Create a new page target
-        const createRes = await session.cdp.send<{ targetId: string }>("Target.createTarget", { url: initialUrl }, undefined, signal);
+        const createRes = await session.cdp.send<{ targetId: string }>(
+          "Target.createTarget",
+          { url: initialUrl },
+          undefined,
+          signal,
+        );
         pageTarget = { targetId: createRes.targetId, type: "page" };
       }
 
-      // Restore window to normal (visible) state
       if (pageTarget) {
-        const boundsRes = await session.cdp.send<{ windowId: number }>("Browser.getWindowForTarget", { targetId: pageTarget.targetId });
+        const boundsRes = await session.cdp.send<{ windowId: number }>(
+          "Browser.getWindowForTarget",
+          { targetId: pageTarget.targetId },
+        );
         if (boundsRes?.windowId) {
           await session.cdp.send("Browser.setWindowBounds", {
             windowId: boundsRes.windowId,
@@ -337,7 +429,7 @@ export class SessionManager implements NativeBrowserRuntime {
         }
       }
     } catch {
-      // Non-critical: if interactive prep fails, login still proceeds with polling
+      // Non-critical interactive prep error
     }
   }
 
@@ -351,158 +443,270 @@ export class SessionManager implements NativeBrowserRuntime {
     }
 
     const page = await this.createPage(platform, signal);
-    await page.navigate(url, signal);
-    return page;
+    try {
+      await page.navigate(url, signal);
+      return page;
+    } catch (err) {
+      await page.close();
+      throw err;
+    }
   }
 
-  /**
-   * Create a blank (about:blank) attached page WITHOUT navigating. This is the
-   * only way to install network capture listeners before the platform SPA
-   * fires its API requests (e.g. X SearchTimeline fires immediately on boot).
-   */
   async createPage(
     platform: BrowserPlatform,
     signal?: AbortSignal,
   ): Promise<CdpPageLease> {
-    const session = await this.ensureSession(platform, undefined, false, signal);
-    this.resetIdleTimer(session);
+    if (this.disposed) throw new Error("NativeBrowserRuntime is disposed");
+    if (signal?.aborted) throw new Error("createPage aborted");
 
-    const createRes = await session.cdp.send<{ targetId: string }>(
-      "Target.createTarget",
-      { url: "about:blank" },
-      undefined,
-      signal,
-    );
-    const targetId = createRes.targetId;
+    const rec = this.getRecord(platform);
+    this.retainLease(rec);
 
-    const attachRes = await session.cdp.send<{ sessionId: string }>(
-      "Target.attachToTarget",
-      { targetId, flatten: true },
-      undefined,
-      signal,
-    );
-    const sessionId = attachRes.sessionId;
+    try {
+      const session = await this.acquireSession(platform, "headless", undefined, signal);
 
-    return new CdpPage(
-      targetId,
-      sessionId,
-      session.cdp,
-      async () => {
-        try {
-          await session.cdp.send("Target.closeTarget", { targetId });
-        } catch {
-          // Ignore close error
-        }
-        this.resetIdleTimer(session);
-      },
-      (url) => {
-        if (!validatePlatformUrl(url, platform)) {
-          throw new UrlDisallowedError(url, platform);
-        }
-      },
-    );
+      const createRes = await session.cdp.send<{ targetId: string }>(
+        "Target.createTarget",
+        { url: "about:blank" },
+        undefined,
+        signal,
+      );
+      const targetId = createRes.targetId;
+
+      const attachRes = await session.cdp.send<{ sessionId: string }>(
+        "Target.attachToTarget",
+        { targetId, flatten: true },
+        undefined,
+        signal,
+      );
+      const sessionId = attachRes.sessionId;
+
+      let closed = false;
+      return new CdpPage(
+        targetId,
+        sessionId,
+        session.cdp,
+        async () => {
+          if (closed) return;
+          closed = true;
+          try {
+            await session.cdp.send("Target.closeTarget", { targetId });
+          } catch {
+            // Ignore closeTarget failure
+          } finally {
+            this.releaseLease(rec);
+          }
+        },
+        (url) => {
+          if (!validatePlatformUrl(url, platform)) {
+            throw new UrlDisallowedError(url, platform);
+          }
+        },
+      );
+    } catch (err) {
+      this.releaseLease(rec);
+      throw err;
+    }
   }
 
-  private async ensureSession(
-    platform: BrowserPlatform,
-    initialUrl?: string,
-    visible = false,
-    signal?: AbortSignal,
-  ): Promise<RunningSession> {
-    const desiredMode: BrowserRunMode = visible ? "interactive" : "headless";
-
-    const existing = this.sessions.get(platform);
-    if (existing) {
-      if (existing.mode === desiredMode) {
-        return existing;
-      }
-      // Mode mismatch (e.g. interactive login -> headless fetch, or headless worker -> interactive login)
-      // Stop the existing browser and relaunch with the same dedicated profile in the desired mode
-      await this.stop(platform);
+  private retainLease(rec: PlatformLifecycleRecord) {
+    rec.activeLeases++;
+    if (rec.idleTimer) {
+      clearTimeout(rec.idleTimer);
+      rec.idleTimer = undefined;
     }
-
-    const starting = this.startingPromises.get(platform);
-    if (starting) {
-      return starting;
-    }
-
-    const startPromise = (async () => {
-      try {
-        const browser = await this.detect();
-        if (!browser) {
-          throw new Error("No supported browser (Edge / Chrome) found");
-        }
-
-        const profileDir = this.profileStore.ensureProfileDir(platform);
-        const config = PLATFORM_AUTH_CONFIG[platform];
-        const startUrl = initialUrl || (visible ? config.initialUrl : undefined);
-
-        // Worker (non-login) sessions always run headless: Agent never gets a
-        // visible browser window, never steals focus, never shows in the taskbar.
-        // Only explicit interactive login launches a real window.
-        const spawned = await launchBrowserProcess(browser, profileDir, startUrl, false, !visible);
-        const wsUrl = await fetchWebSocketDebuggerUrl(spawned.port, 12000, signal);
-
-        const cdp = new CdpClient(wsUrl);
-        await cdp.connect(5000);
-
-        cdp.onClose(() => {
-          if (this.sessions.get(platform)?.cdp === cdp) {
-            this.sessions.delete(platform);
-            this.stateStore.clearState(platform);
-          }
-        });
-
-        const session: RunningSession = {
-          platform,
-          browser,
-          port: spawned.port,
-          pid: spawned.process.pid,
-          cdp,
-          profileDir,
-          mode: visible ? "interactive" : "headless",
-          startedAt: spawned.startedAt,
-          process: spawned.process,
-        };
-
-        const state: RunningBrowserState = {
-          pid: spawned.process.pid || 0,
-          port: spawned.port,
-          browserKind: browser.kind,
-          profileDir,
-          mode: visible ? "interactive" : "headless",
-          startedAt: spawned.startedAt,
-        };
-        this.stateStore.saveState(platform, state);
-
-        spawned.process.on("exit", () => {
-          if (this.sessions.get(platform)?.process === spawned.process) {
-            this.sessions.delete(platform);
-            this.stateStore.clearState(platform);
-          }
-        });
-
-        this.sessions.set(platform, session);
-        this.resetIdleTimer(session);
-        return session;
-      } finally {
-        this.startingPromises.delete(platform);
-      }
-    })();
-
-    this.startingPromises.set(platform, startPromise);
-    return startPromise;
   }
 
-  private resetIdleTimer(session: RunningSession) {
-    if (session.idleTimer) {
-      clearTimeout(session.idleTimer);
+  private releaseLease(rec: PlatformLifecycleRecord) {
+    if (rec.activeLeases > 0) {
+      rec.activeLeases--;
     }
-    if (this.idleShutdownMs > 0) {
-      session.idleTimer = setTimeout(() => {
-        this.stop(session.platform).catch(() => {});
+    if (rec.activeLeases === 0) {
+      this.scheduleIdleTimer(rec);
+    }
+  }
+
+  private scheduleIdleTimer(rec: PlatformLifecycleRecord) {
+    if (rec.idleTimer) {
+      clearTimeout(rec.idleTimer);
+      rec.idleTimer = undefined;
+    }
+    if (this.idleShutdownMs > 0 && rec.activeLeases === 0 && rec.session && !this.disposed) {
+      rec.idleTimer = setTimeout(() => {
+        if (rec.activeLeases === 0) {
+          this.stop(rec.platform).catch(() => {});
+        }
       }, this.idleShutdownMs);
     }
+  }
+
+  private async acquireSession(
+    platform: BrowserPlatform,
+    desiredMode: BrowserRunMode,
+    initialUrl?: string,
+    signal?: AbortSignal,
+  ): Promise<RunningSession> {
+    return this.enqueue(platform, async () => {
+      if (this.disposed) throw new Error("NativeBrowserRuntime is disposed");
+      if (signal?.aborted) throw new Error("Operation aborted");
+
+      const rec = this.getRecord(platform);
+
+      // Check if current session matches desired mode
+      if (rec.session && rec.state === "ready") {
+        if (rec.session.mode === desiredMode) {
+          return rec.session;
+        }
+        // Mode transition: stop existing browser before launching with desired mode
+        rec.state = "transitioning";
+        await this.internalStop(rec);
+      }
+
+      rec.state = "starting";
+      rec.targetMode = desiredMode;
+      rec.pendingCancel = false;
+
+      const browser = await this.detect();
+      if (!browser) {
+        rec.state = "error";
+        throw new Error("No supported browser (Edge / Chrome) found");
+      }
+
+      const profileDir = this.profileStore.ensureProfileDir(platform);
+      const isVisible = desiredMode === "interactive";
+      const config = PLATFORM_AUTH_CONFIG[platform];
+      const startUrl = initialUrl || (isVisible ? config.initialUrl : undefined);
+
+      let spawned: SpawnedBrowserProcess;
+      try {
+        spawned = await this.launcher(browser, profileDir, startUrl, false, !isVisible);
+      } catch (err) {
+        rec.state = "error";
+        throw err;
+      }
+
+      if (rec.pendingCancel || this.disposed || signal?.aborted) {
+        if (spawned.process.pid) {
+          this.killPidFn(spawned.process.pid);
+        }
+        rec.state = "stopped";
+        throw new Error("Session acquisition cancelled");
+      }
+
+      let cdp: CdpClient;
+      try {
+        cdp = await this.cdpFactory(spawned.port, signal);
+      } catch (err) {
+        if (spawned.process.pid) {
+          this.killPidFn(spawned.process.pid);
+        }
+        rec.state = "error";
+        throw err;
+      }
+
+      if (rec.pendingCancel || this.disposed || signal?.aborted) {
+        cdp.close();
+        if (spawned.process.pid) {
+          this.killPidFn(spawned.process.pid);
+        }
+        rec.state = "stopped";
+        throw new Error("Session acquisition cancelled");
+      }
+
+      const session: RunningSession = {
+        platform,
+        browser,
+        port: spawned.port,
+        pid: spawned.process.pid,
+        cdp,
+        profileDir,
+        mode: desiredMode,
+        startedAt: spawned.startedAt,
+        process: spawned.process,
+      };
+
+      cdp.onClose(() => {
+        if (rec.session?.cdp === cdp) {
+          rec.session = undefined;
+          rec.state = "stopped";
+          this.stateStore.clearState(platform);
+        }
+      });
+
+      const state: RunningBrowserState = {
+        pid: spawned.process.pid || 0,
+        port: spawned.port,
+        browserKind: browser.kind,
+        profileDir,
+        mode: desiredMode,
+        startedAt: spawned.startedAt,
+      };
+      this.stateStore.saveState(platform, state);
+
+      spawned.process.on("exit", () => {
+        if (rec.session?.process === spawned.process) {
+          rec.session = undefined;
+          rec.state = "stopped";
+          this.stateStore.clearState(platform);
+        }
+      });
+
+      rec.session = session;
+      rec.state = "ready";
+      if (rec.activeLeases === 0) {
+        this.scheduleIdleTimer(rec);
+      }
+      return session;
+    });
+  }
+
+  private async internalStop(rec: PlatformLifecycleRecord): Promise<void> {
+    rec.pendingCancel = true;
+    if (rec.idleTimer) {
+      clearTimeout(rec.idleTimer);
+      rec.idleTimer = undefined;
+    }
+
+    const session = rec.session;
+    rec.session = undefined;
+    rec.state = "stopped";
+
+    if (session) {
+      try {
+        await session.cdp.send("Browser.close", {}, undefined, undefined, 1000);
+      } catch {
+        // Fallback to socket close & kill
+      }
+      session.cdp.close();
+
+      const pid = session.pid;
+      if (pid) {
+        let dead = !this.isPidAliveFn(pid);
+        const start = Date.now();
+        while (!dead && Date.now() - start < 500) {
+          await new Promise((r) => setTimeout(r, 50));
+          dead = !this.isPidAliveFn(pid);
+        }
+
+        if (!dead) {
+          this.killPidFn(pid);
+          const killStart = Date.now();
+          while (!dead && Date.now() - killStart < 500) {
+            await new Promise((r) => setTimeout(r, 50));
+            dead = !this.isPidAliveFn(pid);
+          }
+        }
+      }
+
+      this.stateStore.clearState(rec.platform);
+    }
+  }
+
+  async stop(platform: BrowserPlatform): Promise<void> {
+    return this.enqueue(platform, async () => {
+      const rec = this.getRecord(platform);
+      await this.internalStop(rec);
+    });
   }
 
   async resetSession(platform: BrowserPlatform): Promise<void> {
@@ -510,53 +714,9 @@ export class SessionManager implements NativeBrowserRuntime {
     this.profileStore.clearProfile(platform);
   }
 
-  async stop(platform: BrowserPlatform): Promise<void> {
-    const session = this.sessions.get(platform);
-    if (session) {
-      if (session.idleTimer) clearTimeout(session.idleTimer);
-      try {
-        await session.cdp.send("Browser.close", {}, undefined, undefined, 3000);
-      } catch {
-        // Fallback
-      }
-      session.cdp.close();
-
-      const pid = session.pid;
-      if (pid) {
-        // Wait up to 3 seconds for PID to die
-        let dead = !isPidAlive(pid);
-        const start = Date.now();
-        while (!dead && Date.now() - start < 3000) {
-          await new Promise((r) => setTimeout(r, 150));
-          dead = !isPidAlive(pid);
-        }
-
-        if (!dead) {
-          try {
-            process.kill(pid);
-          } catch {}
-          // Wait again up to 2 seconds after SIGTERM/kill
-          const killStart = Date.now();
-          while (!dead && Date.now() - killStart < 2000) {
-            await new Promise((r) => setTimeout(r, 100));
-            dead = !isPidAlive(pid);
-          }
-        }
-
-        if (!dead) {
-          throw new Error(`Browser process ${pid} did not exit after stop`);
-        }
-      }
-
-      this.sessions.delete(platform);
-      this.stateStore.clearState(platform);
-    }
-  }
-
   async dispose(): Promise<void> {
-    const active = Array.from(this.sessions.keys());
-    for (const p of active) {
-      await this.stop(p);
-    }
+    this.disposed = true;
+    const platforms = Array.from(this.records.keys());
+    await Promise.all(platforms.map((p) => this.stop(p)));
   }
 }

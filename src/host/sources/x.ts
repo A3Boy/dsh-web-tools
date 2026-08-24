@@ -262,6 +262,9 @@ export class XSource implements SpecializedSource {
       if (err.name === "UrlDisallowedError") {
         return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
       }
+      if (err.name === "NavigationTimeoutError" || err.name === "SelectorTimeoutError") {
+        return { items: [], error: { code: "navigation-timeout", message: err.message, retryable: true } };
+      }
       return { items: [], error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
       capture?.cancel();
@@ -370,6 +373,9 @@ export class XSource implements SpecializedSource {
       }
       if (err.name === "UrlDisallowedError") {
         return { error: { code: "blocked", message: err.message, retryable: false } };
+      }
+      if (err.name === "NavigationTimeoutError" || err.name === "SelectorTimeoutError") {
+        return { error: { code: "navigation-timeout", message: err.message, retryable: true } };
       }
       return { error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {

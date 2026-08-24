@@ -49,9 +49,39 @@ export async function call<T>(method: string, payload?: unknown): Promise<T> {
 // typed endpoint wrappers (wire types shared with the Host — see shared/api-types)
 // ---------------------------------------------------------------------------
 
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type {
+  ConfigView,
+  CredentialsView,
+  QuotaDescribeView,
+  SearchMode,
+  SearchModeView,
+  TestProviderView,
+  TestSearchView,
+  SearchRoutingPolicy,
+  VersionCheckView,
+} from "../shared/api-types.ts";
+import type {
+  BrowserPlatform,
+  PlatformStatusResponse,
+} from "../shared/platform-types.ts";
 
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+export type {
+  ConfigView,
+  CredentialsView,
+  ProviderView,
+  QuotaDescribeView,
+  QuotaView,
+  SearchMode,
+  SearchModeView,
+  TestProviderView,
+  TestSearchView,
+  SearchRoutingPolicy,
+  VersionCheckView,
+} from "../shared/api-types.ts";
+export type {
+  BrowserPlatform,
+  PlatformStatusResponse,
+} from "../shared/platform-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
@@ -75,11 +105,11 @@ export const api = {
   routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
   platformStatus: () =>
-    call<{ platforms: Record<string, { id: string; name: string; enabled: boolean; runtimeAvailable: boolean; runtimeState: string; authenticated: boolean; sessionEstablished?: boolean; capabilities?: { nativeSearch: boolean; nativeFetch: boolean; webSearchFallback: boolean }; account?: any; lastError?: string }> }>("platform/status"),
-  platformLogin: (platform: "xiaohongshu" | "x") =>
+    call<PlatformStatusResponse>("platform/status"),
+  platformLogin: (platform: BrowserPlatform) =>
     call<{ status: string }>("platform/login", { platform }),
-  platformStop: (platform: "xiaohongshu" | "x") =>
+  platformStop: (platform: BrowserPlatform) =>
     call<{ ok: boolean }>("platform/stop", { platform }),
-  platformReset: (platform: "xiaohongshu" | "x") =>
+  platformReset: (platform: BrowserPlatform) =>
     call<{ ok: boolean }>("platform/reset", { platform }),
 };

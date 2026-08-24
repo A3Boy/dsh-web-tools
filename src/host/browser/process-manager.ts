@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { allocateRandomPort } from "./port.ts";
-import type { BrowserInfo, BrowserPlatform, RunningBrowserState } from "./types.ts";
+import type { BrowserInfo } from "./types.ts";
 
 export interface SpawnedBrowserProcess {
   process: ChildProcess;

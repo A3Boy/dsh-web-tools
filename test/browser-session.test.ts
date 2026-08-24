@@ -72,7 +72,7 @@ test("ProfileStore & StateStore: zero raw cookie storage and metadata persistenc
   }
 });
 
-test("SessionManager: status() returns stopped + auth unknown if metadata sessionEstablished is true", async () => {
+test("SessionManager: status() returns stopped + auth unknown if metadata sessionEstablished is true but expired", async () => {
   const tmpDir = path.join(os.tmpdir(), "dsh-session-test-" + Date.now());
   fs.mkdirSync(tmpDir, { recursive: true });
 
@@ -82,16 +82,16 @@ test("SessionManager: status() returns stopped + auth unknown if metadata sessio
       platform: "xiaohongshu",
       sessionEstablished: true,
       browserKind: "edge",
-      lastVerifiedAt: 99999,
+      lastVerifiedAt: 1000, // old verified timestamp > 2 hours
     });
 
     const sessionManager = new SessionManager("auto", tmpDir);
     const status = await sessionManager.status("xiaohongshu");
 
     assert.equal(status.runtimeState, "stopped");
-    assert.equal(status.authenticated, false); // Cold-start unverified !== authenticated
+    assert.equal(status.authenticated, false); // Expired verification !== authenticated
     assert.equal(status.authState, "unknown");
-    assert.equal(status.verifiedAt, 99999);
+    assert.equal(status.verifiedAt, 1000);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

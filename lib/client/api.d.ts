@@ -16,7 +16,9 @@ export declare class WebToolsApiError extends Error {
 /** Call one API method; throws WebToolsApiError on failure. */
 export declare function call<T>(method: string, payload?: unknown): Promise<T>;
 import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type { BrowserPlatform, PlatformStatusResponse } from "../shared/platform-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView, } from "../shared/api-types.ts";
+export type { BrowserPlatform, PlatformStatusResponse, } from "../shared/platform-types.ts";
 export declare const api: {
     configGet: () => Promise<ConfigView>;
     configSave: (payload: Record<string, unknown>) => Promise<{
@@ -56,31 +58,14 @@ export declare const api: {
         defaultProvider: string;
         fallbackOrder: string[];
     }>;
-    platformStatus: () => Promise<{
-        platforms: Record<string, {
-            id: string;
-            name: string;
-            enabled: boolean;
-            runtimeAvailable: boolean;
-            runtimeState: string;
-            authenticated: boolean;
-            sessionEstablished?: boolean;
-            capabilities?: {
-                nativeSearch: boolean;
-                nativeFetch: boolean;
-                webSearchFallback: boolean;
-            };
-            account?: any;
-            lastError?: string;
-        }>;
-    }>;
-    platformLogin: (platform: "xiaohongshu" | "x") => Promise<{
+    platformStatus: () => Promise<PlatformStatusResponse>;
+    platformLogin: (platform: BrowserPlatform) => Promise<{
         status: string;
     }>;
-    platformStop: (platform: "xiaohongshu" | "x") => Promise<{
+    platformStop: (platform: BrowserPlatform) => Promise<{
         ok: boolean;
     }>;
-    platformReset: (platform: "xiaohongshu" | "x") => Promise<{
+    platformReset: (platform: BrowserPlatform) => Promise<{
         ok: boolean;
     }>;
 };

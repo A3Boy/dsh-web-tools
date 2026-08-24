@@ -244,7 +244,7 @@ interface ScopedAgent {
  */
 export function installSearchModeRuntime(
   ctx: WebToolsContext,
-  deps: SearchModeRuntimeDeps,
+  _deps: SearchModeRuntimeDeps,
   runtime: SearchModeRuntime,
   messages: SearchModeMessages,
 ) {

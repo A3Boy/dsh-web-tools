@@ -19,12 +19,41 @@ import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutin
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
-import { defaultSourceRegistry } from "./sources/registry.ts";
 import type { BrowserPlatform } from "./browser/types.ts";
+import type { SpecializedSourceRegistry } from "./sources/registry.ts";
 
-async function handlePlatformStatus(): Promise<{ platforms: Record<string, unknown> }> {
-  const statuses = await defaultSourceRegistry.getPlatformStatuses();
-  const platforms: Record<string, unknown> = {};
+import type { PlatformStatusResponse, BrowserPlatformStatusView } from "../shared/platform-types.ts";
+
+async function handlePlatformStatus(deps: RouteDeps): Promise<PlatformStatusResponse> {
+  let statuses = await deps.sourceRegistry.getPlatformStatuses();
+
+  // A persisted dedicated profile means the user has completed login before,
+  // but cold-start metadata is not authentication proof. Verify it in the
+  // background runtime before returning status so the UI never asks the user
+  // to manually validate an existing session.
+  const needsVerification = statuses.filter(
+    (status) => status.sessionEstablished && !status.authenticated,
+  );
+  if (needsVerification.length > 0) {
+    const results = await Promise.allSettled(
+      needsVerification.map(async (status) => {
+        const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(status.id);
+        return { id: status.id, isAuth };
+      }),
+    );
+    // Reload statuses after verification
+    statuses = await deps.sourceRegistry.getPlatformStatuses();
+    // For any platform that was verified true in this flight, ensure status reflects authenticated
+    for (const res of results) {
+      if (res.status === "fulfilled" && res.value.isAuth) {
+        const target = statuses.find((s) => s.id === res.value.id);
+        if (target) {
+          target.authenticated = true;
+        }
+      }
+    }
+  }
+  const platforms = {} as Record<BrowserPlatform, BrowserPlatformStatusView>;
   for (const s of statuses) {
     platforms[s.id] = {
       id: s.id,
@@ -89,6 +118,7 @@ export interface RouteDeps {
   testFullSearch: (query: string) => Promise<Record<string, unknown>>;
   describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
   nativeRuntime: import("./browser/types.ts").NativeBrowserRuntime;
+  sourceRegistry: SpecializedSourceRegistry;
   /**
    * Live pool entries for one provider (real key health from the executor),
    * so the card's per-key state matches what search actually uses.
@@ -208,13 +238,16 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const providerOpts = (cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {};
   const platformEnabled = (cfg.platformEnabled as Record<string, boolean>) ?? { xiaohongshu: true, x: true };
 
+  const credentialsSnapshots = await Promise.all(
+    PROVIDER_LIST.map(async (meta) => {
+      const ref = credRefOf(meta.name);
+      const cred = await deps.readCredential(ref);
+      return { meta, ref, cred };
+    }),
+  );
+
   const providers: ProviderView[] = [];
-  for (const meta of PROVIDER_LIST) {
-    const ref = credRefOf(meta.name);
-    const cred = await deps.readCredential(ref);
-    // Prefer the executor's live pool (real key health); fall back to a fresh
-    // build when the routes run without one (tests). Never from registry
-    // internals: the card shows real configured keys and their current health.
+  for (const { meta, ref, cred } of credentialsSnapshots) {
     const pool = deps.poolEntries ? await deps.poolEntries(meta.name) : buildPool(cred.value ?? "");
     providers.push({
       name: meta.name,
@@ -256,7 +289,7 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
   if (p.platformEnabled && typeof p.platformEnabled === "object") {
     patch.platformEnabled = p.platformEnabled;
-    defaultSourceRegistry.setPlatformEnabled(p.platformEnabled as Record<string, boolean>);
+    deps.sourceRegistry.setPlatformEnabled(p.platformEnabled as Record<string, boolean>);
   }
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
   await deps.writeConfig(patch); // persist BEFORE reporting success
@@ -480,7 +513,7 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
-  "platform/status": () => handlePlatformStatus(),
+  "platform/status": (deps) => handlePlatformStatus(deps),
   "platform/login": (deps, payload) => handlePlatformLogin(deps, payload),
   "platform/stop": (deps, payload) => handlePlatformStop(deps, payload),
   "platform/reset": (deps, payload) => handlePlatformReset(deps, payload),

@@ -12,6 +12,7 @@ export class CdpClient {
       timer?: NodeJS.Timeout;
       onAbort?: () => void;
       signal?: AbortSignal;
+      settled?: boolean;
     }
   >();
   private eventListeners = new Map<
@@ -30,27 +31,63 @@ export class CdpClient {
     }
   }
 
+  isClosed(): boolean {
+    return this.closed || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING;
+  }
+
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
   async connect(timeoutMs = 10000): Promise<void> {
     if (this.ws.readyState === WebSocket.OPEN) return;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`WebSocket connection timeout to ${this.ws.url}`));
-      }, timeoutMs);
+      let settled = false;
+      let timer: NodeJS.Timeout | undefined;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        this.ws.removeListener("open", onOpen);
+        this.ws.removeListener("error", onError);
+        this.ws.removeListener("close", onClose);
+      };
 
       const onOpen = () => {
-        clearTimeout(timer);
-        this.ws.removeListener("error", onError);
+        if (settled) return;
+        settled = true;
+        cleanup();
         resolve();
       };
 
       const onError = (err: Error) => {
-        clearTimeout(timer);
-        this.ws.removeListener("open", onOpen);
+        if (settled) return;
+        settled = true;
+        cleanup();
+        this.close();
         reject(err);
       };
 
+      const onClose = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        this.close();
+        reject(new Error(`WebSocket closed before open: ${this.ws.url}`));
+      };
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          this.close();
+          reject(new Error(`WebSocket connection timeout to ${this.ws.url}`));
+        }, timeoutMs);
+      }
+
       this.ws.once("open", onOpen);
       this.ws.once("error", onError);
+      this.ws.once("close", onClose);
     });
   }
 
@@ -60,6 +97,8 @@ export class CdpClient {
         const msg = JSON.parse(raw.toString("utf8"));
         if (msg.id !== undefined && this.pending.has(msg.id)) {
           const req = this.pending.get(msg.id)!;
+          if (req.settled) return;
+          req.settled = true;
           this.pending.delete(msg.id);
           if (req.timer) clearTimeout(req.timer);
           if (req.signal && req.onAbort) {
@@ -90,7 +129,10 @@ export class CdpClient {
 
     this.ws.on("close", () => {
       this.closed = true;
-      for (const [id, req] of this.pending.entries()) {
+      for (const [id, req] of Array.from(this.pending.entries())) {
+        this.pending.delete(id);
+        if (req.settled) continue;
+        req.settled = true;
         if (req.timer) clearTimeout(req.timer);
         if (req.signal && req.onAbort) {
           req.signal.removeEventListener("abort", req.onAbort);
@@ -130,26 +172,55 @@ export class CdpClient {
 
     return new Promise<T>((resolve, reject) => {
       const id = this.nextId++;
+      let settled = false;
 
       let timer: NodeJS.Timeout | undefined;
+      let onAbort: (() => void) | undefined;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        if (signal && onAbort) {
+          signal.removeEventListener("abort", onAbort);
+        }
+        this.pending.delete(id);
+      };
+
       if (timeoutMs > 0) {
         timer = setTimeout(() => {
-          this.pending.delete(id);
+          if (settled) return;
+          settled = true;
+          cleanup();
           reject(new Error(`CDP command ${method} (id=${id}) timed out after ${timeoutMs}ms`));
         }, timeoutMs);
       }
 
-      let onAbort: (() => void) | undefined;
       if (signal) {
         onAbort = () => {
-          if (timer) clearTimeout(timer);
-          this.pending.delete(id);
+          if (settled) return;
+          settled = true;
+          cleanup();
           reject(new Error("CDP command aborted"));
         };
         signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      this.pending.set(id, { resolve, reject, timer, onAbort, signal });
+      this.pending.set(id, {
+        resolve: (val) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          resolve(val);
+        },
+        reject: (err) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(err);
+        },
+        timer,
+        onAbort,
+        signal,
+      });
 
       const payload: Record<string, unknown> = { id, method, params };
       if (sessionId) {
@@ -158,9 +229,9 @@ export class CdpClient {
 
       this.ws.send(JSON.stringify(payload), (err?: Error) => {
         if (err) {
-          if (timer) clearTimeout(timer);
-          if (signal && onAbort) signal.removeEventListener("abort", onAbort);
-          this.pending.delete(id);
+          if (settled) return;
+          settled = true;
+          cleanup();
           reject(err);
         }
       });

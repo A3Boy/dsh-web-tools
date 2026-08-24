@@ -13,7 +13,7 @@
  *
  * @module
  */
-import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";

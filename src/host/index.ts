@@ -29,7 +29,7 @@ import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages }
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 
-import { defaultSourceRegistry } from "./sources/registry.ts";
+import { SpecializedSourceRegistry } from "./sources/registry.ts";
 import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
@@ -174,19 +174,21 @@ export function apply(ctx: WebToolsContext) {
   // ONE shared health store so search + fetch respect the same cooldowns.
   const healthStore = createProviderHealthStore();
 
+  const sourceRegistry = new SpecializedSourceRegistry();
+
   const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore);
 
   const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
 
-  defaultSourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
+  sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
   // Sync platformEnabled from config on boot and live updates
   configHandle.onMounted(() => {
     const cfg = readConfig();
     if (cfg.platformEnabled) {
-      defaultSourceRegistry.setPlatformEnabled(cfg.platformEnabled);
+      sourceRegistry.setPlatformEnabled(cfg.platformEnabled);
     }
   });
 
@@ -195,7 +197,7 @@ export function apply(ctx: WebToolsContext) {
     id: PROVIDER_ID,
     available: () => generalSearchProvider.available(),
     search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
-      const outcome = await defaultSourceRegistry.search(
+      const outcome = await sourceRegistry.search(
         request.query,
         { maxResults: request.maxResults, hints: extractSearchHints(request.query) },
         signal,
@@ -218,7 +220,7 @@ export function apply(ctx: WebToolsContext) {
     id: `${PROVIDER_ID}-fetch`,
     available: () => generalFetchProvider.available(),
     fetch: async (request: { url: string }, signal?: AbortSignal) => {
-      const outcome = await defaultSourceRegistry.fetch(request.url, signal);
+      const outcome = await sourceRegistry.fetch(request.url, signal);
       return {
         url: request.url,
         statusCode: 200,
@@ -233,8 +235,8 @@ export function apply(ctx: WebToolsContext) {
   const nativeRuntime = createNativeBrowserRuntime();
   const xhsSource = new XiaohongshuSource(nativeRuntime);
   const xSource = new XSource(nativeRuntime);
-  defaultSourceRegistry.registerSource(xhsSource);
-  defaultSourceRegistry.registerSource(xSource);
+  sourceRegistry.registerSource(xhsSource);
+  sourceRegistry.registerSource(xSource);
 
   // Hook NativeBrowserRuntime lifecycle into Cordis effect
   ctx.effect(
@@ -338,25 +340,31 @@ export function apply(ctx: WebToolsContext) {
     const chainNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
     const summary = stats.summary();
 
-    // Query every provider that is EITHER in the search chain OR has
-    // credentials configured — a provider like You.com that is configured
-    // but not yet in the chain should still show its balance in the card.
+    // Read all credentials in parallel ONCE
+    const credentialEntries = await Promise.all(
+      PROVIDER_LIST.map(async (meta) => {
+        const ref = credRefOf(meta.name);
+        const cred = await readCredential(ctx, ref);
+        return { meta, ref, cred };
+      }),
+    );
+
     const wanted = new Set<string>(chainNames);
-    for (const meta of PROVIDER_LIST) {
-      const cred = await readCredential(ctx, credRefOf(meta.name));
+    for (const { meta, cred } of credentialEntries) {
       if ((cred.value ?? "").trim().length > 0) wanted.add(meta.name);
     }
+
+    const credMap = new Map(credentialEntries.map((e) => [e.meta.name, e.cred]));
 
     // Parallel, timeout-bounded, only providers that can report quota.
     const results = await Promise.allSettled(
       PROVIDER_LIST.filter((meta) => wanted.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
-        const ref = credRefOf(meta.name);
-        const cred = await readCredential(ctx, ref);
+        const cred = credMap.get(meta.name);
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
         // Multi-key pool: query EVERY key and merge — the card shows the
         // TOTAL pool balance, not one key's. Each key is authenticated
         // separately (never join the raw string).
-        const keys = buildPool(cred.value ?? "").map((e) => e.key);
+        const keys = buildPool(cred?.value ?? "").map((e) => e.key);
         if (keys.length === 0) {
           const snapshot = await withTimeoutMs(
             quotaOf(meta.name, "", cfg.providerBaseUrls[meta.name], localSearches),
@@ -459,6 +467,7 @@ export function apply(ctx: WebToolsContext) {
         testFullSearch,
         describeQuotas,
         nativeRuntime,
+        sourceRegistry,
         checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,

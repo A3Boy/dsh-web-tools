@@ -109,13 +109,6 @@ export function normalizeTweet(tweet: XTweetResult): SourceItem | undefined {
     .map((m) => m.media_url_https)
     .filter((u): u is string => Boolean(u));
 
-  const views = wrapped.views?.count
-    ? (() => {
-        const n = parseInt(wrapped.views!.count as string, 10);
-        return Number.isNaN(n) ? undefined : n;
-      })()
-    : undefined;
-
   return {
     id,
     title: text.slice(0, 80) || "X Post",

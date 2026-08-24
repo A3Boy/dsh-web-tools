@@ -8,6 +8,7 @@ export class CdpPage implements CdpPageLease {
   private readonly client: CdpClient;
   private readonly onClose: () => Promise<void>;
   private readonly validateNavigation?: (url: string) => void;
+  private closed = false;
 
   constructor(
     targetId: string,
@@ -23,34 +24,35 @@ export class CdpPage implements CdpPageLease {
     this.validateNavigation = validateNavigation;
   }
 
-  async navigate(url: string, signal?: AbortSignal): Promise<void> {
+  async navigate(url: string, signal?: AbortSignal, timeoutMs = 15000): Promise<void> {
     this.validateNavigation?.(url);
 
     await this.client.send("Page.enable", {}, this.sessionId, signal);
     await this.client.send("Runtime.enable", {}, this.sessionId, signal);
 
-    // Send the navigation command but don't wait for Page.loadEventFired
-    // (SPA pages like XHS may not fire it reliably on re-used sessions).
-    await this.client.send("Page.navigate", { url }, this.sessionId, signal, 30000);
+    // Send the navigation command
+    await this.client.send("Page.navigate", { url }, this.sessionId, signal, timeoutMs);
 
     // Poll for a usable readyState (handles SPA that never fires loadEventFired)
     const start = Date.now();
-    const timeoutMs = 15000;
     while (Date.now() - start < timeoutMs) {
       if (signal?.aborted) throw new Error("navigate aborted");
       try {
-        const ready = await this.evaluate<boolean>("document.readyState === 'complete' || document.readyState === 'interactive'");
+        const ready = await this.evaluate<boolean>(
+          "document.readyState === 'complete' || document.readyState === 'interactive'",
+          signal,
+        );
         if (ready) return;
       } catch {
         // Page context may not be ready yet
       }
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 100));
     }
 
-    // Timeout, but don't throw — the page may still be usable
+    throw new NavigationTimeoutError(url, timeoutMs);
   }
 
-  async waitForLoad(signal?: AbortSignal): Promise<void> {
+  async waitForLoad(signal?: AbortSignal, timeoutMs = 15000): Promise<void> {
     // Check if document.readyState is complete
     const isComplete = await this.evaluate<boolean>(
       "document.readyState === 'complete'",
@@ -59,7 +61,6 @@ export class CdpPage implements CdpPageLease {
     if (isComplete) return;
 
     const start = Date.now();
-    const timeoutMs = 15000;
     while (Date.now() - start < timeoutMs) {
       if (signal?.aborted) throw new Error("waitForLoad aborted");
       const ready = await this.evaluate<boolean>(
@@ -67,8 +68,10 @@ export class CdpPage implements CdpPageLease {
         signal,
       );
       if (ready) return;
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 100));
     }
+
+    throw new NavigationTimeoutError("Page load", timeoutMs);
   }
 
   async waitForSelector(
@@ -83,7 +86,7 @@ export class CdpPage implements CdpPageLease {
       if (signal?.aborted) throw new Error("waitForSelector aborted");
       const found = await this.evaluate<boolean>(expr, signal);
       if (found) return;
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 100));
     }
 
     throw new SelectorTimeoutError(selector, timeoutMs);
@@ -128,21 +131,16 @@ export class CdpPage implements CdpPageLease {
 
   async scrollBy(pixels: number, signal?: AbortSignal): Promise<void> {
     await this.evaluate(`window.scrollBy({ top: ${pixels}, behavior: 'smooth' })`, signal);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 200));
   }
 
   /**
    * Install a JSON network capture BEFORE navigation, scoped to THIS page
-   * session (flattened sessions on the same browser must never leak into each
-   * other). Flow: Network.enable → responseReceived (match url substring) →
-   * loadingFinished (same requestId) → Network.getResponseBody → JSON.parse.
+   * session. Settle cleans up all listeners and timers.
    */
   async beginJsonCapture(options: NetworkCaptureOptions): Promise<JsonCaptureHandle> {
     const { urlIncludes, timeoutMs = 6000, signal } = options;
 
-    // Enable the Network domain on this page session BEFORE any navigation —
-    // X's SPA fires SearchTimeline immediately after the page boots, so a late
-    // Network.enable misses the request entirely.
     await this.client.send("Network.enable", {}, this.sessionId, signal);
 
     let settled: NetworkCaptureOutcome | null = null;
@@ -157,6 +155,7 @@ export class CdpPage implements CdpPageLease {
       settled = outcome;
       if (timer) clearTimeout(timer);
       for (const fn of cleanupFns) fn();
+      cleanupFns.length = 0;
       if (resolveWait) {
         const r = resolveWait;
         resolveWait = null;
@@ -237,6 +236,8 @@ export class CdpPage implements CdpPageLease {
   }
 
   async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
     await this.onClose();
   }
 }

@@ -16,14 +16,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
-  IconChevronRightOutline14,
   IconSearchOutline16,
   IconEditOutline16,
   IconSettingsOutline16,
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView } from "./api.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
+import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
@@ -34,9 +34,7 @@ import {
   testOutcomeStatus,
   quotaSummary,
   outcomeLabel,
-  resolveUiLanguage,
   translateDict,
-  type UiLangPref,
   type TFunc,
   type ProviderStatus,
 } from "./logic.ts";
@@ -385,8 +383,6 @@ export function WebToolsSection(props: SectionProps) {
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [bridgeState, setBridgeState] = useState<{ connected: boolean; platforms: Record<string, any> } | null>(null);
-  const [bridgeTicket, setBridgeTicket] = useState<string | null>(null);
   // Follow DSH-wide locale switches directly — the page always mirrors DSH.
   useEffect(() => {
     if (!ui) return;
@@ -406,7 +402,6 @@ export function WebToolsSection(props: SectionProps) {
   const [versionInfo, setVersionInfo] = useState<VersionCheckView | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
@@ -423,14 +418,23 @@ export function WebToolsSection(props: SectionProps) {
     }
   }, [config?.providerAttemptTimeoutMs]);
 
-  const [platformState, setPlatformState] = useState<{ platforms: Record<string, any> } | null>(null);
+  const [platformState, setPlatformState] = useState<PlatformStatusResponse | null>(null);
+  const platformStateRef = useRef<PlatformStatusResponse | null>(null);
+  platformStateRef.current = platformState;
+  const isFetchingPlatform = useRef(false);
 
   const loadPlatformStatus = async () => {
+    if (isFetchingPlatform.current) return;
+    isFetchingPlatform.current = true;
     try {
       const p = await api.platformStatus();
-      if (mounted.current) setPlatformState(p);
+      if (mounted.current && !arePlatformStatusesEqual(platformStateRef.current, p)) {
+        setPlatformState(p);
+      }
     } catch {
       // Non-blocking
+    } finally {
+      isFetchingPlatform.current = false;
     }
   };
 
@@ -463,13 +467,40 @@ export function WebToolsSection(props: SectionProps) {
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
 
-    // Poll platforms status periodically so login in browser reflects automatically
-    const timer = setInterval(() => {
-      void loadPlatformStatus();
-    }, 2000);
+    let timer: NodeJS.Timeout | undefined;
+    const scheduleNextPoll = () => {
+      if (!mounted.current) return;
+      const isVisible = typeof document === "undefined" || document.visibilityState === "visible";
+      const interval = getPlatformPollIntervalMs(isVisible, platformStateRef.current);
+      if (interval > 0) {
+        timer = setTimeout(async () => {
+          await loadPlatformStatus();
+          scheduleNextPoll();
+        }, interval);
+      }
+    };
+
+    scheduleNextPoll();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadPlatformStatus();
+        if (timer) clearTimeout(timer);
+        scheduleNextPoll();
+      } else {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
 
     return () => {
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
       loadToken.current += 1;
       mounted.current = false;
     };
@@ -488,8 +519,6 @@ export function WebToolsSection(props: SectionProps) {
     try {
       await api.configSave(patch);
       await load();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -737,7 +766,7 @@ export function WebToolsSection(props: SectionProps) {
                 : platformState?.platforms?.xiaohongshu?.authenticated
                   ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
                   : platformState?.platforms?.xiaohongshu?.sessionEstablished
-                    ? t("platformSessionSaved")
+                    ? t("platformVerifying")
                     : t("platformNotLoggedIn")
             }
             trailing={
@@ -754,6 +783,8 @@ export function WebToolsSection(props: SectionProps) {
                         {t("clearSessionButton")}
                       </Button>
                     </>
+                  ) : platformState?.platforms?.xiaohongshu?.sessionEstablished ? (
+                    <StateDot state="ongoing" size={6} />
                   ) : (
                     <Button
                       size="sm"
@@ -787,7 +818,7 @@ export function WebToolsSection(props: SectionProps) {
                 : platformState?.platforms?.x?.authenticated
                   ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
                   : platformState?.platforms?.x?.sessionEstablished
-                    ? t("platformSessionSaved")
+                    ? t("platformVerifying")
                     : t("platformNotLoggedIn")
             }
             trailing={
@@ -804,6 +835,8 @@ export function WebToolsSection(props: SectionProps) {
                         {t("clearSessionButton")}
                       </Button>
                     </>
+                  ) : platformState?.platforms?.x?.sessionEstablished ? (
+                    <StateDot state="ongoing" size={6} />
                   ) : (
                     <Button
                       size="sm"

@@ -10,6 +10,8 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "types": ["node"]
   },
   "include": ["src/host/**/*.ts", "src/shared/**/*.ts", "src/types/**/*.d.ts"],

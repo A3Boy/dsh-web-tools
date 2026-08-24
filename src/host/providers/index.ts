@@ -14,7 +14,7 @@ import type { QuotaProvider, QuotaSnapshot } from "../quota.ts";
 import { dashboardOnlyQuota, localUsageQuota, selfHostedQuota } from "../quota.ts";
 import { tavilyQuota } from "./tavily-quota.ts";
 import { firecrawlQuota } from "./firecrawl-quota.ts";
-import type { ProviderAdapter, ProviderError } from "./types.ts";
+import type { ProviderAdapter } from "./types.ts";
 import { providerError } from "./types.ts";
 
 /** Adapter + optional quota reporter. */

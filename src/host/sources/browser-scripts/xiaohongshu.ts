@@ -1,4 +1,4 @@
-import type { XhsRawSearchFeed, XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
+import type { XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
 
 export interface XhsNoteExtraction {
   id: string;

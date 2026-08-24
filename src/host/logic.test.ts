@@ -18,7 +18,7 @@ import { braveQuotaFromHeaders } from "./providers/brave.ts";
 import { classifyHttpStatus } from "./providers/types.ts";
 import { mergePoolQuota } from "./quota.ts";
 import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
-import { extractSearchHints, calculateAfterDate } from "./search-hints.ts";
+import { extractSearchHints } from "./search-hints.ts";
 import { buildFirecrawlSearchBody } from "./providers/firecrawl.ts";
 import { buildTavilySearchBody } from "./providers/tavily.ts";
 import { buildYouSearchBody } from "./providers/you.ts";

@@ -11,7 +11,7 @@ import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline1
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
-import { providerStatusOf, testOutcomeStatus, type ProviderStatus } from "./logic.ts";
+import { providerStatusOf, testOutcomeStatus } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
 import { PROVIDER_BRAND } from "./brand.ts";
 import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
