@@ -5,7 +5,8 @@ export declare class CdpPage implements CdpPageLease {
     readonly sessionId: string;
     private readonly client;
     private readonly onClose;
-    constructor(targetId: string, sessionId: string, client: CdpClient, onClose: () => Promise<void>);
+    private readonly validateNavigation?;
+    constructor(targetId: string, sessionId: string, client: CdpClient, onClose: () => Promise<void>, validateNavigation?: (url: string) => void);
     navigate(url: string, signal?: AbortSignal): Promise<void>;
     waitForLoad(signal?: AbortSignal): Promise<void>;
     waitForSelector(selector: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;

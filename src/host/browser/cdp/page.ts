@@ -7,20 +7,25 @@ export class CdpPage implements CdpPageLease {
   public readonly sessionId: string;
   private readonly client: CdpClient;
   private readonly onClose: () => Promise<void>;
+  private readonly validateNavigation?: (url: string) => void;
 
   constructor(
     targetId: string,
     sessionId: string,
     client: CdpClient,
     onClose: () => Promise<void>,
+    validateNavigation?: (url: string) => void,
   ) {
     this.targetId = targetId;
     this.sessionId = sessionId;
     this.client = client;
     this.onClose = onClose;
+    this.validateNavigation = validateNavigation;
   }
 
   async navigate(url: string, signal?: AbortSignal): Promise<void> {
+    this.validateNavigation?.(url);
+
     await this.client.send("Page.enable", {}, this.sessionId, signal);
     await this.client.send("Runtime.enable", {}, this.sessionId, signal);
 
@@ -213,9 +218,9 @@ export class CdpPage implements CdpPageLease {
 
     if (signal) {
       if (signal.aborted) {
-        settle({ state: "timeout" });
+        settle({ state: "aborted" });
       } else {
-        const onAbort = () => settle({ state: "timeout" });
+        const onAbort = () => settle({ state: "aborted" });
         signal.addEventListener("abort", onAbort, { once: true });
         cleanupFns.push(() => signal.removeEventListener("abort", onAbort));
       }

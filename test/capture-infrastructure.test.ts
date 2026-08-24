@@ -197,7 +197,35 @@ test("beginJsonCapture: abort signal cancels pending capture", async () => {
   ac.abort();
 
   const outcome = await handle.wait();
-  assert.equal(outcome.state, "timeout");
+  assert.equal(outcome.state, "aborted");
+});
+
+test("CdpPage: navigate triggers validateNavigation guard before sending CDP command", async () => {
+  const fake = new FakeClient();
+  let validatedUrl = "";
+  const page = new CdpPage("t1", "s1", fake as any, async () => {}, (url) => {
+    validatedUrl = url;
+    if (!url.startsWith("https://x.com/")) {
+      throw new Error("Disallowed URL: " + url);
+    }
+  });
+
+  // Valid navigation
+  fake.responses.set("Page.enable", {});
+  fake.responses.set("Runtime.enable", {});
+  fake.responses.set("Page.navigate", {});
+  fake.responses.set("Runtime.evaluate", { result: { value: true } });
+
+  await page.navigate("https://x.com/search?q=test");
+  assert.equal(validatedUrl, "https://x.com/search?q=test");
+
+  // Invalid navigation throws before CDP calls
+  await assert.rejects(
+    async () => {
+      await page.navigate("https://evil.com");
+    },
+    /Disallowed URL: https:\/\/evil.com/,
+  );
 });
 
 test("beginJsonCapture: cancel removes listeners", async () => {

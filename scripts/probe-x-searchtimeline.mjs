@@ -85,23 +85,9 @@ async function main() {
   console.log("  → URL:", outcome.url);
   console.log("  → Status:", outcome.status);
 
-  // --- Desensitize & save fixture ---
+  // --- Desensitize & save full envelope fixture ---
   const raw = outcome.json;
-  const entries = extractTimelineEntries(raw);
-  console.log("  → Timeline entries found:", entries.length);
-
-  // Keep at most 3 entries for the fixture (2 tweets + 1 cursor)
-  const kept = entries.slice(0, 3);
-  const fixture = {
-    _meta: {
-      capturedAt: new Date().toISOString(),
-      outcomeUrl: outcome.url,
-      outcomeStatus: outcome.status,
-      totalEntries: entries.length,
-      keptEntries: kept.length,
-    },
-    timeline: kept,
-  };
+  const fixture = createDesensitizedEnvelopeFixture(raw, 3);
 
   // Create fixture dir if needed
   if (!fs.existsSync(FIXTURE_DIR)) {
@@ -109,7 +95,7 @@ async function main() {
   }
 
   fs.writeFileSync(FIXTURE_PATH, JSON.stringify(fixture, null, 2), "utf-8");
-  console.log(`\n  ✓ Fixture saved to ${FIXTURE_PATH}`);
+  console.log(`\n  ✓ Real GraphQL envelope fixture saved to ${FIXTURE_PATH}`);
 
   // --- Cleanup ---
   await page.close();
@@ -118,101 +104,120 @@ async function main() {
 }
 
 /**
- * Extract structured timeline entries from a raw SearchTimeline GraphQL response.
- * Follows the user's guidance: only TimelineAddEntries/PinEntry, top-level
- * itemContent.tweet_results.result, ignore cursor/promoted/user/card noise.
+ * Preserve the FULL real GraphQL envelope structure:
+ * data.search_by_raw_query.search_timeline.timeline.instructions[].entries[].content.itemContent.tweet_results.result
+ * Only slice entries count to maxEntries and prune deep unwanted trees.
  */
-function extractTimelineEntries(raw) {
-  const entries = [];
+function createDesensitizedEnvelopeFixture(raw, maxEntries = 3) {
+  const instructions =
+    raw?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions || [];
 
-  try {
-    const instructions =
-      raw?.data?.search_by_raw_query?.search_timeline?.timeline?.instructions ||
-      [];
+  const prunedInstructions = [];
 
-    for (const instruction of instructions) {
-      // X uses `type` (not `__typename`) for timeline instructions.
-      const type = instruction?.type || instruction?.__typename || "";
-      if (!type.includes("TimelineAddEntries") &&
-          !type.includes("TimelinePinEntry") &&
-          !type.includes("TimelineReplaceEntry")) {
-        continue;
-      }
+  for (const instruction of instructions) {
+    const type = instruction?.type || instruction?.__typename || "";
+    const rawEntries = instruction?.entries || [];
+    const prunedEntries = [];
 
-      const items = instruction?.entries || [];
-      for (const entry of items) {
-        const entryId = entry?.entryId || "";
+    for (const entry of rawEntries) {
+      if (prunedEntries.length >= maxEntries) break;
 
-        // Skip cursor entries
-        if (entryId.includes("cursor")) continue;
+      const entryId = entry?.entryId || "";
+      const result = entry?.content?.itemContent?.tweet_results?.result;
+      if (!result) continue;
 
-        // Skip promoted entries
-        if (entryId.includes("promoted")) continue;
+      const tweet = unwrapTweetResult(result);
+      if (!tweet) continue;
 
-        // Grab the tweet result
-        const result = entry?.content?.itemContent?.tweet_results?.result;
-        if (!result) continue;
-
-        const tweet = unwrapTweetResult(result);
-        if (!tweet) continue;
-
-        entries.push({
-          entryId,
-          rest_id: tweet.rest_id || "",
-          legacy: {
-            full_text: tweet.legacy?.full_text || "",
-            created_at: tweet.legacy?.created_at || "",
-            favorite_count: tweet.legacy?.favorite_count ?? 0,
-            retweet_count: tweet.legacy?.retweet_count ?? 0,
-            reply_count: tweet.legacy?.reply_count ?? 0,
-            // Keep only the first media item for the fixture
-            entities: {
-              urls: (tweet.legacy?.entities?.urls || []).slice(0, 2),
-            },
-            extended_entities: tweet.legacy?.extended_entities
-              ? {
-                  media: (tweet.legacy.extended_entities.media || []).slice(0, 1).map((m) => ({
-                    type: m.type,
-                    media_url_https: m.media_url_https,
-                  })),
-                }
-              : undefined,
-          },
-          core: {
-            user_results: {
+      prunedEntries.push({
+        entryId: entry.entryId,
+        sortIndex: entry.sortIndex,
+        content: {
+          __typename: entry.content?.__typename || "TimelineTimelineItem",
+          entryType: entry.content?.entryType || "TimelineTimelineItem",
+          itemContent: {
+            __typename: entry.content?.itemContent?.__typename || "TimelineTweet",
+            itemType: entry.content?.itemContent?.itemType || "TimelineTweet",
+            tweetDisplayType: entry.content?.itemContent?.tweetDisplayType || "Tweet",
+            tweet_results: {
               result: {
-                rest_id: tweet.core?.user_results?.result?.rest_id || "",
-                core: {
-                  name: tweet.core?.user_results?.result?.core?.name || "",
-                  screen_name: tweet.core?.user_results?.result?.core?.screen_name || "",
+                __typename: tweet.__typename || "Tweet",
+                rest_id: tweet.rest_id,
+                legacy: {
+                  full_text: tweet.legacy?.full_text || "",
+                  created_at: tweet.legacy?.created_at || "",
+                  favorite_count: tweet.legacy?.favorite_count ?? 0,
+                  retweet_count: tweet.legacy?.retweet_count ?? 0,
+                  reply_count: tweet.legacy?.reply_count ?? 0,
+                  entities: {
+                    urls: (tweet.legacy?.entities?.urls || []).slice(0, 2).map((u) => ({
+                      url: u.url,
+                      expanded_url: u.expanded_url,
+                      display_url: u.display_url,
+                    })),
+                  },
+                  extended_entities: tweet.legacy?.extended_entities
+                    ? {
+                        media: (tweet.legacy.extended_entities.media || []).slice(0, 1).map((m) => ({
+                          type: m.type,
+                          media_url_https: m.media_url_https,
+                        })),
+                      }
+                    : undefined,
                 },
-                avatar: tweet.core?.user_results?.result?.avatar
-                  ? { image_url: tweet.core.user_results.result.avatar.image_url || "" }
-                  : undefined,
-                profile_bio: tweet.core?.user_results?.result?.profile_bio
-                  ? { description: tweet.core.user_results.result.profile_bio.description || "" }
+                core: {
+                  user_results: {
+                    result: {
+                      __typename: "User",
+                      rest_id: tweet.core?.user_results?.result?.rest_id || "",
+                      core: {
+                        name: tweet.core?.user_results?.result?.core?.name || "",
+                        screen_name: tweet.core?.user_results?.result?.core?.screen_name || "",
+                      },
+                      avatar: tweet.core?.user_results?.result?.avatar
+                        ? { image_url: tweet.core.user_results.result.avatar.image_url || "" }
+                        : undefined,
+                      profile_bio: tweet.core?.user_results?.result?.profile_bio
+                        ? { description: tweet.core.user_results.result.profile_bio.description || "" }
+                        : undefined,
+                    },
+                  },
+                },
+                note_tweet: tweet.note_tweet
+                  ? {
+                      note_tweet_results: {
+                        result: {
+                          text: tweet.note_tweet.note_tweet_results?.result?.text || "",
+                        },
+                      },
+                    }
                   : undefined,
               },
             },
           },
-          // Long text via note_tweet
-          note_tweet: tweet.note_tweet
-            ? {
-                note_tweet_results: {
-                  result: {
-                    text: tweet.note_tweet.note_tweet_results?.result?.text || "",
-                  },
-                },
-              }
-            : undefined,
-        });
-      }
+        },
+      });
     }
-  } catch (err) {
-    console.error("Warning: extractTimelineEntries error:", err.message);
+
+    if (prunedEntries.length > 0) {
+      prunedInstructions.push({
+        type: instruction.type || "TimelineAddEntries",
+        entries: prunedEntries,
+      });
+    }
   }
 
-  return entries;
+  return {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: {
+            instructions: prunedInstructions,
+          },
+        },
+      },
+    },
+  };
 }
 
 function unwrapTweetResult(result) {

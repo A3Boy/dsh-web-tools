@@ -15,113 +15,96 @@ import type { XTimelineInstruction } from "../src/host/sources/x/types.ts";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(
   fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
-) as {
-  timeline: Array<{
-    entryId: string;
-    rest_id: string;
-    legacy: any;
-    core: any;
-    note_tweet?: any;
-  }>;
-};
+);
 
-/**
- * Wrap the desensitized fixture entries into the real SearchTimeline envelope
- * shape (instruction.type = "TimelineAddEntries", tweet under
- * content.itemContent.tweet_results.result with __typename "Tweet").
- */
-function buildEnvelope(entries: typeof fixture.timeline): unknown {
-  const instruction: XTimelineInstruction = {
-    type: "TimelineAddEntries",
-    entries: entries.map((e) => ({
-      entryId: e.entryId,
-      content: {
-        __typename: "TimelineItem",
-        entryType: "TimelineTimelineItem",
-        itemContent: {
-          __typename: "TimelineTweet",
-          itemType: "TimelineTweet",
-          tweetDisplayType: "Tweet",
-          tweet_results: {
-            result: {
-              __typename: "Tweet",
-              rest_id: e.rest_id,
-              legacy: e.legacy,
-              core: e.core,
-              note_tweet: e.note_tweet,
-            },
-          },
-        },
-      },
-    })),
-  };
-  return {
-    data: {
-      search_by_raw_query: {
-        search_timeline: {
-          timeline: { instructions: [instruction] },
-        },
-      },
-    },
-  };
-}
-
-test("P7.2-A: extracts real tweets from the SearchTimeline fixture", () => {
-  const envelope = buildEnvelope(fixture.timeline);
-  const items = extractTweetsFromSearchTimeline(envelope);
+test("P7.2-A: extracts real tweets directly from the SearchTimeline full GraphQL envelope fixture", () => {
+  assert.equal(isSearchTimelineResponse(fixture), true, "fixture must match recognized SearchTimeline schema");
+  const items = extractTweetsFromSearchTimeline(fixture);
 
   assert.equal(items.length, 3);
 
-  // Entry 0: long-form note_tweet wins over truncated full_text; author parsed
+  // Entry 0: Tibo @thsottiaux
   const first = items[0];
-  assert.equal(first.id, "2091712775324381209");
-  assert.ok(first.text!.includes("pi install"), "note_tweet text must win");
-  assert.ok(first.text!.startsWith("如果你有 ChatGPT Plus 订阅"));
-  assert.equal(first.author?.name, "LinearUncle");
-  assert.equal(first.author?.handle, "@LinearUncle");
-  assert.equal(first.url, "https://x.com/LinearUncle/status/2091712775324381209");
+  assert.equal(first.id, "2091688655828246890");
+  assert.equal(first.author?.name, "Tibo");
+  assert.equal(first.author?.handle, "@thsottiaux");
+  assert.equal(first.url, "https://x.com/thsottiaux/status/2091688655828246890");
   assert.ok(first.publishedAt, "created_at must parse to RFC3339");
-  assert.equal(first.likes, 18);
-  assert.equal(first.retweets, 0);
-  assert.equal(first.replies, 2);
-  assert.deepEqual(first.images, ["https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg"]);
+  assert.equal(first.likes, 7271);
+  assert.equal(first.retweets, 311);
+  assert.equal(first.replies, 1046);
 
-  // Entry 2: video poster via extended_entities.media
+  // Entry 1: LinearUncle note_tweet wins over truncated full_text
+  const second = items[1];
+  assert.equal(second.id, "2091712775324381209");
+  assert.ok(second.text!.includes("pi install"), "note_tweet text must win");
+  assert.ok(second.text!.startsWith("如果你有 ChatGPT Plus 订阅"));
+  assert.equal(second.author?.name, "LinearUncle");
+  assert.equal(second.author?.handle, "@LinearUncle");
+  assert.equal(second.url, "https://x.com/LinearUncle/status/2091712775324381209");
+  assert.deepEqual(second.images, ["https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg"]);
+
+  // Entry 2: animated_gif poster via extended_entities.media
   const third = items[2];
-  assert.equal(third.author?.name, "OpenAI");
-  assert.equal(third.author?.handle, "@OpenAI");
+  assert.equal(third.author?.name, "Mete Polat");
+  assert.equal(third.author?.handle, "@metedata");
   assert.deepEqual(third.images, [
-    "https://pbs.twimg.com/amplify_video_thumb/2090884941819285504/img/JpIf7VDQGLhawgzB.jpg",
+    "https://pbs.twimg.com/tweet_video_thumb/HPvf3PMWUAAH5u1.jpg",
   ]);
   assert.equal(third.coverImage, third.images![0]);
 });
 
 test("P7.2-A: t.co short links are expanded via entities.urls.expanded_url", () => {
-  const noteTweet: typeof fixture.timeline[number] = {
-    entryId: "tweet-1",
-    rest_id: "1",
-    legacy: {
-      full_text: "Check this https://t.co/short123",
-      created_at: "Mon Aug 24 00:00:00 +0000 2026",
-      entities: {
-        urls: [
-          {
-            url: "https://t.co/short123",
-            expanded_url: "https://github.com/example/repo",
+  const envelope = {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: {
+            instructions: [
+              {
+                type: "TimelineAddEntries",
+                entries: [
+                  {
+                    entryId: "tweet-1",
+                    content: {
+                      itemContent: {
+                        tweet_results: {
+                          result: {
+                            __typename: "Tweet",
+                            rest_id: "1",
+                            legacy: {
+                              full_text: "Check this https://t.co/short123",
+                              created_at: "Mon Aug 24 00:00:00 +0000 2026",
+                              entities: {
+                                urls: [
+                                  {
+                                    url: "https://t.co/short123",
+                                    expanded_url: "https://github.com/example/repo",
+                                  },
+                                ],
+                              },
+                            },
+                            core: {
+                              user_results: {
+                                result: {
+                                  core: { name: "Dev", screen_name: "dev" },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
           },
-        ],
-      },
-    },
-    core: {
-      user_results: {
-        result: {
-          rest_id: "u1",
-          core: { name: "Dev", screen_name: "dev" },
         },
       },
     },
   };
-  const items = extractTweetsFromSearchTimeline(buildEnvelope([noteTweet]));
+  const items = extractTweetsFromSearchTimeline(envelope);
   assert.equal(items.length, 1);
   assert.equal(items[0].text, "Check this https://github.com/example/repo");
 });
@@ -155,7 +138,7 @@ test("P7.2-A: normalizeTweet drops tweets without id or usable text", () => {
 });
 
 test("P7.2-A: isSearchTimelineResponse recognizes valid / rejects invalid shapes", () => {
-  assert.equal(isSearchTimelineResponse(buildEnvelope(fixture.timeline)), true);
+  assert.equal(isSearchTimelineResponse(fixture), true);
   assert.equal(isSearchTimelineResponse({ data: {} }), false);
   assert.equal(isSearchTimelineResponse(null), false);
   assert.equal(isSearchTimelineResponse("string"), false);

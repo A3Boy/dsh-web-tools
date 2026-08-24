@@ -188,7 +188,30 @@ test("P7.2-A: search uses createPage + GraphQL PRIMARY, not openPage", async () 
   const fixture = JSON.parse(
     fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
   );
-  const envelope = {
+
+  const { page, closes } = pageWithCapture({
+    state: "captured",
+    json: fixture,
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 200,
+  });
+  const { runtime, createPageCalls } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+
+  const res = await xSource.search("openai", { maxResults: 3 });
+  assert.equal(createPageCalls.count, 1, "search must use createPage (not openPage)");
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3, "GraphQL PRIMARY must yield the fixture tweets");
+  assert.equal(res.items[0].author?.handle, "@thsottiaux");
+  assert.equal(res.items[1].author?.handle, "@LinearUncle");
+  assert.equal(res.items[2].author?.name, "Mete Polat");
+  assert.equal(closes.called, true, "page must be closed");
+});
+
+test("P7.2-A: thin GraphQL result supplements via DOM and merges by tweet id", async () => {
+  // Single GraphQL tweet
+  const thinFixture = {
     data: {
       search_by_raw_query: {
         search_timeline: {
@@ -196,22 +219,23 @@ test("P7.2-A: search uses createPage + GraphQL PRIMARY, not openPage", async () 
             instructions: [
               {
                 type: "TimelineAddEntries",
-                entries: fixture.timeline.map((e: any) => ({
-                  entryId: e.entryId,
-                  content: {
-                    itemContent: {
-                      tweet_results: {
-                        result: {
-                          __typename: "Tweet",
-                          rest_id: e.rest_id,
-                          legacy: e.legacy,
-                          core: e.core,
-                          note_tweet: e.note_tweet,
+                entries: [
+                  {
+                    entryId: "tweet-101",
+                    content: {
+                      itemContent: {
+                        tweet_results: {
+                          result: {
+                            __typename: "Tweet",
+                            rest_id: "101",
+                            legacy: { full_text: "GraphQL tweet text", favorite_count: 50 },
+                            core: { user_results: { result: { core: { name: "GQL User", screen_name: "gql_user" } } } },
+                          },
                         },
                       },
                     },
                   },
-                })),
+                ],
               },
             ],
           },
@@ -220,23 +244,31 @@ test("P7.2-A: search uses createPage + GraphQL PRIMARY, not openPage", async () 
     },
   };
 
-  const { page, closes } = pageWithCapture({
+  const { page } = pageWithCapture({
     state: "captured",
-    json: envelope,
+    json: thinFixture,
     url: "https://x.com/i/api/graphql/abc/SearchTimeline",
     status: 200,
   });
-  const { runtime, createPageCalls } = runtimeWithPage(page);
-  const xSource = new XSource(runtime);
 
-  const res = await xSource.search("openai", { maxResults: 5 });
-  assert.equal(createPageCalls.count, 1, "search must use createPage (not openPage)");
-  assert.equal(res.error, undefined);
-  assert.equal(res.retrievalMode, "native-browser");
-  assert.equal(res.items.length, 3, "GraphQL PRIMARY must yield the fixture tweets");
-  assert.equal(res.items[0].author?.handle, "@LinearUncle");
-  assert.equal(res.items[2].author?.name, "OpenAI");
-  assert.equal(closes.called, true, "page must be closed");
+  // DOM returns tweet-101 (duplicate, GraphQL should win) and tweet-102 (new)
+  (page as any).call = async (fn: any) => {
+    if (fn.name === "extractVisibleXTweets") {
+      return [
+        { id: "101", url: "https://x.com/dom/101", text: "DOM text (should be ignored)" },
+        { id: "102", url: "https://x.com/dom/102", text: "DOM supplemental tweet 102" },
+      ];
+    }
+    return [];
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("openai", { maxResults: 5 });
+  assert.equal(res.items.length, 2);
+  assert.equal(res.items[0].id, "101");
+  assert.equal(res.items[0].text, "GraphQL tweet text", "GraphQL fields take priority for id 101");
+  assert.equal(res.items[1].id, "102");
+  assert.equal(res.items[1].text, "DOM supplemental tweet 102");
 });
 
 test("P7.2-A: captured + recognized schema + 0 tweets is a valid native 0 (no parse-failed)", async () => {
@@ -275,18 +307,22 @@ test("P7.2-A: captured 401/403 maps to auth-expired (never fake 0 results)", asy
   assert.equal(res.error?.retryable, false);
 });
 
-test("P7.2-A: login redirect detected and mapped to auth-expired", async () => {
-  const { page } = pageWithCapture({
-    state: "captured",
-    json: {},
-    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
-    status: 200,
-  });
-  // Override evaluate to simulate a login redirect page
+test("P7.2-A: timeout with login redirect detected and mapped to auth-expired", async () => {
+  const { page } = pageWithCapture({ state: "timeout" });
+  // Override evaluate to simulate a login redirect page during timeout
   (page as any).evaluate = async () => "https://x.com/i/flow/login";
   const { runtime } = runtimeWithPage(page);
   const res = await new XSource(runtime).search("openai");
   assert.equal(res.error?.code, "auth-expired");
+});
+
+test("P7.2-A: aborted search signal returns code: aborted", async () => {
+  const ac = new AbortController();
+  const { page } = pageWithCapture({ state: "aborted" });
+  const { runtime } = runtimeWithPage(page);
+  ac.abort();
+  const res = await new XSource(runtime).search("openai", undefined, ac.signal);
+  assert.equal(res.error?.code, "aborted");
 });
 
 test("P7.2-A: capture timeout falls back to DOM; empty DOM yields parse-failed", async () => {

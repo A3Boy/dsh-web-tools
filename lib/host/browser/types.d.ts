@@ -40,6 +40,8 @@ export type NetworkCaptureOutcome = {
 } | {
     state: "timeout";
 } | {
+    state: "aborted";
+} | {
     state: "body-unavailable";
 } | {
     state: "invalid-json";

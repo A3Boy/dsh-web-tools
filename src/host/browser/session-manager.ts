@@ -383,14 +383,24 @@ export class SessionManager implements NativeBrowserRuntime {
     );
     const sessionId = attachRes.sessionId;
 
-    return new CdpPage(targetId, sessionId, session.cdp, async () => {
-      try {
-        await session.cdp.send("Target.closeTarget", { targetId });
-      } catch {
-        // Ignore close error
-      }
-      this.resetIdleTimer(session);
-    });
+    return new CdpPage(
+      targetId,
+      sessionId,
+      session.cdp,
+      async () => {
+        try {
+          await session.cdp.send("Target.closeTarget", { targetId });
+        } catch {
+          // Ignore close error
+        }
+        this.resetIdleTimer(session);
+      },
+      (url) => {
+        if (!validatePlatformUrl(url, platform)) {
+          throw new UrlDisallowedError(url, platform);
+        }
+      },
+    );
   }
 
   private async ensureSession(

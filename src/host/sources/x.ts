@@ -43,6 +43,7 @@ async function collectTweetsViaDom(
           id: item.id,
           title: item.text.slice(0, 80) || "X Tweet",
           url: item.url,
+          text: item.text,
           snippet: item.text,
           author: item.authorHandle
             ? { name: item.authorName || item.authorHandle, handle: item.authorHandle }
@@ -157,18 +158,22 @@ export class XSource implements SpecializedSource {
     const searchUrl = buildXSearchUrl(query, req);
 
     let page;
+    let capture;
     try {
       // Blank attached page — capture listeners must be in place BEFORE the
       // SPA fires SearchTimeline, so openPage() (which navigates eagerly) is
       // not usable here.
       page = await this.runtime.createPage("x", signal);
     } catch (err: any) {
+      if (err.name === "UrlDisallowedError") {
+        return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
+      }
       return { items: [], error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
 
     try {
       // PRIMARY: capture the SearchTimeline GraphQL response over CDP.
-      const capture = await page.beginJsonCapture({
+      capture = await page.beginJsonCapture({
         urlIncludes: "/SearchTimeline",
         timeoutMs: 8000,
         signal,
@@ -176,37 +181,55 @@ export class XSource implements SpecializedSource {
       await page.navigate(searchUrl, signal);
       const outcome = await capture.wait();
 
-      if (outcome.state === "captured") {
-        // Session can exist in cookies but be dead server-side — never fake 0.
-        if (isExpiredSessionResponse(outcome.status)) {
+      if (signal?.aborted || outcome.state === "aborted") {
+        return {
+          items: [],
+          error: { code: "aborted", message: "Search operation was aborted", retryable: false },
+        };
+      }
+
+      // Session can exist in cookies but be dead server-side — never fake 0.
+      if (outcome.state === "captured" && isExpiredSessionResponse(outcome.status)) {
+        return {
+          items: [],
+          error: { code: "auth-expired", message: `X search returned HTTP ${outcome.status}`, retryable: false },
+        };
+      }
+
+      // Check for login redirect regardless of outcome state (e.g. timeout due to redirect)
+      try {
+        const pageUrl = await page.evaluate<string>("window.location.href", signal);
+        if (LOGIN_REDIRECT_RE.test(pageUrl)) {
           return {
             items: [],
-            error: { code: "auth-expired", message: `X search returned HTTP ${outcome.status}`, retryable: false },
+            error: { code: "auth-expired", message: "X redirected to the login flow", retryable: false },
           };
         }
+      } catch {
+        // URL check is best-effort
+      }
 
-        try {
-          const pageUrl = await page.evaluate<string>("window.location.href", signal);
-          if (LOGIN_REDIRECT_RE.test(pageUrl)) {
-            return {
-              items: [],
-              error: { code: "auth-expired", message: "X redirected to the login flow", retryable: false },
-            };
-          }
-        } catch {
-          // URL check is best-effort
-        }
-
+      if (outcome.state === "captured") {
         const schemaRecognized = isSearchTimelineResponse(outcome.json);
-        const items = extractTweetsFromSearchTimeline(outcome.json);
         if (schemaRecognized) {
-          if (items.length > 0) {
-            return { items: items.slice(0, maxResults), retrievalMode: "native-browser" };
+          const graphItems = extractTweetsFromSearchTimeline(outcome.json);
+          if (graphItems.length >= maxResults) {
+            return { items: graphItems.slice(0, maxResults), retrievalMode: "native-browser" };
           }
-          // Captured + recognized schema + 0 tweets is a REAL empty result set.
-          // DOM supplement once; if the DOM also sees nothing, this is a valid 0.
+
+          // Thin GraphQL results (or valid 0 tweets): supplement via DOM and merge.
+          // GraphQL items take priority on field overlap; if both yield 0, it is a valid native 0.
           const domItems = await collectTweetsViaDom(page, maxResults, signal);
-          return { items: domItems, retrievalMode: "native-browser" };
+          const mergedMap = new Map<string, SourceItem>();
+          for (const item of graphItems) {
+            mergedMap.set(item.id, item);
+          }
+          for (const item of domItems) {
+            if (!mergedMap.has(item.id)) {
+              mergedMap.set(item.id, item);
+            }
+          }
+          return { items: Array.from(mergedMap.values()).slice(0, maxResults), retrievalMode: "native-browser" };
         }
 
         // Captured but schema NOT recognized (X changed the envelope) → the
@@ -224,8 +247,12 @@ export class XSource implements SpecializedSource {
         error: { code: "parse-failed", message: "X search produced no GraphQL response and no DOM tweets", retryable: true },
       };
     } catch (err: any) {
+      if (err.name === "UrlDisallowedError") {
+        return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
+      }
       return { items: [], error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
+      capture?.cancel();
       await page.close();
     }
   }

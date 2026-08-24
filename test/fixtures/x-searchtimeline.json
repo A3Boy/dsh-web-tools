@@ -1,137 +1,194 @@
 {
-  "_meta": {
-    "capturedAt": "2026-08-24T05:34:10.027Z",
-    "outcomeUrl": "https://x.com/i/api/graphql/hyPfJYJ_XAtDYoslQc-Rgg/SearchTimeline?variables=%7B%22rawQuery%22%3A%22openai%22%2C%22count%22%3A20%2C%22querySource%22%3A%22typed_query%22%2C%22product%22%3A%22Top%22%2C%22withGrokTranslatedBio%22%3Atrue%2C%22withQuickPromoteEligibilityTweetFields%22%3Afalse%7D&features=%7B%22rweb_video_screen_enabled%22%3Afalse%2C%22rweb_cashtags_enabled%22%3Atrue%2C%22profile_label_improvements_pcf_label_in_post_enabled%22%3Atrue%2C%22responsive_web_profile_redirect_enabled%22%3Atrue%2C%22rweb_tipjar_consumption_enabled%22%3Afalse%2C%22verified_phone_label_enabled%22%3Afalse%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%2C%22premium_content_api_read_enabled%22%3Afalse%2C%22communities_web_enable_tweet_community_results_fetch%22%3Atrue%2C%22c9s_tweet_anatomy_moderator_badge_enabled%22%3Atrue%2C%22responsive_web_grok_analyze_button_fetch_trends_enabled%22%3Afalse%2C%22responsive_web_grok_analyze_post_followups_enabled%22%3Atrue%2C%22rweb_cashtags_composer_attachment_enabled%22%3Atrue%2C%22responsive_web_jetfuel_frame%22%3Atrue%2C%22responsive_web_grok_share_attachment_enabled%22%3Atrue%2C%22responsive_web_grok_annotations_enabled%22%3Atrue%2C%22articles_preview_enabled%22%3Atrue%2C%22responsive_web_edit_tweet_api_enabled%22%3Atrue%2C%22rweb_conversational_replies_downvote_enabled%22%3Afalse%2C%22graphql_is_translatable_rweb_tweet_is_translatable_enabled%22%3Atrue%2C%22view_counts_everywhere_api_enabled%22%3Atrue%2C%22longform_notetweets_consumption_enabled%22%3Atrue%2C%22responsive_web_twitter_article_tweet_consumption_enabled%22%3Atrue%2C%22content_disclosure_indicator_enabled%22%3Atrue%2C%22content_disclosure_ai_generated_indicator_enabled%22%3Atrue%2C%22responsive_web_grok_show_grok_translated_post%22%3Atrue%2C%22responsive_web_grok_analysis_button_from_backend%22%3Atrue%2C%22post_ctas_fetch_enabled%22%3Afalse%2C%22freedom_of_speech_not_reach_fetch_enabled%22%3Atrue%2C%22standardized_nudges_misinfo%22%3Atrue%2C%22tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled%22%3Atrue%2C%22longform_notetweets_rich_text_read_enabled%22%3Atrue%2C%22longform_notetweets_inline_media_enabled%22%3Afalse%2C%22responsive_web_grok_image_annotation_enabled%22%3Atrue%2C%22responsive_web_grok_imagine_annotation_enabled%22%3Atrue%2C%22responsive_web_grok_community_note_auto_translation_is_enabled%22%3Atrue%2C%22responsive_web_enhance_cards_enabled%22%3Afalse%7D",
-    "outcomeStatus": 200,
-    "totalEntries": 19,
-    "keptEntries": 3
-  },
-  "timeline": [
-    {
-      "entryId": "tweet-2091712775324381209",
-      "rest_id": "2091712775324381209",
-      "legacy": {
-        "full_text": "如果你有 ChatGPT Plus 订阅，别浪费它的搜索功能。\n我给 pi 加了一个 web_search 插件，任意模型都能使用 Codex 订阅账号的搜索能力。\n\n安装：\npi install https://t.co/4jKITKaWyB\n\n使用：\n1.  /login — 先登录 OpenAI Codex 账号\n2. 切换到任意其他模型，提示词示例： https://t.co/SvkbYJpKrj",
-        "created_at": "Mon Aug 24 02:22:42 +0000 2026",
-        "favorite_count": 18,
-        "retweet_count": 0,
-        "reply_count": 2,
-        "entities": {
-          "urls": [
+  "data": {
+    "search_by_raw_query": {
+      "search_timeline": {
+        "timeline": {
+          "instructions": [
             {
-              "display_url": "github.com/linearuncle/pi…",
-              "expanded_url": "https://github.com/linearuncle/pi-openai-web-search",
-              "indices": [
-                99,
-                122
-              ],
-              "url": "https://t.co/4jKITKaWyB"
+              "type": "TimelineAddEntries",
+              "entries": [
+                {
+                  "entryId": "tweet-2091688655828246890",
+                  "sortIndex": "2091770932057079808",
+                  "content": {
+                    "__typename": "TimelineTimelineItem",
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                      "__typename": "TimelineTweet",
+                      "itemType": "TimelineTweet",
+                      "tweetDisplayType": "Tweet",
+                      "tweet_results": {
+                        "result": {
+                          "__typename": "Tweet",
+                          "rest_id": "2091688655828246890",
+                          "legacy": {
+                            "full_text": "Good Sunday. Reset has been propagated to accounts and we landed some fixes to usage for things mentioned yesterday as issues we found. You should feel a positive difference. More to come tomorrow and will keep communicating.",
+                            "created_at": "Mon Aug 24 00:46:51 +0000 2026",
+                            "favorite_count": 7271,
+                            "retweet_count": 311,
+                            "reply_count": 1046,
+                            "entities": {
+                              "urls": []
+                            }
+                          },
+                          "core": {
+                            "user_results": {
+                              "result": {
+                                "__typename": "User",
+                                "rest_id": "1953337039510003712",
+                                "core": {
+                                  "name": "Tibo",
+                                  "screen_name": "thsottiaux"
+                                },
+                                "avatar": {
+                                  "image_url": "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg"
+                                },
+                                "profile_bio": {
+                                  "description": "Codex & ChatGPT @OpenAI"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "entryId": "tweet-2091712775324381209",
+                  "sortIndex": "2091770932057079788",
+                  "content": {
+                    "__typename": "TimelineTimelineItem",
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                      "__typename": "TimelineTweet",
+                      "itemType": "TimelineTweet",
+                      "tweetDisplayType": "Tweet",
+                      "tweet_results": {
+                        "result": {
+                          "__typename": "Tweet",
+                          "rest_id": "2091712775324381209",
+                          "legacy": {
+                            "full_text": "如果你有 ChatGPT Plus 订阅，别浪费它的搜索功能。\n我给 pi 加了一个 web_search 插件，任意模型都能使用 Codex 订阅账号的搜索能力。\n\n安装：\npi install https://t.co/4jKITKaWyB\n\n使用：\n1.  /login — 先登录 OpenAI Codex 账号\n2. 切换到任意其他模型，提示词示例： https://t.co/SvkbYJpKrj",
+                            "created_at": "Mon Aug 24 02:22:42 +0000 2026",
+                            "favorite_count": 20,
+                            "retweet_count": 1,
+                            "reply_count": 3,
+                            "entities": {
+                              "urls": [
+                                {
+                                  "url": "https://t.co/4jKITKaWyB",
+                                  "expanded_url": "https://github.com/linearuncle/pi-openai-web-search",
+                                  "display_url": "github.com/linearuncle/pi…"
+                                }
+                              ]
+                            },
+                            "extended_entities": {
+                              "media": [
+                                {
+                                  "type": "photo",
+                                  "media_url_https": "https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg"
+                                }
+                              ]
+                            }
+                          },
+                          "core": {
+                            "user_results": {
+                              "result": {
+                                "__typename": "User",
+                                "rest_id": "1239771839464783872",
+                                "core": {
+                                  "name": "LinearUncle",
+                                  "screen_name": "LinearUncle"
+                                },
+                                "avatar": {
+                                  "image_url": "https://pbs.twimg.com/profile_images/1906323582759874560/6Elwf5WN_normal.jpg"
+                                },
+                                "profile_bio": {
+                                  "description": "服务器技术专家，曾就职于阿里云 ，有赞，外企，在线教育等；\n👑 AI coding - 职业工程师\n💻 只分享硬核AI编程工具，技巧等"
+                                }
+                              }
+                            }
+                          },
+                          "note_tweet": {
+                            "note_tweet_results": {
+                              "result": {
+                                "text": "如果你有 ChatGPT Plus 订阅，别浪费它的搜索功能。\n我给 pi 加了一个 web_search 插件，任意模型都能使用 Codex 订阅账号的搜索能力。\n\n安装：\npi install https://t.co/FWbMOn1ZEB\n\n使用：\n1.  /login — 先登录 OpenAI Codex 账号\n2. 切换到任意其他模型，提示词示例：\n`「梁文峰为什么也叫做梁文谷？用网络搜索」`或者\n `/websearch 梁文峰为什么也叫做梁文谷？`"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "entryId": "tweet-2088509201664332132",
+                  "sortIndex": "2091770932057079778",
+                  "content": {
+                    "__typename": "TimelineTimelineItem",
+                    "entryType": "TimelineTimelineItem",
+                    "itemContent": {
+                      "__typename": "TimelineTweet",
+                      "itemType": "TimelineTweet",
+                      "tweetDisplayType": "Tweet",
+                      "tweet_results": {
+                        "result": {
+                          "__typename": "Tweet",
+                          "rest_id": "2088509201664332132",
+                          "legacy": {
+                            "full_text": "Did Codex usage just evaporate 10x faster for anyone else in the last day? It seems like it's not just me. \n\nNo resets left, next reset in 5 days, cancelled Claude Max because I'm a codex fanboy. I really don't want to have to manage a second account.\n\n@OpenAI @sama you got any https://t.co/i9T6ZoUV2z",
+                            "created_at": "Sat Aug 15 06:12:50 +0000 2026",
+                            "favorite_count": 19,
+                            "retweet_count": 1,
+                            "reply_count": 10,
+                            "entities": {
+                              "urls": []
+                            },
+                            "extended_entities": {
+                              "media": [
+                                {
+                                  "type": "animated_gif",
+                                  "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/HPvf3PMWUAAH5u1.jpg"
+                                }
+                              ]
+                            }
+                          },
+                          "core": {
+                            "user_results": {
+                              "result": {
+                                "__typename": "User",
+                                "rest_id": "796087248018087937",
+                                "core": {
+                                  "name": "Mete Polat",
+                                  "screen_name": "metedata"
+                                },
+                                "avatar": {
+                                  "image_url": "https://pbs.twimg.com/profile_images/2032108265656422403/5Swp5Msj_normal.jpg"
+                                },
+                                "profile_bio": {
+                                  "description": "Just trying to have fun. Occasionally write serious things about design & AI.\nPrev. staff designer @ Netflix & Peloton."
+                                }
+                              }
+                            }
+                          },
+                          "note_tweet": {
+                            "note_tweet_results": {
+                              "result": {
+                                "text": "Did Codex usage just evaporate 10x faster for anyone else in the last day? It seems like it's not just me. \n\nNo resets left, next reset in 5 days, cancelled Claude Max because I'm a codex fanboy. I really don't want to have to manage a second account.\n\n@OpenAI @sama you got any more of that usage?"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
             }
           ]
-        },
-        "extended_entities": {
-          "media": [
-            {
-              "type": "photo",
-              "media_url_https": "https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg"
-            }
-          ]
-        }
-      },
-      "core": {
-        "user_results": {
-          "result": {
-            "rest_id": "1239771839464783872",
-            "core": {
-              "name": "LinearUncle",
-              "screen_name": "LinearUncle"
-            },
-            "avatar": {
-              "image_url": "https://pbs.twimg.com/profile_images/1906323582759874560/6Elwf5WN_normal.jpg"
-            },
-            "profile_bio": {
-              "description": "服务器技术专家，曾就职于阿里云 ，有赞，外企，在线教育等；\n👑 AI coding - 职业工程师\n💻 只分享硬核AI编程工具，技巧等"
-            }
-          }
-        }
-      },
-      "note_tweet": {
-        "note_tweet_results": {
-          "result": {
-            "text": "如果你有 ChatGPT Plus 订阅，别浪费它的搜索功能。\n我给 pi 加了一个 web_search 插件，任意模型都能使用 Codex 订阅账号的搜索能力。\n\n安装：\npi install https://t.co/FWbMOn1ZEB\n\n使用：\n1.  /login — 先登录 OpenAI Codex 账号\n2. 切换到任意其他模型，提示词示例：\n`「梁文峰为什么也叫做梁文谷？用网络搜索」`或者\n `/websearch 梁文峰为什么也叫做梁文谷？`"
-          }
-        }
-      }
-    },
-    {
-      "entryId": "tweet-2091688655828246890",
-      "rest_id": "2091688655828246890",
-      "legacy": {
-        "full_text": "Good Sunday. Reset has been propagated to accounts and we landed some fixes to usage for things mentioned yesterday as issues we found. You should feel a positive difference. More to come tomorrow and will keep communicating.",
-        "created_at": "Mon Aug 24 00:46:51 +0000 2026",
-        "favorite_count": 6891,
-        "retweet_count": 303,
-        "reply_count": 1001,
-        "entities": {
-          "urls": []
-        }
-      },
-      "core": {
-        "user_results": {
-          "result": {
-            "rest_id": "1953337039510003712",
-            "core": {
-              "name": "Tibo",
-              "screen_name": "thsottiaux"
-            },
-            "avatar": {
-              "image_url": "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg"
-            },
-            "profile_bio": {
-              "description": "Codex & ChatGPT @OpenAI"
-            }
-          }
-        }
-      }
-    },
-    {
-      "entryId": "tweet-2090885187634905500",
-      "rest_id": "2090885187634905500",
-      "legacy": {
-        "full_text": "As we continue to push the frontier of capabilities while improving efficiency, we're dropping API and credit pricing of GPT-5.6 Sol by over 20% for the next 3 months. https://t.co/UoTb3hcB2t",
-        "created_at": "Fri Aug 21 19:34:10 +0000 2026",
-        "favorite_count": 13570,
-        "retweet_count": 821,
-        "reply_count": 643,
-        "entities": {
-          "urls": []
-        },
-        "extended_entities": {
-          "media": [
-            {
-              "type": "video",
-              "media_url_https": "https://pbs.twimg.com/amplify_video_thumb/2090884941819285504/img/JpIf7VDQGLhawgzB.jpg"
-            }
-          ]
-        }
-      },
-      "core": {
-        "user_results": {
-          "result": {
-            "rest_id": "4398626122",
-            "core": {
-              "name": "OpenAI",
-              "screen_name": "OpenAI"
-            },
-            "avatar": {
-              "image_url": "https://pbs.twimg.com/profile_images/1885410181409820672/ztsaR0JW_normal.jpg"
-            },
-            "profile_bio": {
-              "description": "OpenAI’s mission is to ensure that artificial general intelligence benefits all of humanity. We’re hiring: https://t.co/dJGr6LgzPA"
-            }
-          }
         }
       }
     }
-  ]
+  }
 }

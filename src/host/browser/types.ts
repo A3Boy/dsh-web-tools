@@ -52,6 +52,7 @@ export interface RunningBrowserState {
 export type NetworkCaptureOutcome =
   | { state: "captured"; json: unknown; url: string; status: number }
   | { state: "timeout" }
+  | { state: "aborted" }
   | { state: "body-unavailable" }
   | { state: "invalid-json" };
 
