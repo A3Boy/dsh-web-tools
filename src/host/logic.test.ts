@@ -282,13 +282,13 @@ test("buildParallelSearchBody with SearchHints: soft-steers objective and sets s
 
 // ---- Firecrawl adapter (search body with SearchHints) ----
 
-test("buildFirecrawlSearchBody maps code topic to categories: ['developer'] and site: to includeDomains", () => {
+test("buildFirecrawlSearchBody maps code topic to categories: ['github'] and site: to includeDomains", () => {
   const hints = extractSearchHints("site:github.com DeepSeek Harness tool calling issue");
   const body = buildFirecrawlSearchBody("site:github.com DeepSeek Harness tool calling issue", 10, hints);
   
   assert.equal(body.query, "DeepSeek Harness tool calling issue");
   assert.equal(body.limit, 10);
-  assert.deepEqual(body.categories, ["developer"]);
+  assert.deepEqual(body.categories, ["github"]);
   assert.deepEqual(body.includeDomains, ["github.com"]);
 });
 
@@ -361,10 +361,10 @@ test("extractSearchHints avoids single-country bias for multi-country or global 
 
 // ---- Tavily deep adaptation tests ----
 
-test("buildTavilySearchBody never emits invalid finance topic and falls back to general search", () => {
+test("buildTavilySearchBody maps the native finance topic", () => {
   const hints = extractSearchHints("Nvidia earnings 财报");
   const body = buildTavilySearchBody("Nvidia earnings 财报", 5, undefined, hints);
-  assert.equal(body.topic, undefined, "finance topic must not be emitted to Tavily");
+  assert.equal(body.topic, "finance");
 });
 
 test("buildTavilySearchBody maps topic news, freshness week, and domains", () => {
@@ -422,13 +422,24 @@ test("buildExaSearchBody maps research topic to publication category and startPu
 
 // ---- SearXNG deep adaptation tests ----
 
-test("buildSearxngUrl maps code topic to it, time_range to week, and language", () => {
+test("buildSearxngUrl maps code topic but omits unsupported week time_range", () => {
   const hints = extractSearchHints("TypeScript compiler error this week");
   const url = buildSearxngUrl("http://127.0.0.1:8080", "TypeScript compiler error this week", undefined, hints);
   
   assert.equal(url.searchParams.get("categories"), "it");
-  assert.equal(url.searchParams.get("time_range"), "week");
+  assert.equal(url.searchParams.get("time_range"), null);
   assert.equal(url.searchParams.get("format"), "json");
+});
+
+test("buildSearxngUrl forwards supported day, month, and year time ranges", () => {
+  for (const preset of ["day", "month", "year"] as const) {
+    const url = buildSearxngUrl("http://127.0.0.1:8080", "OpenAI updates", undefined, {
+      rawQuery: "OpenAI updates",
+      cleanQuery: "OpenAI updates",
+      freshness: { preset },
+    });
+    assert.equal(url.searchParams.get("time_range"), preset);
+  }
 });
 
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {
