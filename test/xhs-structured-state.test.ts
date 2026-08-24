@@ -182,9 +182,28 @@ test("extractXhsDetailState: extracts note detail from noteDetailMap (direct key
   assert.ok(res1.publishedAt);
   assert.equal(res1.images?.[0], "https://ci.xiaohongshu.com/img1.jpg");
 
-  // Case 2: Object.values fallback
-  const res2 = extractXhsDetailState("note_123");
+  // Case 2: Object.values fallback (note key is different from requested noteId)
+  (globalThis as any).window = {
+    __INITIAL_STATE__: {
+      note: {
+        noteDetailMap: {
+          some_internal_key: {
+            note: {
+              noteId: "note_fallback_456",
+              title: "Fallback 结构化详情",
+              desc: "正文来自 fallback",
+              user: { nickname: "Fallback作者" },
+            },
+          },
+        },
+      },
+    },
+  };
+  const res2 = extractXhsDetailState("note_fallback_456");
   assert.equal(res2.available, true);
+  assert.equal(res2.title, "Fallback 结构化详情");
+  assert.equal(res2.text, "正文来自 fallback");
+  assert.equal(res2.authorName, "Fallback作者");
 
   // Case 3: Missing entry
   const res3 = extractXhsDetailState("note_non_exist");
