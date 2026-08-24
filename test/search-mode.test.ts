@@ -173,6 +173,12 @@ test("required message is a plugin snapshot section carrying REQUIRED_SEARCH_TEX
     "URL routing guidance must mention web_fetch");
   assert.ok(REQUIRED_SEARCH_TEXT.includes("otherwise use web_search"),
     "non-URL routing guidance must mention web_search");
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("use exactly one routing prefix"),
+    "platform targeting must distinguish the routing marker from topic keywords");
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("not page details or comments"),
+    "search snippets must not be represented as fetched comments");
+  assert.ok(REQUIRED_SEARCH_TEXT.includes("only when web_fetch returns their contents"),
+    "verified comment claims must be grounded in fetched comment content");
 });
 
 test("correction message is a one-shot plugin notice (not a snapshot)", () => {

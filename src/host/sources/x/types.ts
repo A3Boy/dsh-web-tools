@@ -82,6 +82,7 @@ export interface XTweetLegacy {
   favorite_count?: number;
   retweet_count?: number;
   reply_count?: number;
+  in_reply_to_status_id_str?: string;
   entities?: {
     urls?: Array<{
       url?: string;

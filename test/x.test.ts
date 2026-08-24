@@ -366,6 +366,9 @@ test("P7.2-B: fetch uses GraphQL PRIMARY matching exact targetTweetId from Tweet
   assert.equal(res.item?.author?.name, "Tibo");
   assert.equal(res.item?.author?.handle, "@thsottiaux");
   assert.ok(res.item?.text?.startsWith("Good Sunday"));
+  assert.equal(res.item?.comments?.length, 2);
+  assert.match(res.item?.text || "", /## Replies \(2 captured, truncated\)/);
+  assert.match(res.item?.text || "", /It does include business accounts/);
   assert.equal(closes.called, true);
 });
 

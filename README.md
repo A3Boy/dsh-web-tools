@@ -109,13 +109,17 @@ Unlike general search engines, the plugin connects directly to native social pla
   * **0 browser extensions and 0 Playwright / Chromium bundles**. Cookies remain managed by the dedicated browser profile and are not written to plugin configuration, logs, or relays; the browser still sends them to the platform during normal authenticated requests.
 
 * **Xiaohongshu**:
-  * **Note Detail Fetch (`web_fetch`)**: Uses the dedicated browser profile to extract structured `__INITIAL_STATE__` data with DOM fallback, preserving signed `xsec_token` URLs, note text, author information, and engagement metrics.
-  * **Search Discovery (`web_search`)**: Defaults to general-web discovery (`site:xiaohongshu.com`); native in-platform search is experimental and can be enabled with `XHS_NATIVE_SEARCH=1`.
+  * **Note Detail & Comment Fetch (`web_fetch`)**: Uses the dedicated browser profile to extract structured `__INITIAL_STATE__` data with DOM fallback while preserving signed `xsec_token` URLs. When the page loads comment data, top-level comments and returned nested replies are extracted individually.
+  * **Search Discovery (`web_search`)**: Defaults to general-web discovery (`site:xiaohongshu.com`); native in-platform search is experimental and can be enabled with `XHS_NATIVE_SEARCH=1`. The experimental path enters through the real search controls on `/explore`, never direct `/search_result` navigation, and distinguishes login walls, security verification, and a genuinely signed-out session.
 
 * **Twitter / X**:
-  * **Native Search & Tweet Detail**: Captures the X web client's GraphQL data streams (SearchTimeline / TweetDetail) over CDP, parses them structurally, and uses DOM extraction as a supplement and fallback. Supports `from:`, `since:`, and `until:` operators.
+  * **Native Search, Tweet Detail & Replies**: Captures the X web client's GraphQL data streams (SearchTimeline / TweetDetail) over CDP, parses the target tweet and its reply tree structurally, and uses DOM extraction as a supplement and fallback. Supports `from:`, `since:`, and `until:` operators.
 
-* **General-Web Fallback**: Uses configured general search or fetch providers when a platform source is disabled, signed out, or fails. An aborted request does not continue through fallback.
+Each detail fetch includes at most 30 comments or replies, with up to 800 characters per entry. Additional pages or nested replies are explicitly marked as truncated to keep model context bounded.
+
+Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects the platform and is removed before the native search runs; for example, `小红书: DeepSeek Harness` enters only `DeepSeek Harness` into Xiaohongshu's search box.
+
+* **General-Web Fallback**: Uses configured general search or fetch providers when a platform source is disabled, temporarily unavailable, or reports a retryable failure. Non-retryable sign-in, access-control, and invalid-detail errors are returned directly so indexed content is not presented as native detail or comments.
 * **Automated Session Verification**: Checks required cookies after login and re-checks persisted profiles during status requests and platform operations. An expired session still requires sign-in again.
 
 <p align="center">

@@ -13,6 +13,64 @@ export interface XhsNoteExtraction {
   coverImage?: string;
 }
 
+export type XhsPageState = "ready" | "login-wall" | "security-verification" | "signed-out";
+
+export function detectXhsPageState(): XhsPageState {
+  const href = location.href;
+  const bodyText = document.body?.innerText || "";
+  const visible = (element: Element | null): boolean => {
+    if (!element) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  };
+
+  if (
+    visible(document.querySelector(".security-verify, #security-verify")) ||
+    /captcha|security.?verification/i.test(href) ||
+    /安全验证|安全限制|IP存在风险|访问受限|异常访问|操作频繁/.test(`${document.title}\n${bodyText}`)
+  ) {
+    return "security-verification";
+  }
+
+  if (/website-login|\/login(?:\/|\?|$)/i.test(href)) {
+    return "signed-out";
+  }
+
+  if (
+    visible(document.querySelector(".login-modal, .login-container")) ||
+    /登录后推荐更懂你的笔记|登录后查看/.test(bodyText)
+  ) {
+    return "login-wall";
+  }
+
+  return "ready";
+}
+
+export function setXhsSearchInput(query: string): boolean {
+  const input = document.querySelector<HTMLInputElement>("#search-input");
+  if (!input) return false;
+  input.focus();
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  if (setter) setter.call(input, query);
+  else input.value = query;
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: query }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  return input.value === query;
+}
+
+export function submitXhsSearch(): boolean {
+  const input = document.querySelector<HTMLInputElement>("#search-input");
+  const button = document.querySelector<HTMLElement>(".input-button .search-icon, .input-button");
+  if (!input) return false;
+
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent("keypress", { key: "Enter", code: "Enter", bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
+  button?.click();
+  return Boolean(button);
+}
+
 export function extractXhsSearchState(): XhsStructuredSearchExtraction {
   const state = (window as any).__INITIAL_STATE__;
   const feedsRef = state?.search?.feeds;

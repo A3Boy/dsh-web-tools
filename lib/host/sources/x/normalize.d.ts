@@ -1,4 +1,4 @@
-import type { SourceItem } from "../types.ts";
+import type { SourceComment, SourceItem } from "../types.ts";
 import type { XSearchTimelineResponse, XTweetDetailResponse, XTweetResult } from "./types.ts";
 /** Extract the numeric status / tweet ID from a tweet URL. */
 export declare function extractTweetIdFromUrl(url: string): string | undefined;
@@ -29,3 +29,5 @@ export declare function extractTweetsFromSearchTimeline(value: unknown): SourceI
  * entries and conversation thread module items, unwrapping visibility results.
  */
 export declare function extractTweetFromTweetDetail(value: unknown, targetTweetId: string): SourceItem | undefined;
+/** Extract replies belonging to the focal tweet, including replies to replies. */
+export declare function extractCommentsFromTweetDetail(value: unknown, targetTweetId: string): SourceComment[];

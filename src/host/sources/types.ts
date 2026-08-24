@@ -8,6 +8,7 @@ export type SourceErrorCode =
   | "browser-launch-failed"
   | "browser-crashed"
   | "navigation-timeout"
+  | "search-restricted"
   | "blocked"
   | "parse-failed"
   | "network"
@@ -57,6 +58,16 @@ export interface SourceSearchRequest {
   hints?: import("../search-hints.ts").SearchHints;
 }
 
+export interface SourceComment {
+  id: string;
+  text: string;
+  author?: SourceAccountInfo;
+  publishedAt?: string;
+  likes?: number;
+  parentId?: string;
+  url?: string;
+}
+
 export interface SourceItem {
   id: string;
   title: string;
@@ -69,6 +80,8 @@ export interface SourceItem {
   collects?: number;
   retweets?: number;
   replies?: number;
+  comments?: SourceComment[];
+  commentsTruncated?: boolean;
   images?: string[];
   coverImage?: string;
   platform: SpecializedPlatformId | "general";

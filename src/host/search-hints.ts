@@ -96,10 +96,11 @@ const SITE_EXCLUDE_RE = /(?:^|\s)-site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)
 
 // Platform indicators (high precision to avoid false positives on solitary 'x' or common words)
 const XIAOHONGSHU_EXPLICIT_RE = /(?:小红书|rednote|\bxsec_token\b)/i;
-const XIAOHONGSHU_CLEAN_RE = /(?:小红书|rednote)/gi;
+const XIAOHONGSHU_CLEAN_RE = /(?:(?:请\s*)?(?:在|去)?\s*(?:小红书|rednote)(?:上|里|中)?\s*(?:搜索|搜|查找|找|看看)?)/gi;
 
-const X_EXPLICIT_RE = /(?:twitter|推特|x\.com|twitter\.com|(?:在|上)X(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜))/i;
-const X_CLEAN_RE = /(?:twitter|推特|(?:在|上)X(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜))/gi;
+const X_EXPLICIT_RE = /(?:twitter|推特|x\.com|twitter\.com|(?:在|上)X(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜)|^\s*X\s*[:：])/i;
+const X_ROUTE_PREFIX_RE = /^\s*X\s*[:：]\s*/i;
+const X_CLEAN_RE = /(?:(?:请\s*)?(?:在|去)?\s*(?:X(?:上|里|中)|(?:twitter|推特)(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜)(?:上|里|中)?)\s*(?:搜索|搜|查找|找|看看)?)/gi;
 
 // Code topic indicators (keywords or patterns)
 const CODE_INDICATORS = [
@@ -219,7 +220,7 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   } else if (isXDomain || X_EXPLICIT_RE.test(rawQuery)) {
     platform = "x";
     platformExplicit = true;
-    cleanQuery = cleanQuery.replace(X_CLEAN_RE, " ");
+    cleanQuery = cleanQuery.replace(X_ROUTE_PREFIX_RE, " ").replace(X_CLEAN_RE, " ");
   }
 
   // 2. Extract explicit after: / before: dates
@@ -318,7 +319,10 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   const locale: LocaleHint | undefined = language || country ? { language, country } : undefined;
 
   // Clean extra whitespaces in cleanQuery
-  cleanQuery = cleanQuery.replace(/\s+/g, " ").trim();
+  cleanQuery = cleanQuery
+    .replace(/^[\s:：,，;；\-—]+|[\s:：,，;；\-—]+$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cleanQuery) cleanQuery = rawQuery;
 
   return {

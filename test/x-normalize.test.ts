@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   extractTweetFromTweetDetail,
+  extractCommentsFromTweetDetail,
   extractTweetIdFromUrl,
   extractTweetsFromSearchTimeline,
   isSearchTimelineResponse,
@@ -241,6 +242,21 @@ test("P7.2-B: extracts focal tweet from live TweetDetail fixture", () => {
   // Mismatch returns undefined
   const missing = extractTweetFromTweetDetail(detailFixture, "non_existent_id");
   assert.equal(missing, undefined);
+});
+
+test("P7.2-B: extracts the focal tweet's reply tree from live TweetDetail fixture", () => {
+  const detailFixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-tweetdetail.json"), "utf-8"),
+  );
+  const comments = extractCommentsFromTweetDetail(detailFixture, "2091688655828246890");
+
+  assert.deepEqual(comments.map((comment) => comment.id), [
+    "2091691767267774755",
+    "2091709346371838240",
+  ]);
+  assert.equal(comments[0].parentId, "2091688655828246890");
+  assert.equal(comments[1].parentId, "2091691767267774755");
+  assert.equal(comments[0].author?.handle, "@hooftly");
 });
 
 test("P7.2-B: extracts nested conversation thread replies by target ID", () => {

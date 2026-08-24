@@ -20,6 +20,11 @@ test("P7.0 extractSearchHints: identifies Xiaohongshu queries and cleans query",
   const hints3 = extractSearchHints("rednote travel tips for tokyo");
   assert.equal(hints3.platform, "xiaohongshu");
   assert.equal(hints3.platformExplicit, true);
+  assert.equal(
+    extractSearchHints("在小红书上搜索 DeepSeek Harness 最新消息").cleanQuery,
+    "DeepSeek Harness 最新消息",
+  );
+  assert.equal(extractSearchHints("小红书: DeepSeek Harness").cleanQuery, "DeepSeek Harness");
 });
 
 test("P7.0 extractSearchHints: identifies Twitter / X queries without false positives on single 'x'", () => {
@@ -30,6 +35,9 @@ test("P7.0 extractSearchHints: identifies Twitter / X queries without false posi
   const hints2 = extractSearchHints("Twitter latest updates");
   assert.equal(hints2.platform, "x");
   assert.equal(hints2.platformExplicit, true);
+  assert.equal(extractSearchHints("在推特上搜 DeepSeek Harness").cleanQuery, "DeepSeek Harness");
+  assert.equal(extractSearchHints("X: DeepSeek Harness").cleanQuery, "DeepSeek Harness");
+  assert.equal(extractSearchHints("X: XGBoost updates").cleanQuery, "XGBoost updates");
 
   // False positive checks
   const hints3 = extractSearchHints("macos x download");
@@ -136,6 +144,77 @@ test("P7.0 SpecializedSourceRegistry: falls back gracefully to general web when 
   assert.equal(fallbackQuery, "site:xiaohongshu.com 探店");
   assert.equal(outcome.retrievalMode, "degraded-web");
   assert.equal(outcome.items.length, 1);
+});
+
+test("SpecializedSourceRegistry: non-retryable platform fetch failures return immediately", async () => {
+  const registry = new SpecializedSourceRegistry();
+  const blockedSource: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => ({ items: [] }),
+    fetch: async () => ({
+      error: { code: "blocked", message: "detail redirected away", retryable: false },
+    }),
+  };
+  let fallbackCalled = false;
+  registry.registerSource(blockedSource);
+  registry.setFallbackProviders(undefined, {
+    fetch: async () => {
+      fallbackCalled = true;
+      return {
+        url: "https://www.xiaohongshu.com/discovery/item/note",
+        statusCode: 200,
+        body: { kind: "text", content: "index fallback" },
+        truncated: false,
+      };
+    },
+  } as any);
+
+  const outcome = await registry.fetch(
+    "https://www.xiaohongshu.com/discovery/item/note",
+  );
+
+  assert.equal(fallbackCalled, false);
+  assert.equal(outcome.error?.code, "blocked");
+  assert.equal(outcome.retrievalMode, undefined);
+});
+
+test("SpecializedSourceRegistry: retryable platform fetch failures still use general fallback", async () => {
+  const registry = new SpecializedSourceRegistry();
+  const unavailableSource: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({} as any),
+    search: async () => ({ items: [] }),
+    fetch: async () => ({
+      error: { code: "runtime-unavailable", message: "browser unavailable", retryable: true },
+    }),
+  };
+  registry.registerSource(unavailableSource);
+  registry.setFallbackProviders(undefined, {
+    fetch: async () => ({
+      url: "https://www.xiaohongshu.com/discovery/item/note",
+      statusCode: 200,
+      body: { kind: "text", content: "index fallback" },
+      truncated: false,
+    }),
+  } as any);
+
+  const outcome = await registry.fetch(
+    "https://www.xiaohongshu.com/discovery/item/note",
+  );
+
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.item?.text, "index fallback");
+  assert.equal(outcome.retrievalMode, "degraded-web");
 });
 
 test("P7.0 SpecializedSourceRegistry: routes non-platform query directly to general search", async () => {

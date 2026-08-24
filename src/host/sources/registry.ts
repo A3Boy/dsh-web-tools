@@ -191,6 +191,14 @@ export class SpecializedSourceRegistry {
       return outcome;
     }
 
+    // A source marks platform-auth, access-control, and invalid-detail errors
+    // as non-retryable. Do not hide that concrete result behind a potentially
+    // long general-provider chain that cannot recover native comments/session
+    // data and may consume the tool's entire timeout budget.
+    if (outcome.error && !outcome.error.retryable) {
+      return outcome;
+    }
+
     return fallbackFetchToGeneralWeb(url, this.fallbackFetchProvider, signal);
   }
 }

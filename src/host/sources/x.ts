@@ -4,12 +4,14 @@ import {
   type XTweetExtraction,
 } from "./browser-scripts/x.ts";
 import {
+  extractCommentsFromTweetDetail,
   extractTweetFromTweetDetail,
   extractTweetIdFromUrl,
   extractTweetsFromSearchTimeline,
   isSearchTimelineResponse,
   isTweetDetailResponse,
 } from "./x/normalize.ts";
+import { appendCommentsToItem } from "./comments.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -324,7 +326,14 @@ export class XSource implements SpecializedSource {
       if (outcome.state === "captured" && isTweetDetailResponse(outcome.json)) {
         const target = extractTweetFromTweetDetail(outcome.json, targetTweetId);
         if (target) {
-          return { item: target, retrievalMode: "native-browser" };
+          const comments = extractCommentsFromTweetDetail(outcome.json, targetTweetId);
+          return {
+            item: appendCommentsToItem(target, comments, {
+              heading: "Replies",
+              truncated: (target.replies || 0) > comments.length,
+            }),
+            retrievalMode: "native-browser",
+          };
         }
       }
 

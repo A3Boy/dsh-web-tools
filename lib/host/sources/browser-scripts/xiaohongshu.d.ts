@@ -11,6 +11,10 @@ export interface XhsNoteExtraction {
     collects?: number;
     coverImage?: string;
 }
+export type XhsPageState = "ready" | "login-wall" | "security-verification" | "signed-out";
+export declare function detectXhsPageState(): XhsPageState;
+export declare function setXhsSearchInput(query: string): boolean;
+export declare function submitXhsSearch(): boolean;
 export declare function extractXhsSearchState(): XhsStructuredSearchExtraction;
 export declare function extractVisibleXhsSearch(): XhsNoteExtraction[];
 export declare function extractXhsDetailState(noteId: string): {

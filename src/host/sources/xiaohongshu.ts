@@ -7,7 +7,9 @@ import {
   type XhsNoteExtraction,
 } from "./browser-scripts/xiaohongshu.ts";
 import { normalizeXhsFeed } from "./xiaohongshu/normalize.ts";
-import { buildXhsSearchUrl } from "./xiaohongshu/query.ts";
+import { extractXhsComments } from "./xiaohongshu/comments.ts";
+import { navigateXhsSearchViaUi } from "./xiaohongshu/ui-search.ts";
+import { appendCommentsToItem } from "./comments.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -83,7 +85,7 @@ export class XiaohongshuSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal);
+    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal, "interactive");
     if (!isAuth) {
       return {
         items: [],
@@ -92,11 +94,9 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     const maxResults = Math.min(req?.maxResults || 10, 30);
-    const searchUrl = buildXhsSearchUrl(query);
-
     let page;
     try {
-      page = await this.runtime.openPage("xiaohongshu", searchUrl, signal);
+      page = await this.runtime.createPage("xiaohongshu", signal, "interactive");
     } catch (err: any) {
       if (err.name === "UrlDisallowedError") {
         return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
@@ -105,7 +105,24 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     try {
-      await page.waitForLoad(signal);
+      const navigation = await navigateXhsSearchViaUi(page, query, signal);
+      if (navigation.state !== "ready") {
+        const code = navigation.state === "signed-out"
+          ? "auth-expired"
+          : navigation.state === "login-wall"
+            ? "search-restricted"
+            : navigation.state === "security-verification"
+              ? "blocked"
+              : "parse-failed";
+        return {
+          items: [],
+          error: {
+            code,
+            message: `Xiaohongshu UI search did not become ready (${navigation.state})`,
+            retryable: false,
+          },
+        };
+      }
 
       // Wait for search results to populate (structured or DOM), up to 12s
       let resultsReady = false;
@@ -213,16 +230,23 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     let page;
+    let commentCapture;
     try {
       // Xiaohongshu currently rejects the headless browser fingerprint with an
       // "安全限制 / IP存在风险" page even when the dedicated profile is signed in.
       // Use the same persisted profile in a minimized interactive browser.
-      page = await this.runtime.openPage("xiaohongshu", url, signal, "interactive");
+      page = await this.runtime.createPage("xiaohongshu", signal, "interactive");
     } catch (err: any) {
       return { error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
 
     try {
+      commentCapture = await page.beginJsonCapture({
+        urlIncludes: "/api/sns/web/v2/comment/page",
+        timeoutMs: 6000,
+        signal,
+      });
+      await page.navigate(url, signal);
       await page.waitForLoad(signal);
 
       const noteId = extractNoteIdFromUrl(url);
@@ -302,20 +326,38 @@ export class XiaohongshuSource implements SpecializedSource {
         };
       }
 
+      const item: SourceItem = {
+        id: url,
+        title: detail.title || "小红书笔记",
+        url,
+        text: detail.text?.trim() || detail.title?.trim(),
+        author: detail.authorName ? { name: detail.authorName, url: detail.authorUrl } : undefined,
+        publishedAt: detail.publishedAt,
+        likes: detail.likes,
+        collects: detail.collects,
+        replies: detail.comments,
+        images: detail.images,
+        platform: "xiaohongshu",
+      };
+
+      const commentOutcome = await commentCapture.wait();
+      if (commentOutcome.state === "captured" && commentOutcome.status >= 200 && commentOutcome.status < 300) {
+        const parsed = extractXhsComments(commentOutcome.json);
+        return {
+          item: appendCommentsToItem(item, parsed.comments, {
+            heading: "Comments",
+            truncated: parsed.truncated || (detail.comments || 0) > parsed.comments.length,
+          }),
+          retrievalMode: "native-browser",
+        };
+      }
+
       return {
-        item: {
-          id: url,
-          title: detail.title || "小红书笔记",
-          url,
-          text: detail.text?.trim() || detail.title?.trim(),
-          author: detail.authorName ? { name: detail.authorName, url: detail.authorUrl } : undefined,
-          publishedAt: detail.publishedAt,
-          likes: detail.likes,
-          collects: detail.collects,
-          replies: detail.comments,
-          images: detail.images,
-          platform: "xiaohongshu",
-        },
+        item: appendCommentsToItem(item, [], {
+          heading: "Comments",
+          truncated: (detail.comments || 0) > 0,
+        }),
+        retrievalMode: "native-browser",
       };
     } catch (err: any) {
       if (signal?.aborted) {
@@ -329,6 +371,7 @@ export class XiaohongshuSource implements SpecializedSource {
       }
       return { error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
+      commentCapture?.cancel();
       await page.close();
     }
   }

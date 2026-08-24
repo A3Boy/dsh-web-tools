@@ -109,13 +109,17 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
   * **0 浏览器扩展、0 Playwright / Chromium 外部打包**。Cookie 由专用浏览器 Profile 管理，插件不会将其写入配置、日志或中转服务；浏览器仍会按正常认证流程发送给对应平台。
 
 * **小红书**：
-  * **笔记详情抓取 (`web_fetch`)**：通过专用浏览器 Profile 解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL，提取笔记全文、作者及互动数据。
-  * **搜索发现 (`web_search`)**：默认采用通用 Web 发现（`site:xiaohongshu.com`）；站内原生搜索定位为实验能力，可通过 `XHS_NATIVE_SEARCH=1` 显式开启。
+  * **笔记详情与评论抓取 (`web_fetch`)**：通过专用浏览器 Profile 解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL；页面成功加载评论数据时，同时逐条提取一级评论与已返回的楼中楼回复。
+  * **搜索发现 (`web_search`)**：默认采用通用 Web 发现（`site:xiaohongshu.com`）；站内原生搜索定位为实验能力，可通过 `XHS_NATIVE_SEARCH=1` 显式开启。实验路径从 `/explore` 的真实搜索框进入，不再直接导航 `/search_result`，并会区分登录墙、安全验证和真实退出登录。
 
 * **Twitter / X**：
-  * **原生搜索与推文详情**：通过 CDP 捕获 X Web 客户端自身的 GraphQL 数据流（SearchTimeline / TweetDetail），结构化解析并以 DOM 作为补充与兜底，支持 `from:`、`since:`、`until:` 等搜索算子。
+  * **原生搜索、推文详情与回复**：通过 CDP 捕获 X Web 客户端自身的 GraphQL 数据流（SearchTimeline / TweetDetail），结构化解析目标推文及其回复树，并以 DOM 作为补充与兜底；支持 `from:`、`since:`、`until:` 等搜索算子。
 
-* **通用 Web 降级 (Web Fallback)**：平台来源未启用、未登录或处理失败时，改由已配置的通用搜索或抓取 Provider 处理；调用被取消时不会继续降级。
+单次详情抓取最多附带 30 条评论或回复，单条内容最多保留 800 个字符；仍有后续分页或楼中楼内容时会明确标记为截断，避免无界占用模型上下文。
+
+Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选择平台，插件会在实际站内搜索前移除它；例如 `小红书: DeepSeek Harness` 最终输入小红书搜索框的是 `DeepSeek Harness`。
+
+* **通用 Web 降级 (Web Fallback)**：平台来源未启用、运行时暂不可用或发生可重试故障时，改由已配置的通用搜索或抓取 Provider 处理；登录失效、访问受限、无效详情地址等非重试错误会直接返回，不会用索引内容冒充原生详情或评论。
 * **登录态自动验证**：完成登录后插件会检查所需 Cookie；已保存的 Profile 会在状态查询和平台操作前复核，登录失效时仍需重新登录。
 
 <p align="center">

@@ -6,17 +6,32 @@ import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/typ
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
   const structuredDetailNoteIds: unknown[] = [];
   const openedModes: unknown[] = [];
+  const nativeSearchQueries: string[] = [];
   let lastOpenedUrl = "https://www.xiaohongshu.com/explore/note123?xsec_token=token123";
   const fakePage: CdpPageLease = {
     targetId: "target-xhs",
     sessionId: "session-xhs",
-    navigate: async () => {},
+    navigate: async (url) => { lastOpenedUrl = url; },
     waitForLoad: async () => {},
     waitForSelector: async () => {},
-    evaluate: async (expression: string) => (
-      expression === "location.href" ? lastOpenedUrl : ({} as any)
-    ),
+    evaluate: async (expression: string) => {
+      if (expression === "location.href") return lastOpenedUrl;
+      if (expression.includes("section.note-item")) return 1;
+      return {} as any;
+    },
     call: async (fn: any, args?: unknown[]) => {
+      if (fn.name === "detectXhsPageState") return "ready";
+      if (fn.name === "setXhsSearchInput") {
+        nativeSearchQueries.push(String(args?.[0] || ""));
+        return true;
+      }
+      if (fn.name === "submitXhsSearch") {
+        lastOpenedUrl = "https://www.xiaohongshu.com/search_result?keyword=Gemini%203.7";
+        return true;
+      }
+      if (fn.name === "extractXhsSearchState") {
+        return { available: true, feeds: [{ id: "note123" }] };
+      }
       if (fn.name === "extractVisibleXhsSearch") {
         return [
           {
@@ -53,7 +68,31 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
       return null as any;
     },
     scrollBy: async () => {},
-    beginJsonCapture: async () => ({ wait: async () => ({ state: "captured" as const, json: {}, url: "", status: 200 }), cancel: () => {} }),
+    beginJsonCapture: async () => ({
+      wait: async () => ({
+        state: "captured" as const,
+        json: {
+          data: {
+            has_more: true,
+            comments: [{
+              id: "comment-1",
+              content: "真实评论内容",
+              like_count: 7,
+              user_info: { user_id: "user-1", nickname: "评论用户" },
+              sub_comment_count: 1,
+              sub_comments: [{
+                id: "reply-1",
+                content: "真实逐条回复",
+                user_info: { user_id: "user-2", nickname: "回复用户" },
+              }],
+            }],
+          },
+        },
+        url: "https://edith.xiaohongshu.com/api/sns/web/v2/comment/page",
+        status: 200,
+      }),
+      cancel: () => {},
+    }),
     close: async () => {},
   };
 
@@ -74,7 +113,10 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
       openedModes.push(mode);
       return fakePage;
     },
-    createPage: async () => fakePage,
+    createPage: async (_platform, _signal, mode) => {
+      openedModes.push(mode);
+      return fakePage;
+    },
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
@@ -97,13 +139,18 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   setXhsNativeSearchEnabled(true);
   const searchRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
   assert.equal(searchRes.items.length, 1);
+  assert.deepEqual(nativeSearchQueries, ["Gemini 3.7"]);
   assert.equal(searchRes.items[0].id, "note123");
   assert.ok(searchRes.items[0].url.includes("xsec_token=token123"));
   setXhsNativeSearchEnabled(false);
 
   const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123?xsec_token=token123");
   assert.equal(fetchRes.item?.title, "结构化标题 (Primary)", "Must use structured detail when available");
-  assert.equal(fetchRes.item?.text, "结构化正文内容");
+  assert.match(fetchRes.item?.text || "", /^结构化正文内容/);
+  assert.match(fetchRes.item?.text || "", /真实评论内容/);
+  assert.match(fetchRes.item?.text || "", /真实逐条回复/);
+  assert.equal(fetchRes.item?.comments?.length, 2);
+  assert.equal(fetchRes.item?.commentsTruncated, true);
   assert.equal(fetchRes.item?.likes, 666);
   assert.equal(fetchRes.item?.collects, 188);
   assert.equal(fetchRes.item?.replies, 25);
@@ -113,12 +160,13 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
     "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123&xsec_source=pc_share",
   );
   assert.equal(discoveryFetchRes.item?.title, "结构化标题 (Primary)");
-  assert.equal(discoveryFetchRes.item?.text, "结构化正文内容");
+  assert.match(discoveryFetchRes.item?.text || "", /^结构化正文内容/);
   assert.equal(structuredDetailNoteIds.at(-1), "6a0ec5410000000038037228");
 });
 
 test("XiaohongshuSource: rejects an empty DOM detail instead of returning success", async () => {
   const fakePage = {
+    navigate: async () => {},
     waitForLoad: async () => {},
     waitForSelector: async () => {},
     evaluate: async () => "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123",
@@ -126,12 +174,13 @@ test("XiaohongshuSource: rejects an empty DOM detail instead of returning succes
       if (fn.name === "extractXhsDetailState") return { available: false };
       return { isBlocked: false };
     },
+    beginJsonCapture: async () => ({ wait: async () => ({ state: "timeout" as const }), cancel: () => {} }),
     close: async () => {},
   } as unknown as CdpPageLease;
 
   const fakeRuntime = {
     verifyAuthenticationForOperation: async () => true,
-    openPage: async () => fakePage,
+    createPage: async () => fakePage,
   } as unknown as NativeBrowserRuntime;
 
   const result = await new XiaohongshuSource(fakeRuntime).fetch(
@@ -146,17 +195,19 @@ test("XiaohongshuSource: rejects an empty DOM detail instead of returning succes
 test("XiaohongshuSource: rejects a detail navigation redirected away from the target note", async () => {
   let structuredCalled = false;
   const fakePage = {
+    navigate: async () => {},
     waitForLoad: async () => {},
     evaluate: async () => "https://www.xiaohongshu.com/explore",
     call: async () => {
       structuredCalled = true;
       return { available: true, title: "错误推荐笔记", text: "错误正文" };
     },
+    beginJsonCapture: async () => ({ wait: async () => ({ state: "timeout" as const }), cancel: () => {} }),
     close: async () => {},
   } as unknown as CdpPageLease;
   const fakeRuntime = {
     verifyAuthenticationForOperation: async () => true,
-    openPage: async () => fakePage,
+    createPage: async () => fakePage,
   } as unknown as NativeBrowserRuntime;
 
   const result = await new XiaohongshuSource(fakeRuntime).fetch(
