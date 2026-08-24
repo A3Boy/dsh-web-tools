@@ -15,6 +15,12 @@ export declare class SessionManager implements NativeBrowserRuntime {
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
+    /**
+     * Create a blank (about:blank) attached page WITHOUT navigating. This is the
+     * only way to install network capture listeners before the platform SPA
+     * fires its API requests (e.g. X SearchTimeline fires immediately on boot).
+     */
+    createPage(platform: BrowserPlatform, signal?: AbortSignal): Promise<CdpPageLease>;
     private ensureSession;
     private resetIdleTimer;
     resetSession(platform: BrowserPlatform): Promise<void>;

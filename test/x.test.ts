@@ -1,7 +1,62 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { XSource, buildXSearchUrl, parseXMetricNumber } from "../src/host/sources/x.ts";
-import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
+import type { NativeBrowserRuntime, CdpPageLease, JsonCaptureHandle, NetworkCaptureOutcome } from "../src/host/browser/types.ts";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Build a fake page whose capture returns a given outcome. */
+function pageWithCapture(outcome: NetworkCaptureOutcome): { page: CdpPageLease; closes: { called: boolean } } {
+  const closes = { called: false };
+  const page: CdpPageLease = {
+    targetId: "t",
+    sessionId: "s",
+    navigate: async () => {},
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async () => "https://x.com/search?q=openai",
+    call: async () => [],
+    scrollBy: async () => {},
+    beginJsonCapture: async () =>
+      ({
+        wait: async () => outcome,
+        cancel: () => {},
+      }) as JsonCaptureHandle,
+    close: async () => {
+      closes.called = true;
+    },
+  };
+  return { page, closes };
+}
+
+function runtimeWithPage(page: CdpPageLease): { runtime: NativeBrowserRuntime; createPageCalls: { count: number } } {
+  const createPageCalls = { count: 0 };
+  const runtime: NativeBrowserRuntime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({
+      platform: "x",
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authState: "authenticated",
+      authenticated: true,
+    }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => page,
+    createPage: async () => {
+      createPageCalls.count++;
+      return page;
+    },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  };
+  return { runtime, createPageCalls };
+}
 
 test("XSource: parseXMetricNumber accurately parses metrics", () => {
   assert.equal(parseXMetricNumber("1.5K"), 1500);
@@ -55,6 +110,7 @@ test("XSource: executes search and tweet fetch through NativeBrowserRuntime when
       return null as any;
     },
     scrollBy: async () => {},
+    beginJsonCapture: async () => ({ wait: async () => ({ state: "captured" as const, json: {}, url: "", status: 200 }), cancel: () => {} }),
     close: async () => {},
   };
 
@@ -71,6 +127,7 @@ test("XSource: executes search and tweet fetch through NativeBrowserRuntime when
     checkAuthentication: async () => true,
     verifyAuthenticationForOperation: async () => true,
     openPage: async () => fakePage,
+    createPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
@@ -108,6 +165,10 @@ test("XSource: returns auth-required without opening page when unauthenticated",
       openPageCalled = true;
       throw new Error("Should not open page");
     },
+    createPage: async () => {
+      openPageCalled = true;
+      throw new Error("Should not create page");
+    },
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
@@ -121,4 +182,129 @@ test("XSource: returns auth-required without opening page when unauthenticated",
   const fetchRes = await xSource.fetch("https://x.com/openai/status/123");
   assert.equal(openPageCalled, false);
   assert.equal(fetchRes.error?.code, "auth-required");
+});
+
+test("P7.2-A: search uses createPage + GraphQL PRIMARY, not openPage", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
+  );
+  const envelope = {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: {
+            instructions: [
+              {
+                type: "TimelineAddEntries",
+                entries: fixture.timeline.map((e: any) => ({
+                  entryId: e.entryId,
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: {
+                          __typename: "Tweet",
+                          rest_id: e.rest_id,
+                          legacy: e.legacy,
+                          core: e.core,
+                          note_tweet: e.note_tweet,
+                        },
+                      },
+                    },
+                  },
+                })),
+              },
+            ],
+          },
+        },
+      },
+    },
+  };
+
+  const { page, closes } = pageWithCapture({
+    state: "captured",
+    json: envelope,
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 200,
+  });
+  const { runtime, createPageCalls } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+
+  const res = await xSource.search("openai", { maxResults: 5 });
+  assert.equal(createPageCalls.count, 1, "search must use createPage (not openPage)");
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3, "GraphQL PRIMARY must yield the fixture tweets");
+  assert.equal(res.items[0].author?.handle, "@LinearUncle");
+  assert.equal(res.items[2].author?.name, "OpenAI");
+  assert.equal(closes.called, true, "page must be closed");
+});
+
+test("P7.2-A: captured + recognized schema + 0 tweets is a valid native 0 (no parse-failed)", async () => {
+  const emptyEnvelope = {
+    data: {
+      search_by_raw_query: {
+        search_timeline: {
+          timeline: { instructions: [{ type: "TimelineAddEntries", entries: [] }] },
+        },
+      },
+    },
+  };
+  const { page } = pageWithCapture({
+    state: "captured",
+    json: emptyEnvelope,
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 200,
+  });
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("nonexistent-topic-xyz", { maxResults: 5 });
+  assert.equal(res.error, undefined, "schema-recognized empty must NOT be an error");
+  assert.deepEqual(res.items, []);
+  assert.equal(res.retrievalMode, "native-browser");
+});
+
+test("P7.2-A: captured 401/403 maps to auth-expired (never fake 0 results)", async () => {
+  const { page } = pageWithCapture({
+    state: "captured",
+    json: { errors: [{ message: "Forbidden" }] },
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 403,
+  });
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("openai");
+  assert.equal(res.error?.code, "auth-expired");
+  assert.equal(res.error?.retryable, false);
+});
+
+test("P7.2-A: login redirect detected and mapped to auth-expired", async () => {
+  const { page } = pageWithCapture({
+    state: "captured",
+    json: {},
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 200,
+  });
+  // Override evaluate to simulate a login redirect page
+  (page as any).evaluate = async () => "https://x.com/i/flow/login";
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("openai");
+  assert.equal(res.error?.code, "auth-expired");
+});
+
+test("P7.2-A: capture timeout falls back to DOM; empty DOM yields parse-failed", async () => {
+  const { page } = pageWithCapture({ state: "timeout" });
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("openai", { maxResults: 5 });
+  assert.equal(res.error?.code, "parse-failed", "no DOM tweets → parse-failed so registry can fall back");
+});
+
+test("P7.2-A: captured but schema unrecognized + empty DOM yields parse-failed (not fake 0)", async () => {
+  const weirdJson = { totally: "different-envelope" };
+  const { page } = pageWithCapture({
+    state: "captured",
+    json: weirdJson,
+    url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+    status: 200,
+  });
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).search("openai");
+  assert.equal(res.error?.code, "parse-failed");
 });

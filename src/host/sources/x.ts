@@ -1,8 +1,9 @@
-import { createNativeBrowserRuntime, type NativeBrowserRuntime } from "../browser/index.ts";
+import { createNativeBrowserRuntime, type NativeBrowserRuntime, type CdpPageLease } from "../browser/index.ts";
 import {
   extractVisibleXTweets,
   type XTweetExtraction,
 } from "./browser-scripts/x.ts";
+import { extractTweetsFromSearchTimeline, isSearchTimelineResponse } from "./x/normalize.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -11,6 +12,69 @@ import type {
   SourceFetchOutcome,
   SourceItem,
 } from "./types.ts";
+
+const LOGIN_REDIRECT_RE = /\/i\/flow\/login|\/account\/access|challenge/i;
+
+/** Wait for the real X search page and collect tweets via DOM (fallback path). */
+async function collectTweetsViaDom(
+  page: CdpPageLease,
+  maxResults: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  try {
+    await page.waitForSelector("article[data-testid='tweet']", 8000, signal);
+  } catch {
+    // Empty search result or loading slow
+  }
+
+  const collectedMap = new Map<string, SourceItem>();
+  let noNewCount = 0;
+  const maxScrolls = 6;
+
+  for (let s = 0; s < maxScrolls; s++) {
+    if (signal?.aborted) break;
+
+    const batch: XTweetExtraction[] = await page.call(extractVisibleXTweets, [], signal);
+    let addedThisBatch = 0;
+
+    for (const item of batch) {
+      if (!collectedMap.has(item.id)) {
+        collectedMap.set(item.id, {
+          id: item.id,
+          title: item.text.slice(0, 80) || "X Tweet",
+          url: item.url,
+          snippet: item.text,
+          author: item.authorHandle
+            ? { name: item.authorName || item.authorHandle, handle: item.authorHandle }
+            : undefined,
+          publishedAt: item.publishedAt,
+          likes: item.likes,
+          retweets: item.retweets,
+          replies: item.replies,
+          platform: "x",
+        });
+        addedThisBatch++;
+      }
+    }
+
+    if (collectedMap.size >= maxResults) break;
+
+    if (addedThisBatch === 0) {
+      noNewCount++;
+      if (noNewCount >= 2) break;
+    } else {
+      noNewCount = 0;
+    }
+
+    await page.scrollBy(700, signal);
+  }
+
+  return Array.from(collectedMap.values()).slice(0, maxResults);
+}
+
+function isExpiredSessionResponse(status: number): boolean {
+  return status === 401 || status === 403;
+}
 
 export function parseXMetricNumber(text?: string): number | undefined {
   if (!text) return undefined;
@@ -94,66 +158,71 @@ export class XSource implements SpecializedSource {
 
     let page;
     try {
-      page = await this.runtime.openPage("x", searchUrl, signal);
+      // Blank attached page — capture listeners must be in place BEFORE the
+      // SPA fires SearchTimeline, so openPage() (which navigates eagerly) is
+      // not usable here.
+      page = await this.runtime.createPage("x", signal);
     } catch (err: any) {
-      if (err.name === "UrlDisallowedError") {
-        return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
-      }
       return { items: [], error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
 
     try {
-      await page.waitForLoad(signal);
-      try {
-        await page.waitForSelector("article[data-testid='tweet']", 8000, signal);
-      } catch {
-        // Empty search result or loading slow
-      }
+      // PRIMARY: capture the SearchTimeline GraphQL response over CDP.
+      const capture = await page.beginJsonCapture({
+        urlIncludes: "/SearchTimeline",
+        timeoutMs: 8000,
+        signal,
+      });
+      await page.navigate(searchUrl, signal);
+      const outcome = await capture.wait();
 
-      const collectedMap = new Map<string, SourceItem>();
-      let noNewCount = 0;
-      const maxScrolls = 6;
+      if (outcome.state === "captured") {
+        // Session can exist in cookies but be dead server-side — never fake 0.
+        if (isExpiredSessionResponse(outcome.status)) {
+          return {
+            items: [],
+            error: { code: "auth-expired", message: `X search returned HTTP ${outcome.status}`, retryable: false },
+          };
+        }
 
-      for (let s = 0; s < maxScrolls; s++) {
-        if (signal?.aborted) break;
-
-        const batch: XTweetExtraction[] = await page.call(extractVisibleXTweets, [], signal);
-        let addedThisBatch = 0;
-
-        for (const item of batch) {
-          if (!collectedMap.has(item.id)) {
-            collectedMap.set(item.id, {
-              id: item.id,
-              title: item.text.slice(0, 80) || "X Tweet",
-              url: item.url,
-              snippet: item.text,
-              author: item.authorHandle
-                ? { name: item.authorName || item.authorHandle, handle: item.authorHandle }
-                : undefined,
-              publishedAt: item.publishedAt,
-              likes: item.likes,
-              retweets: item.retweets,
-              replies: item.replies,
-              platform: "x",
-            });
-            addedThisBatch++;
+        try {
+          const pageUrl = await page.evaluate<string>("window.location.href", signal);
+          if (LOGIN_REDIRECT_RE.test(pageUrl)) {
+            return {
+              items: [],
+              error: { code: "auth-expired", message: "X redirected to the login flow", retryable: false },
+            };
           }
+        } catch {
+          // URL check is best-effort
         }
 
-        if (collectedMap.size >= maxResults) break;
-
-        if (addedThisBatch === 0) {
-          noNewCount++;
-          if (noNewCount >= 2) break;
-        } else {
-          noNewCount = 0;
+        const schemaRecognized = isSearchTimelineResponse(outcome.json);
+        const items = extractTweetsFromSearchTimeline(outcome.json);
+        if (schemaRecognized) {
+          if (items.length > 0) {
+            return { items: items.slice(0, maxResults), retrievalMode: "native-browser" };
+          }
+          // Captured + recognized schema + 0 tweets is a REAL empty result set.
+          // DOM supplement once; if the DOM also sees nothing, this is a valid 0.
+          const domItems = await collectTweetsViaDom(page, maxResults, signal);
+          return { items: domItems, retrievalMode: "native-browser" };
         }
 
-        await page.scrollBy(700, signal);
+        // Captured but schema NOT recognized (X changed the envelope) → the
+        // GraphQL path is dead; fall through to DOM so general-web fallback
+        // still has a chance to run if the DOM is also empty.
       }
 
-      const items = Array.from(collectedMap.values()).slice(0, maxResults);
-      return { items };
+      // Capture failed or schema unrecognized → DOM fallback.
+      const domItems = await collectTweetsViaDom(page, maxResults, signal);
+      if (domItems.length > 0) {
+        return { items: domItems, retrievalMode: "native-browser" };
+      }
+      return {
+        items: [],
+        error: { code: "parse-failed", message: "X search produced no GraphQL response and no DOM tweets", retryable: true },
+      };
     } catch (err: any) {
       return { items: [], error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {

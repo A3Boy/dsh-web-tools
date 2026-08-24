@@ -47,6 +47,7 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
       return null as any;
     },
     scrollBy: async () => {},
+    beginJsonCapture: async () => ({ wait: async () => ({ state: "captured" as const, json: {}, url: "", status: 200 }), cancel: () => {} }),
     close: async () => {},
   };
 
@@ -63,6 +64,7 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
     checkAuthentication: async () => true,
     verifyAuthenticationForOperation: async () => true,
     openPage: async () => fakePage,
+    createPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
@@ -114,6 +116,10 @@ test("XiaohongshuSource: returns auth-required without opening page when unauthe
     openPage: async () => {
       openPageCalled = true;
       throw new Error("Should not open page");
+    },
+    createPage: async () => {
+      openPageCalled = true;
+      throw new Error("Should not create page");
     },
     resetSession: async () => {},
     stop: async () => {},

@@ -350,10 +350,23 @@ export class SessionManager implements NativeBrowserRuntime {
       throw new UrlDisallowedError(url, platform);
     }
 
+    const page = await this.createPage(platform, signal);
+    await page.navigate(url, signal);
+    return page;
+  }
+
+  /**
+   * Create a blank (about:blank) attached page WITHOUT navigating. This is the
+   * only way to install network capture listeners before the platform SPA
+   * fires its API requests (e.g. X SearchTimeline fires immediately on boot).
+   */
+  async createPage(
+    platform: BrowserPlatform,
+    signal?: AbortSignal,
+  ): Promise<CdpPageLease> {
     const session = await this.ensureSession(platform, undefined, false, signal);
     this.resetIdleTimer(session);
 
-    // Create target in browser
     const createRes = await session.cdp.send<{ targetId: string }>(
       "Target.createTarget",
       { url: "about:blank" },
@@ -370,7 +383,7 @@ export class SessionManager implements NativeBrowserRuntime {
     );
     const sessionId = attachRes.sessionId;
 
-    const page = new CdpPage(targetId, sessionId, session.cdp, async () => {
+    return new CdpPage(targetId, sessionId, session.cdp, async () => {
       try {
         await session.cdp.send("Target.closeTarget", { targetId });
       } catch {
@@ -378,9 +391,6 @@ export class SessionManager implements NativeBrowserRuntime {
       }
       this.resetIdleTimer(session);
     });
-
-    await page.navigate(url, signal);
-    return page;
   }
 
   private async ensureSession(

@@ -1,4 +1,4 @@
-import type { CdpPageLease } from "../types.ts";
+import type { CdpPageLease, JsonCaptureHandle, NetworkCaptureOptions } from "../types.ts";
 import { CdpClient } from "./client.ts";
 export declare class CdpPage implements CdpPageLease {
     readonly targetId: string;
@@ -12,5 +12,12 @@ export declare class CdpPage implements CdpPageLease {
     evaluate<T>(expression: string, signal?: AbortSignal): Promise<T>;
     call<T>(fn: (...args: any[]) => T, args?: unknown[], signal?: AbortSignal): Promise<T>;
     scrollBy(pixels: number, signal?: AbortSignal): Promise<void>;
+    /**
+     * Install a JSON network capture BEFORE navigation, scoped to THIS page
+     * session (flattened sessions on the same browser must never leak into each
+     * other). Flow: Network.enable → responseReceived (match url substring) →
+     * loadingFinished (same requestId) → Network.getResponseBody → JSON.parse.
+     */
+    beginJsonCapture(options: NetworkCaptureOptions): Promise<JsonCaptureHandle>;
     close(): Promise<void>;
 }

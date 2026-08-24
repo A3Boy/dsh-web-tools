@@ -1,4 +1,4 @@
-import type { CdpPageLease } from "../types.ts";
+import type { CdpPageLease, JsonCaptureHandle, NetworkCaptureOptions, NetworkCaptureOutcome } from "../types.ts";
 import { CdpClient } from "./client.ts";
 import { NavigationTimeoutError, SelectorTimeoutError } from "./errors.ts";
 
@@ -124,6 +124,111 @@ export class CdpPage implements CdpPageLease {
   async scrollBy(pixels: number, signal?: AbortSignal): Promise<void> {
     await this.evaluate(`window.scrollBy({ top: ${pixels}, behavior: 'smooth' })`, signal);
     await new Promise((r) => setTimeout(r, 400));
+  }
+
+  /**
+   * Install a JSON network capture BEFORE navigation, scoped to THIS page
+   * session (flattened sessions on the same browser must never leak into each
+   * other). Flow: Network.enable → responseReceived (match url substring) →
+   * loadingFinished (same requestId) → Network.getResponseBody → JSON.parse.
+   */
+  async beginJsonCapture(options: NetworkCaptureOptions): Promise<JsonCaptureHandle> {
+    const { urlIncludes, timeoutMs = 6000, signal } = options;
+
+    // Enable the Network domain on this page session BEFORE any navigation —
+    // X's SPA fires SearchTimeline immediately after the page boots, so a late
+    // Network.enable misses the request entirely.
+    await this.client.send("Network.enable", {}, this.sessionId, signal);
+
+    let settled: NetworkCaptureOutcome | null = null;
+    let resolveWait: ((outcome: NetworkCaptureOutcome) => void) | null = null;
+    let timer: NodeJS.Timeout | undefined;
+    const cleanupFns: Array<() => void> = [];
+
+    const latestForRequest = new Map<string, { url: string; status: number }>();
+
+    const settle = (outcome: NetworkCaptureOutcome) => {
+      if (settled) return;
+      settled = outcome;
+      if (timer) clearTimeout(timer);
+      for (const fn of cleanupFns) fn();
+      if (resolveWait) {
+        const r = resolveWait;
+        resolveWait = null;
+        r(outcome);
+      }
+    };
+
+    const unsubResponse = this.client.on(
+      "Network.responseReceived",
+      (params: any, eventSessionId?: string) => {
+        if (settled) return;
+        if (eventSessionId !== this.sessionId) return;
+        const url: string = params?.response?.url || "";
+        if (!url.includes(urlIncludes)) return;
+        latestForRequest.set(params?.requestId, {
+          url,
+          status: params?.response?.status ?? 0,
+        });
+      },
+    );
+    cleanupFns.push(unsubResponse);
+
+    const unsubLoading = this.client.on(
+      "Network.loadingFinished",
+      async (params: any, eventSessionId?: string) => {
+        if (settled) return;
+        if (eventSessionId !== this.sessionId) return;
+        const requestId: string = params?.requestId;
+        if (!requestId || !latestForRequest.has(requestId)) return;
+
+        const matched = latestForRequest.get(requestId)!;
+        let outcome: NetworkCaptureOutcome;
+        try {
+          const body = await this.client.send<{ body: string; base64Encoded: boolean }>(
+            "Network.getResponseBody",
+            { requestId },
+            this.sessionId,
+            signal,
+          );
+          const raw = body.base64Encoded
+            ? Buffer.from(body.body, "base64").toString("utf8")
+            : body.body;
+          try {
+            outcome = { state: "captured", json: JSON.parse(raw), url: matched.url, status: matched.status };
+          } catch {
+            outcome = { state: "invalid-json" };
+          }
+        } catch {
+          outcome = { state: "body-unavailable" };
+        }
+        settle(outcome);
+      },
+    );
+    cleanupFns.push(unsubLoading);
+
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => settle({ state: "timeout" }), timeoutMs);
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        settle({ state: "timeout" });
+      } else {
+        const onAbort = () => settle({ state: "timeout" });
+        signal.addEventListener("abort", onAbort, { once: true });
+        cleanupFns.push(() => signal.removeEventListener("abort", onAbort));
+      }
+    }
+
+    return {
+      wait: () =>
+        new Promise<NetworkCaptureOutcome>((resolve) => {
+          if (settled) return resolve(settled);
+          resolveWait = resolve;
+        }),
+      cancel: () => settle({ state: "timeout" }),
+    };
   }
 
   async close(): Promise<void> {

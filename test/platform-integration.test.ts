@@ -22,6 +22,9 @@ test("Integration: web_search on Xiaohongshu query routes via XHS source and deg
     openPage: async () => {
       throw new Error("search must NOT open browser in production");
     },
+    createPage: async () => {
+      throw new Error("search must NOT open browser in production");
+    },
     resetSession: async () => {},
     stop: async () => {},
     dispose: async () => {},
