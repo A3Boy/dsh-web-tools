@@ -24,8 +24,17 @@ export interface XSearchTimelineResponse {
   errors?: Array<{ message: string; code?: number }>;
 }
 
+export interface XTweetDetailResponse {
+  data?: {
+    threaded_conversation_with_injections_v2?: {
+      instructions?: XTimelineInstruction[];
+    };
+  };
+  errors?: Array<{ message: string; code?: number }>;
+}
+
 export interface XTimelineInstruction {
-  /** e.g. "TimelineAddEntries" | "TimelinePinEntry" | "TimelineReplaceEntry" */
+  /** e.g. "TimelineAddEntries" | "TimelinePinEntry" | "TimelineReplaceEntry" | "TimelineClearCache" */
   type?: string;
   __typename?: string;
   entries?: XTimelineEntry[];
@@ -43,6 +52,13 @@ export interface XTimelineEntry {
       tweetDisplayType?: string;
       tweet_results?: { result?: XTweetResult };
     };
+    items?: Array<{
+      item?: {
+        itemContent?: {
+          tweet_results?: { result?: XTweetResult };
+        };
+      };
+    }>;
   };
 }
 

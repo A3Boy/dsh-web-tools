@@ -344,3 +344,101 @@ test("P7.2-A: captured but schema unrecognized + empty DOM yields parse-failed (
   const res = await new XSource(runtime).search("openai");
   assert.equal(res.error?.code, "parse-failed");
 });
+
+test("P7.2-B: fetch uses GraphQL PRIMARY matching exact targetTweetId from TweetDetail", async () => {
+  const detailFixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-tweetdetail.json"), "utf-8"),
+  );
+  const { page, closes } = pageWithCapture({
+    state: "captured",
+    json: detailFixture,
+    url: "https://x.com/i/api/graphql/abc/TweetDetail",
+    status: 200,
+  });
+  const { runtime, createPageCalls } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+
+  const res = await xSource.fetch("https://x.com/thsottiaux/status/2091688655828246890");
+  assert.equal(createPageCalls.count, 1, "fetch must use createPage + beginJsonCapture");
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.item?.id, "2091688655828246890");
+  assert.equal(res.item?.author?.name, "Tibo");
+  assert.equal(res.item?.author?.handle, "@thsottiaux");
+  assert.ok(res.item?.text?.startsWith("Good Sunday"));
+  assert.equal(closes.called, true);
+});
+
+test("P7.2-B: fetch falls back to DOM and matches EXACT ID (rejects batch[0] mismatch)", async () => {
+  const { page } = pageWithCapture({ state: "timeout" });
+  // DOM returns 2 tweets: first is a parent tweet (mismatch), second is the target tweet
+  (page as any).call = async (fn: any) => {
+    if (fn.name === "extractVisibleXTweets") {
+      return [
+        { id: "parent_tweet_000", url: "https://x.com/parent/status/parent_tweet_000", text: "Parent tweet" },
+        { id: "2091688655828246890", url: "https://x.com/thsottiaux/status/2091688655828246890", text: "Exact target tweet" },
+      ];
+    }
+    return [];
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).fetch("https://x.com/thsottiaux/status/2091688655828246890");
+  assert.equal(res.error, undefined);
+  assert.equal(res.item?.id, "2091688655828246890");
+  assert.equal(res.item?.text, "Exact target tweet", "Must match exact ID rather than blindly taking batch[0]");
+});
+
+test("P7.2-B: fetch returns parse-failed if exact ID not found in DOM fallback", async () => {
+  const { page } = pageWithCapture({ state: "timeout" });
+  (page as any).call = async () => [
+    { id: "unrelated_999", url: "https://x.com/other/status/unrelated_999", text: "Unrelated tweet" },
+  ];
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).fetch("https://x.com/thsottiaux/status/2091688655828246890");
+  assert.equal(res.error?.code, "parse-failed");
+  assert.ok(res.error?.message.includes("2091688655828246890"));
+});
+
+test("P7.2-B: fetch maps 401/403 and login redirect to auth-expired", async () => {
+  const { page } = pageWithCapture({
+    state: "captured",
+    json: { errors: [{ message: "Unauthorized" }] },
+    url: "https://x.com/i/api/graphql/abc/TweetDetail",
+    status: 401,
+  });
+  const { runtime } = runtimeWithPage(page);
+  const res = await new XSource(runtime).fetch("https://x.com/thsottiaux/status/2091688655828246890");
+  assert.equal(res.error?.code, "auth-expired");
+});
+
+test("P7.2-B: fetch returns aborted error when signal is aborted", async () => {
+  const ac = new AbortController();
+  const { page } = pageWithCapture({ state: "aborted" });
+  const { runtime } = runtimeWithPage(page);
+  ac.abort();
+  const res = await new XSource(runtime).fetch("https://x.com/thsottiaux/status/2091688655828246890", ac.signal);
+  assert.equal(res.error?.code, "aborted");
+});
+
+test("P7.2-B: fetch rejects invalid status URLs before opening browser", async () => {
+  let createPageCalled = false;
+  const runtime: NativeBrowserRuntime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({} as any),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => ({} as any),
+    createPage: async () => {
+      createPageCalled = true;
+      return {} as any;
+    },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  };
+  const res = await new XSource(runtime).fetch("https://x.com/home");
+  assert.equal(createPageCalled, false, "Must not create browser page for non-tweet URL");
+  assert.equal(res.error?.code, "parse-failed");
+});

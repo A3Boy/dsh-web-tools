@@ -2,6 +2,7 @@ import type { SourceItem } from "../types.ts";
 import type {
   XSearchTimelineResponse,
   XTimelineInstruction,
+  XTweetDetailResponse,
   XTweetResult,
   XUserResult,
 } from "./types.ts";
@@ -12,11 +13,28 @@ const TIMELINE_INSTRUCTION_TYPES = [
   "TimelineReplaceEntry",
 ];
 
+/** Extract the numeric status / tweet ID from a tweet URL. */
+export function extractTweetIdFromUrl(url: string): string | undefined {
+  if (!url) return undefined;
+  const match = url.match(/status\/(\d+)/);
+  return match ? match[1] : undefined;
+}
+
 /** Recognize the SearchTimeline envelope shape (lenient: missing pieces are ok). */
 export function isSearchTimelineResponse(value: unknown): value is XSearchTimelineResponse {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
   if (!Array.isArray((v as any).data?.search_by_raw_query?.search_timeline?.timeline?.instructions)) {
+    return false;
+  }
+  return true;
+}
+
+/** Recognize the TweetDetail envelope shape. */
+export function isTweetDetailResponse(value: unknown): value is XTweetDetailResponse {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray((v as any).data?.threaded_conversation_with_injections_v2?.instructions)) {
     return false;
   }
   return true;
@@ -152,4 +170,49 @@ export function extractTweetsFromSearchTimeline(value: unknown): SourceItem[] {
   }
 
   return items;
+}
+
+/**
+ * PRIMARY X fetch extraction: locate the EXACT focal tweet matching targetTweetId
+ * from a TweetDetail GraphQL response. Checks both direct TimelineTimelineItem
+ * entries and conversation thread module items, unwrapping visibility results.
+ */
+export function extractTweetFromTweetDetail(
+  value: unknown,
+  targetTweetId: string,
+): SourceItem | undefined {
+  if (!isTweetDetailResponse(value) || !targetTweetId) return undefined;
+  const instructions: XTimelineInstruction[] =
+    value.data?.threaded_conversation_with_injections_v2?.instructions || [];
+
+  for (const instruction of instructions) {
+    const type = instruction.type || instruction.__typename || "";
+    if (!TIMELINE_INSTRUCTION_TYPES.some((t) => type.includes(t))) continue;
+
+    for (const entry of instruction.entries || []) {
+      // 1. Direct tweet item
+      const directResult = entry.content?.itemContent?.tweet_results?.result;
+      if (directResult) {
+        const unwrapped = unwrapTweetResult(directResult);
+        if (unwrapped?.rest_id === targetTweetId) {
+          return normalizeTweet(unwrapped);
+        }
+      }
+
+      // 2. Thread / module items (replies, conversation items)
+      if (entry.content?.items) {
+        for (const modItem of entry.content.items) {
+          const itemResult = modItem.item?.itemContent?.tweet_results?.result;
+          if (itemResult) {
+            const unwrapped = unwrapTweetResult(itemResult);
+            if (unwrapped?.rest_id === targetTweetId) {
+              return normalizeTweet(unwrapped);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return undefined;
 }

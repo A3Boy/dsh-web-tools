@@ -4,8 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  extractTweetFromTweetDetail,
+  extractTweetIdFromUrl,
   extractTweetsFromSearchTimeline,
   isSearchTimelineResponse,
+  isTweetDetailResponse,
   normalizeTweet,
   parseXDateToken,
   unwrapTweetResult,
@@ -211,4 +214,84 @@ test("P7.2-A: unsupported instruction types are skipped (no false positives)", (
   };
   const items = extractTweetsFromSearchTimeline(envelope);
   assert.equal(items.length, 0, "only add/pin/replace instructions are collected");
+});
+
+test("P7.2-B: extractTweetIdFromUrl parses tweet IDs reliably", () => {
+  assert.equal(extractTweetIdFromUrl("https://x.com/thsottiaux/status/2091688655828246890"), "2091688655828246890");
+  assert.equal(extractTweetIdFromUrl("https://twitter.com/i/status/123456789?s=20"), "123456789");
+  assert.equal(extractTweetIdFromUrl("https://x.com/home"), undefined);
+  assert.equal(extractTweetIdFromUrl(""), undefined);
+});
+
+test("P7.2-B: extracts focal tweet from live TweetDetail fixture", () => {
+  const detailFixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-tweetdetail.json"), "utf-8"),
+  );
+  assert.equal(isTweetDetailResponse(detailFixture), true);
+
+  const focal = extractTweetFromTweetDetail(detailFixture, "2091688655828246890");
+  assert.ok(focal, "must find focal tweet by ID");
+  assert.equal(focal.id, "2091688655828246890");
+  assert.equal(focal.author?.name, "Tibo");
+  assert.equal(focal.author?.handle, "@thsottiaux");
+  assert.ok(focal.text!.startsWith("Good Sunday"));
+  assert.equal(focal.likes, 7470);
+  assert.equal(focal.platform, "x");
+
+  // Mismatch returns undefined
+  const missing = extractTweetFromTweetDetail(detailFixture, "non_existent_id");
+  assert.equal(missing, undefined);
+});
+
+test("P7.2-B: extracts nested conversation thread replies by target ID", () => {
+  const threadFixture = {
+    data: {
+      threaded_conversation_with_injections_v2: {
+        instructions: [
+          {
+            type: "TimelineAddEntries",
+            entries: [
+              {
+                entryId: "conversationthread-1",
+                content: {
+                  items: [
+                    {
+                      item: {
+                        itemContent: {
+                          tweet_results: {
+                            result: {
+                              __typename: "Tweet",
+                              rest_id: "reply_999",
+                              legacy: {
+                                full_text: "This is a nested thread reply",
+                                created_at: "Mon Aug 24 01:00:00 +0000 2026",
+                                favorite_count: 5,
+                              },
+                              core: {
+                                user_results: {
+                                  result: {
+                                    core: { name: "Replier", screen_name: "replier" },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+
+  const item = extractTweetFromTweetDetail(threadFixture, "reply_999");
+  assert.ok(item);
+  assert.equal(item.id, "reply_999");
+  assert.equal(item.author?.name, "Replier");
+  assert.equal(item.text, "This is a nested thread reply");
 });

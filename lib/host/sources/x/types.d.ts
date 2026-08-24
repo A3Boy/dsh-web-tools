@@ -25,8 +25,19 @@ export interface XSearchTimelineResponse {
         code?: number;
     }>;
 }
+export interface XTweetDetailResponse {
+    data?: {
+        threaded_conversation_with_injections_v2?: {
+            instructions?: XTimelineInstruction[];
+        };
+    };
+    errors?: Array<{
+        message: string;
+        code?: number;
+    }>;
+}
 export interface XTimelineInstruction {
-    /** e.g. "TimelineAddEntries" | "TimelinePinEntry" | "TimelineReplaceEntry" */
+    /** e.g. "TimelineAddEntries" | "TimelinePinEntry" | "TimelineReplaceEntry" | "TimelineClearCache" */
     type?: string;
     __typename?: string;
     entries?: XTimelineEntry[];
@@ -45,6 +56,15 @@ export interface XTimelineEntry {
                 result?: XTweetResult;
             };
         };
+        items?: Array<{
+            item?: {
+                itemContent?: {
+                    tweet_results?: {
+                        result?: XTweetResult;
+                    };
+                };
+            };
+        }>;
     };
 }
 /** A tweet can be wrapped in visibility results; unwrap before reading. */

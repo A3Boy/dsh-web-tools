@@ -3,7 +3,13 @@ import {
   extractVisibleXTweets,
   type XTweetExtraction,
 } from "./browser-scripts/x.ts";
-import { extractTweetsFromSearchTimeline, isSearchTimelineResponse } from "./x/normalize.ts";
+import {
+  extractTweetFromTweetDetail,
+  extractTweetIdFromUrl,
+  extractTweetsFromSearchTimeline,
+  isSearchTimelineResponse,
+  isTweetDetailResponse,
+} from "./x/normalize.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -247,6 +253,12 @@ export class XSource implements SpecializedSource {
         error: { code: "parse-failed", message: "X search produced no GraphQL response and no DOM tweets", retryable: true },
       };
     } catch (err: any) {
+      if (signal?.aborted) {
+        return {
+          items: [],
+          error: { code: "aborted", message: "Search operation was aborted", retryable: false },
+        };
+      }
       if (err.name === "UrlDisallowedError") {
         return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
       }
@@ -263,43 +275,105 @@ export class XSource implements SpecializedSource {
       return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
     }
 
+    const targetTweetId = extractTweetIdFromUrl(url);
+    if (!targetTweetId) {
+      return { error: { code: "parse-failed", message: `Invalid X status URL: "${url}"`, retryable: false } };
+    }
+
     let page;
+    let capture;
     try {
-      page = await this.runtime.openPage("x", url, signal);
+      page = await this.runtime.createPage("x", signal);
     } catch (err: any) {
+      if (err.name === "UrlDisallowedError") {
+        return { error: { code: "blocked", message: err.message, retryable: false } };
+      }
       return { error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
 
     try {
+      // PRIMARY: capture TweetDetail GraphQL response over CDP.
+      capture = await page.beginJsonCapture({
+        urlIncludes: "/TweetDetail",
+        timeoutMs: 8000,
+        signal,
+      });
+      await page.navigate(url, signal);
+      const outcome = await capture.wait();
+
+      if (signal?.aborted || outcome.state === "aborted") {
+        return { error: { code: "aborted", message: "Fetch operation was aborted", retryable: false } };
+      }
+
+      if (outcome.state === "captured" && isExpiredSessionResponse(outcome.status)) {
+        return { error: { code: "auth-expired", message: `X tweet fetch returned HTTP ${outcome.status}`, retryable: false } };
+      }
+
+      try {
+        const pageUrl = await page.evaluate<string>("window.location.href", signal);
+        if (LOGIN_REDIRECT_RE.test(pageUrl)) {
+          return { error: { code: "auth-expired", message: "X redirected to the login flow", retryable: false } };
+        }
+      } catch {
+        // Best-effort URL check
+      }
+
+      if (outcome.state === "captured" && isTweetDetailResponse(outcome.json)) {
+        const target = extractTweetFromTweetDetail(outcome.json, targetTweetId);
+        if (target) {
+          return { item: target, retrievalMode: "native-browser" };
+        }
+      }
+
+      // FALLBACK: DOM extraction matching the EXACT targetTweetId
       await page.waitForLoad(signal);
-      await page.waitForSelector("article[data-testid='tweet']", 8000, signal);
+      try {
+        await page.waitForSelector("article[data-testid='tweet']", 8000, signal);
+      } catch {
+        // Slow or empty DOM
+      }
 
       const batch: XTweetExtraction[] = await page.call(extractVisibleXTweets, [], signal);
-      const target = batch[0];
+      const matched = batch.find((item) => item.id === targetTweetId);
 
-      if (!target) {
-        return { error: { code: "parse-failed", message: "Target tweet not found in page", retryable: true } };
+      if (!matched) {
+        return {
+          error: {
+            code: "parse-failed",
+            message: `Target tweet ${targetTweetId} not found in page`,
+            retryable: true,
+          },
+        };
       }
 
       return {
         item: {
-          id: target.id,
-          title: target.text.slice(0, 80) || "X Tweet",
-          url: target.url,
-          text: target.text,
-          author: target.authorHandle
-            ? { name: target.authorName || target.authorHandle, handle: target.authorHandle }
+          id: matched.id,
+          title: matched.text.slice(0, 80) || "X Tweet",
+          url: matched.url,
+          text: matched.text,
+          snippet: matched.text,
+          author: matched.authorHandle
+            ? { name: matched.authorName || matched.authorHandle, handle: matched.authorHandle }
             : undefined,
-          publishedAt: target.publishedAt,
-          likes: target.likes,
-          retweets: target.retweets,
-          replies: target.replies,
+          publishedAt: matched.publishedAt,
+          likes: matched.likes,
+          retweets: matched.retweets,
+          replies: matched.replies,
           platform: "x",
         },
+        retrievalMode: "native-browser",
       };
     } catch (err: any) {
+      if (signal?.aborted) {
+        return { error: { code: "aborted", message: "Fetch operation was aborted", retryable: false } };
+      }
+      if (err.name === "UrlDisallowedError") {
+        return { error: { code: "blocked", message: err.message, retryable: false } };
+      }
       return { error: { code: "parse-failed", message: err.message, retryable: true } };
     } finally {
+      capture?.cancel();
       await page.close();
     }
   }
