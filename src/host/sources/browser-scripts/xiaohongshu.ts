@@ -206,6 +206,15 @@ export function extractXhsNoteDetail(): {
   const descEl = document.querySelector("#detail-desc") || document.querySelector(".desc") || document.querySelector(".content");
   const text = descEl ? (descEl.textContent || "").trim() : undefined;
 
+  const restrictionCopy = `${document.title || ""}\n${title || ""}\n${text || ""}`;
+  if (
+    isSecurity ||
+    title === "安全限制" ||
+    /IP存在风险|访问受限|异常访问|操作频繁/.test(restrictionCopy)
+  ) {
+    return { isBlocked: true };
+  }
+
   const authorEl = document.querySelector(".author-container .name") || document.querySelector(".author .name");
   const authorName = authorEl ? (authorEl.textContent || "").trim() : undefined;
 

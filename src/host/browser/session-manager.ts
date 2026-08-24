@@ -160,6 +160,7 @@ export class SessionManager implements NativeBrowserRuntime {
   async verifyAuthenticationForOperation(
     platform: BrowserPlatform,
     signal?: AbortSignal,
+    mode: BrowserRunMode = "headless",
   ): Promise<boolean> {
     const meta = this.profileStore.loadMetadata(platform);
     if (!meta || !meta.sessionEstablished) {
@@ -167,7 +168,7 @@ export class SessionManager implements NativeBrowserRuntime {
     }
 
     try {
-      const session = await this.acquireSession(platform, "headless", undefined, signal);
+      const session = await this.acquireSession(platform, mode, undefined, signal);
       const isAuth = await this.internalCheckAuth(session);
       if (isAuth) {
         this.profileStore.saveMetadata(platform, {
@@ -437,12 +438,13 @@ export class SessionManager implements NativeBrowserRuntime {
     platform: BrowserPlatform,
     url: string,
     signal?: AbortSignal,
+    mode: BrowserRunMode = "headless",
   ): Promise<CdpPageLease> {
     if (!validatePlatformUrl(url, platform)) {
       throw new UrlDisallowedError(url, platform);
     }
 
-    const page = await this.createPage(platform, signal);
+    const page = await this.createPage(platform, signal, mode);
     try {
       await page.navigate(url, signal);
       return page;
@@ -455,6 +457,7 @@ export class SessionManager implements NativeBrowserRuntime {
   async createPage(
     platform: BrowserPlatform,
     signal?: AbortSignal,
+    mode: BrowserRunMode = "headless",
   ): Promise<CdpPageLease> {
     if (this.disposed) throw new Error("NativeBrowserRuntime is disposed");
     if (signal?.aborted) throw new Error("createPage aborted");
@@ -463,7 +466,7 @@ export class SessionManager implements NativeBrowserRuntime {
     this.retainLease(rec);
 
     try {
-      const session = await this.acquireSession(platform, "headless", undefined, signal);
+      const session = await this.acquireSession(platform, mode, undefined, signal);
 
       const createRes = await session.cdp.send<{ targetId: string }>(
         "Target.createTarget",
@@ -579,7 +582,7 @@ export class SessionManager implements NativeBrowserRuntime {
 
       let spawned: SpawnedBrowserProcess;
       try {
-        spawned = await this.launcher(browser, profileDir, startUrl, false, !isVisible);
+        spawned = await this.launcher(browser, profileDir, startUrl, isVisible, !isVisible);
       } catch (err) {
         rec.state = "error";
         throw err;

@@ -81,11 +81,11 @@ export interface NativeBrowserRuntime {
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
-    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal): Promise<boolean>;
-    openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
+    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<boolean>;
+    openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     /** Create a blank (about:blank) attached page WITHOUT navigating. Lets callers
      *  install network capture listeners before triggering navigation. */
-    createPage(platform: BrowserPlatform, signal?: AbortSignal): Promise<CdpPageLease>;
+    createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     resetSession(platform: BrowserPlatform): Promise<void>;
     stop(platform: BrowserPlatform): Promise<void>;
     dispose(): Promise<void>;

@@ -1,6 +1,6 @@
 import { CdpClient } from "./cdp/client.ts";
 import { type SpawnedBrowserProcess } from "./process-manager.ts";
-import type { BrowserInfo, BrowserPlatform, BrowserSessionStatus, CdpPageLease, NativeBrowserRuntime } from "./types.ts";
+import type { BrowserInfo, BrowserPlatform, BrowserRunMode, BrowserSessionStatus, CdpPageLease, NativeBrowserRuntime } from "./types.ts";
 export type ProcessLauncher = (browser: BrowserInfo, profileDir: string, initialUrl?: string, minimized?: boolean, headless?: boolean) => Promise<SpawnedBrowserProcess>;
 export type CdpClientFactory = (port: number, signal?: AbortSignal) => Promise<CdpClient>;
 export type PidChecker = (pid: number) => boolean;
@@ -21,13 +21,13 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private enqueue;
     detect(): Promise<BrowserInfo | null>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
-    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal): Promise<boolean>;
+    verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<boolean>;
     private internalCheckAuth;
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     private prepareInteractiveLogin;
-    openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal): Promise<CdpPageLease>;
-    createPage(platform: BrowserPlatform, signal?: AbortSignal): Promise<CdpPageLease>;
+    openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
+    createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     private retainLease;
     private releaseLease;
     private scheduleIdleTimer;

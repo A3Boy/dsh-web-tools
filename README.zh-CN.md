@@ -109,7 +109,7 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
   * **0 浏览器扩展、0 Playwright / Chromium 外部打包**。Cookie 由专用浏览器 Profile 管理，插件不会将其写入配置、日志或中转服务；浏览器仍会按正常认证流程发送给对应平台。
 
 * **小红书**：
-  * **笔记详情抓取 (`web_fetch`)**：无头解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL，提取笔记全文、作者及互动数据。
+  * **笔记详情抓取 (`web_fetch`)**：通过专用浏览器 Profile 解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL，提取笔记全文、作者及互动数据。
   * **搜索发现 (`web_search`)**：默认采用通用 Web 发现（`site:xiaohongshu.com`）；站内原生搜索定位为实验能力，可通过 `XHS_NATIVE_SEARCH=1` 显式开启。
 
 * **Twitter / X**：

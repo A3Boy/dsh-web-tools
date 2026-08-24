@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { apply } from "../src/host/index.ts";
+import { apply, toRoutedFetchResponse } from "../src/host/index.ts";
 
 test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async () => {
   let registeredSearchProvider: any = null;
@@ -63,4 +63,28 @@ test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async
   assert.ok(registeredFetchProvider, "Fetch provider must be registered on ctx.web");
   assert.equal(registeredSearchProvider.id, "dsh-web-tools", "Search provider id must match patch config");
   assert.equal(registeredFetchProvider.id, "dsh-web-tools-fetch", "Fetch provider id must be dsh-web-tools-fetch");
+});
+
+test("Runtime Wiring: routed fetch never turns source failures or empty content into HTTP 200", () => {
+  const url = "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228";
+
+  assert.throws(
+    () => toRoutedFetchResponse(url, {
+      error: { code: "parse-failed", message: "Could not extract note detail", retryable: true },
+    }),
+    /parse-failed.*Could not extract note detail/i,
+  );
+
+  assert.throws(
+    () => toRoutedFetchResponse(url, {
+      item: { id: url, title: "小红书笔记", url, text: "", platform: "xiaohongshu" },
+    }),
+    /empty content/i,
+  );
+
+  const response = toRoutedFetchResponse(url, {
+    item: { id: url, title: "小红书笔记", url, text: "正文", platform: "xiaohongshu" },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.content, "正文");
 });

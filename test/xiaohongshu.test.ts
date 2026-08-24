@@ -4,14 +4,19 @@ import { XiaohongshuSource, setXhsNativeSearchEnabled } from "../src/host/source
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
+  const structuredDetailNoteIds: unknown[] = [];
+  const openedModes: unknown[] = [];
+  let lastOpenedUrl = "https://www.xiaohongshu.com/explore/note123?xsec_token=token123";
   const fakePage: CdpPageLease = {
     targetId: "target-xhs",
     sessionId: "session-xhs",
     navigate: async () => {},
     waitForLoad: async () => {},
     waitForSelector: async () => {},
-    evaluate: async () => ({} as any),
-    call: async (fn: any) => {
+    evaluate: async (expression: string) => (
+      expression === "location.href" ? lastOpenedUrl : ({} as any)
+    ),
+    call: async (fn: any, args?: unknown[]) => {
       if (fn.name === "extractVisibleXhsSearch") {
         return [
           {
@@ -25,6 +30,7 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
         ];
       }
       if (fn.name === "extractXhsDetailState") {
+        structuredDetailNoteIds.push(args?.[0]);
         return {
           available: true,
           title: "结构化标题 (Primary)",
@@ -63,7 +69,11 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
     login: async () => ({} as any),
     checkAuthentication: async () => true,
     verifyAuthenticationForOperation: async () => true,
-    openPage: async () => fakePage,
+    openPage: async (_platform, _url, _signal, mode) => {
+      lastOpenedUrl = _url;
+      openedModes.push(mode);
+      return fakePage;
+    },
     createPage: async () => fakePage,
     resetSession: async () => {},
     stop: async () => {},
@@ -97,6 +107,66 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   assert.equal(fetchRes.item?.likes, 666);
   assert.equal(fetchRes.item?.collects, 188);
   assert.equal(fetchRes.item?.replies, 25);
+  assert.equal(openedModes.at(-1), "interactive", "XHS detail fetch must avoid headless risk-control");
+
+  const discoveryFetchRes = await xhs.fetch(
+    "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123&xsec_source=pc_share",
+  );
+  assert.equal(discoveryFetchRes.item?.title, "结构化标题 (Primary)");
+  assert.equal(discoveryFetchRes.item?.text, "结构化正文内容");
+  assert.equal(structuredDetailNoteIds.at(-1), "6a0ec5410000000038037228");
+});
+
+test("XiaohongshuSource: rejects an empty DOM detail instead of returning success", async () => {
+  const fakePage = {
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async () => "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123",
+    call: async (fn: { name?: string }) => {
+      if (fn.name === "extractXhsDetailState") return { available: false };
+      return { isBlocked: false };
+    },
+    close: async () => {},
+  } as unknown as CdpPageLease;
+
+  const fakeRuntime = {
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => fakePage,
+  } as unknown as NativeBrowserRuntime;
+
+  const result = await new XiaohongshuSource(fakeRuntime).fetch(
+    "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123",
+  );
+
+  assert.equal(result.item, undefined);
+  assert.equal(result.error?.code, "parse-failed");
+  assert.match(result.error?.message ?? "", /extract note detail/i);
+});
+
+test("XiaohongshuSource: rejects a detail navigation redirected away from the target note", async () => {
+  let structuredCalled = false;
+  const fakePage = {
+    waitForLoad: async () => {},
+    evaluate: async () => "https://www.xiaohongshu.com/explore",
+    call: async () => {
+      structuredCalled = true;
+      return { available: true, title: "错误推荐笔记", text: "错误正文" };
+    },
+    close: async () => {},
+  } as unknown as CdpPageLease;
+  const fakeRuntime = {
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => fakePage,
+  } as unknown as NativeBrowserRuntime;
+
+  const result = await new XiaohongshuSource(fakeRuntime).fetch(
+    "https://www.xiaohongshu.com/discovery/item/6a0ec5410000000038037228?xsec_token=token123",
+  );
+
+  assert.equal(structuredCalled, false);
+  assert.equal(result.item, undefined);
+  assert.equal(result.error?.code, "blocked");
+  assert.match(result.error?.message ?? "", /redirected away/i);
 });
 
 test("XiaohongshuSource: returns auth-required without opening page when unauthenticated", async () => {

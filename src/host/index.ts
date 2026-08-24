@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID, WebToolsWebError } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
@@ -34,6 +34,7 @@ import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
 import { extractSearchHints } from "./search-hints.ts";
+import type { SourceFetchOutcome } from "./sources/types.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -52,6 +53,28 @@ const RELEASES_API = "https://api.github.com/repos/A3Boy/dsh-web-tools/releases/
 const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
+
+export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) {
+  if (outcome.error) {
+    const error = new WebToolsWebError(
+      `platform fetch failed (${outcome.error.code}): ${outcome.error.message}`,
+    );
+    if (outcome.error.code === "aborted") error.code = "WEB_ABORTED";
+    throw error;
+  }
+
+  const content = outcome.item?.text?.trim();
+  if (!outcome.item || !content) {
+    throw new WebToolsWebError(`platform fetch returned empty content for ${url}`);
+  }
+
+  return {
+    url,
+    statusCode: 200,
+    body: { kind: "text" as const, content },
+    truncated: false,
+  };
+}
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -221,12 +244,7 @@ export function apply(ctx: WebToolsContext) {
     available: () => generalFetchProvider.available(),
     fetch: async (request: { url: string }, signal?: AbortSignal) => {
       const outcome = await sourceRegistry.fetch(request.url, signal);
-      return {
-        url: request.url,
-        statusCode: 200,
-        body: { kind: "text" as const, content: outcome.item?.text || "" },
-        truncated: false,
-      };
+      return toRoutedFetchResponse(request.url, outcome);
     },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);

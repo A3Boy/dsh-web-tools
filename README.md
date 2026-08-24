@@ -109,7 +109,7 @@ Unlike general search engines, the plugin connects directly to native social pla
   * **0 browser extensions and 0 Playwright / Chromium bundles**. Cookies remain managed by the dedicated browser profile and are not written to plugin configuration, logs, or relays; the browser still sends them to the platform during normal authenticated requests.
 
 * **Xiaohongshu**:
-  * **Note Detail Fetch (`web_fetch`)**: Headless extraction of structured `__INITIAL_STATE__` data with DOM fallback, preserving signed `xsec_token` URLs, note text, author information, and engagement metrics.
+  * **Note Detail Fetch (`web_fetch`)**: Uses the dedicated browser profile to extract structured `__INITIAL_STATE__` data with DOM fallback, preserving signed `xsec_token` URLs, note text, author information, and engagement metrics.
   * **Search Discovery (`web_search`)**: Defaults to general-web discovery (`site:xiaohongshu.com`); native in-platform search is experimental and can be enabled with `XHS_NATIVE_SEARCH=1`.
 
 * **Twitter / X**:

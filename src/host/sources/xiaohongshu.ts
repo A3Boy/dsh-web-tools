@@ -46,7 +46,7 @@ export class XiaohongshuSource implements SpecializedSource {
       sessionEstablished: sessionStatus.sessionEstablished,
       capabilities: {
         nativeSearch: isXhsNativeSearchEnabled(),  // experimental — disabled by default
-        nativeFetch: true,                          // XHS detail fetch using headless native browser
+        nativeFetch: true,                          // XHS detail fetch using the dedicated browser profile
         webSearchFallback: true,                    // general web discovery via site:xiaohongshu.com
       },
       account: sessionStatus.accountLabel
@@ -203,14 +203,21 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
-    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal);
+    const isAuth = await this.runtime.verifyAuthenticationForOperation(
+      "xiaohongshu",
+      signal,
+      "interactive",
+    );
     if (!isAuth) {
       return { error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false } };
     }
 
     let page;
     try {
-      page = await this.runtime.openPage("xiaohongshu", url, signal);
+      // Xiaohongshu currently rejects the headless browser fingerprint with an
+      // "安全限制 / IP存在风险" page even when the dedicated profile is signed in.
+      // Use the same persisted profile in a minimized interactive browser.
+      page = await this.runtime.openPage("xiaohongshu", url, signal, "interactive");
     } catch (err: any) {
       return { error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
@@ -219,32 +226,63 @@ export class XiaohongshuSource implements SpecializedSource {
       await page.waitForLoad(signal);
 
       const noteId = extractNoteIdFromUrl(url);
+      if (!noteId) {
+        return {
+          error: {
+            code: "parse-failed",
+            message: `Could not identify Xiaohongshu note ID from ${url}`,
+            retryable: false,
+          },
+        };
+      }
+
+      const finalUrl = await page.evaluate<string>("location.href", signal);
+      const finalNoteId = extractNoteIdFromUrl(finalUrl);
+      if (finalNoteId !== noteId) {
+        return {
+          error: {
+            code: "blocked",
+            message: `Xiaohongshu detail navigation redirected away from target note ${noteId}`,
+            retryable: false,
+          },
+        };
+      }
+
       let detail: any;
 
       // 1. Structured detail (PRIMARY) — poll __INITIAL_STATE__.note.noteDetailMap directly
       // Does NOT wait for DOM selectors; if structured state is present, returns immediately
-      if (noteId) {
-        const structStart = Date.now();
-        while (Date.now() - structStart < 3500) {
-          if (signal?.aborted) break;
-          try {
-            const structured = await page.call(extractXhsDetailState, [noteId], signal);
-            if (structured && structured.available && (structured.title || structured.text)) {
-              detail = structured;
-              break;
-            }
-          } catch {
-            // Retry next tick
+      const structStart = Date.now();
+      while (Date.now() - structStart < 3500) {
+        if (signal?.aborted) break;
+        try {
+          const structured = await page.call(extractXhsDetailState, [noteId], signal);
+          if (
+            structured &&
+            structured.available &&
+            (structured.title?.trim() || structured.text?.trim())
+          ) {
+            detail = structured;
+            break;
           }
-          await new Promise((r) => setTimeout(r, 250));
+        } catch {
+          // Retry next tick
         }
+        await new Promise((r) => setTimeout(r, 250));
       }
 
       // 2. DOM extraction (FALLBACK only when structured state is unavailable)
       if (!detail) {
         try {
           await page.waitForSelector("#detail-title, .title, .security-verify, #detail-desc, .desc", 5000, signal);
-          detail = await page.call(extractXhsNoteDetail, [], signal);
+          const domDetail = await page.call(extractXhsNoteDetail, [], signal);
+          if (
+            domDetail?.isBlocked ||
+            domDetail?.title?.trim() ||
+            domDetail?.text?.trim()
+          ) {
+            detail = domDetail;
+          }
         } catch {
           // DOM fallback failed
         }
@@ -255,7 +293,13 @@ export class XiaohongshuSource implements SpecializedSource {
       }
 
       if (detail.isBlocked) {
-        return { error: { code: "blocked", message: "Xiaohongshu CAPTCHA verification required", retryable: false } };
+        return {
+          error: {
+            code: "blocked",
+            message: "Xiaohongshu security verification or access restriction required",
+            retryable: false,
+          },
+        };
       }
 
       return {
@@ -263,7 +307,7 @@ export class XiaohongshuSource implements SpecializedSource {
           id: url,
           title: detail.title || "小红书笔记",
           url,
-          text: detail.text,
+          text: detail.text?.trim() || detail.title?.trim(),
           author: detail.authorName ? { name: detail.authorName, url: detail.authorUrl } : undefined,
           publishedAt: detail.publishedAt,
           likes: detail.likes,
@@ -293,8 +337,8 @@ export class XiaohongshuSource implements SpecializedSource {
 function extractNoteIdFromUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
-    // /explore/<noteId> or /search_result/<noteId>
-    const match = parsed.pathname.match(/\/(?:explore|search_result)\/([a-zA-Z0-9]+)/);
+    // /explore/<noteId>, /search_result/<noteId>, or shared /discovery/item/<noteId>
+    const match = parsed.pathname.match(/\/(?:explore|search_result|discovery\/item)\/([a-zA-Z0-9]+)/);
     return match ? match[1] : null;
   } catch {
     return null;

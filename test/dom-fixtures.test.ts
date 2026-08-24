@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractVisibleXhsSearch } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
+import { extractVisibleXhsSearch, extractXhsNoteDetail } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
 import { extractVisibleXTweets } from "../src/host/sources/browser-scripts/x.ts";
 
 test("DOM Fixture: extractVisibleXhsSearch correctly extracts note items preserving xsec_token", () => {
@@ -117,4 +117,25 @@ test("DOM Fixture: extractVisibleXTweets correctly extracts tweets with testid a
   assert.equal(results[0].likes, 15400);
   assert.equal(results[0].retweets, 3200);
   assert.equal(results[0].replies, 850);
+});
+
+test("DOM Fixture: extractXhsNoteDetail recognizes the real 安全限制 page", () => {
+  (globalThis as any).document = {
+    title: "小红书",
+    querySelector: (selector: string) => {
+      if (selector === "#detail-title" || selector === ".title") {
+        return { textContent: "安全限制" };
+      }
+      if (selector === "#detail-desc" || selector === ".desc" || selector === ".content") {
+        return { textContent: "IP存在风险，请切换可靠网络环境后重试" };
+      }
+      return null;
+    },
+    querySelectorAll: () => [],
+  };
+
+  const detail = extractXhsNoteDetail();
+  assert.equal(detail.isBlocked, true);
+  assert.equal(detail.title, undefined);
+  assert.equal(detail.text, undefined);
 });
