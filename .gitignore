@@ -25,5 +25,9 @@ Thumbs.db
 # test artifacts
 coverage/
 
+# local UI capture workspaces; publish selected documentation images in assets/
+/screenshots/
+/页面截图(部分)/
+
 # local pnpm lockfile (CI uses npm; a pnpm lock would drift from npm install)
 pnpm-lock.yaml
