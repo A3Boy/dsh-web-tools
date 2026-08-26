@@ -37,7 +37,11 @@ async function handlePlatformStatus(deps: RouteDeps): Promise<PlatformStatusResp
   if (needsVerification.length > 0) {
     const results = await Promise.allSettled(
       needsVerification.map(async (status) => {
-        const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(status.id);
+        const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(
+          status.id,
+          undefined,
+          status.id === "xiaohongshu" ? "interactive" : "headless",
+        );
         return { id: status.id, isAuth };
       }),
     );

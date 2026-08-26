@@ -1,4 +1,5 @@
 import type { XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
+export { detectXhsPageState, type XhsPageState } from "../../browser/xiaohongshu-page-state.ts";
 export interface XhsNoteExtraction {
     id: string;
     title: string;
@@ -11,10 +12,6 @@ export interface XhsNoteExtraction {
     collects?: number;
     coverImage?: string;
 }
-export type XhsPageState = "ready" | "login-wall" | "security-verification" | "signed-out";
-export declare function detectXhsPageState(): XhsPageState;
-export declare function setXhsSearchInput(query: string): boolean;
-export declare function submitXhsSearch(): boolean;
 export declare function extractXhsSearchState(): XhsStructuredSearchExtraction;
 export declare function extractVisibleXhsSearch(): XhsNoteExtraction[];
 export declare function extractXhsDetailState(noteId: string): {
@@ -29,6 +26,8 @@ export declare function extractXhsDetailState(noteId: string): {
     comments?: number;
     images?: string[];
 };
+/** Extract the comments already hydrated into the signed-in detail page state. */
+export declare function extractXhsCommentState(noteId: string): unknown | undefined;
 export declare function extractXhsNoteDetail(): {
     title?: string;
     text?: string;

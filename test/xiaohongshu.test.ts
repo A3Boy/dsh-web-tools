@@ -21,14 +21,6 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
     },
     call: async (fn: any, args?: unknown[]) => {
       if (fn.name === "detectXhsPageState") return "ready";
-      if (fn.name === "setXhsSearchInput") {
-        nativeSearchQueries.push(String(args?.[0] || ""));
-        return true;
-      }
-      if (fn.name === "submitXhsSearch") {
-        lastOpenedUrl = "https://www.xiaohongshu.com/search_result?keyword=Gemini%203.7";
-        return true;
-      }
       if (fn.name === "extractXhsSearchState") {
         return { available: true, feeds: [{ id: "note123" }] };
       }
@@ -56,6 +48,25 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
           comments: 25,
         };
       }
+      if (fn.name === "extractXhsCommentState") {
+        return {
+          data: {
+            has_more: true,
+            comments: [{
+              id: "comment-1",
+              content: "真实评论内容",
+              likeCount: 7,
+              userInfo: { userId: "user-1", nickname: "评论用户" },
+              subCommentCount: 1,
+              subComments: [{
+                id: "reply-1",
+                content: "真实逐条回复",
+                userInfo: { userId: "user-2", nickname: "回复用户" },
+              }],
+            }],
+          },
+        };
+      }
       if (fn.name === "extractXhsNoteDetail") {
         return {
           title: "小红书DOM笔记标题",
@@ -67,6 +78,13 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
       }
       return null as any;
     },
+    focus: async () => true,
+    insertText: async (text) => { nativeSearchQueries.push(text); },
+    click: async () => {
+      lastOpenedUrl = "https://www.xiaohongshu.com/search_result?keyword=Gemini%203.7";
+      return true;
+    },
+    pressKey: async () => {},
     scrollBy: async () => {},
     beginJsonCapture: async () => ({
       wait: async () => ({
@@ -126,25 +144,25 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   const status = await xhs.status();
   assert.equal(status.authenticated, true);
   assert.equal(status.runtimeState, "ready");
-  assert.equal(status.capabilities?.nativeSearch, false, "XHS native search must be disabled in production");
+  assert.equal(status.capabilities?.nativeSearch, true, "XHS native search must be enabled by default");
   assert.equal(status.capabilities?.nativeFetch, true, "XHS native fetch must be enabled");
 
-  // Production default: search signals degraded-web fallback (no browser)
-  setXhsNativeSearchEnabled(false);
-  const fallbackRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
-  assert.equal(fallbackRes.error?.code, "runtime-unavailable");
-  assert.equal(fallbackRes.items.length, 0);
-
-  // Experimental: when explicitly enabled, native search runs through browser
-  setXhsNativeSearchEnabled(true);
+  // Production default: native search runs through the signed-in browser.
   const searchRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
   assert.equal(searchRes.items.length, 1);
   assert.deepEqual(nativeSearchQueries, ["Gemini 3.7"]);
   assert.equal(searchRes.items[0].id, "note123");
   assert.ok(searchRes.items[0].url.includes("xsec_token=token123"));
-  setXhsNativeSearchEnabled(false);
 
-  const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123?xsec_token=token123");
+  // Operators can still explicitly disable the native path when debugging.
+  setXhsNativeSearchEnabled(false);
+  const fallbackRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
+  assert.equal(fallbackRes.error?.code, "runtime-unavailable");
+  assert.equal(fallbackRes.items.length, 0);
+  setXhsNativeSearchEnabled(true);
+
+  const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123");
+  assert.match(lastOpenedUrl, /xsec_token=token123/, "Fetch must restore the access token cached by native search");
   assert.equal(fetchRes.item?.title, "结构化标题 (Primary)", "Must use structured detail when available");
   assert.match(fetchRes.item?.text || "", /^结构化正文内容/);
   assert.match(fetchRes.item?.text || "", /真实评论内容/);
@@ -248,14 +266,54 @@ test("XiaohongshuSource: returns auth-required without opening page when unauthe
   };
 
   const xhs = new XiaohongshuSource(fakeRuntime);
-  // Production default: search always returns degraded-web fallback regardless of auth
+  // Native search checks authentication before opening a page.
   const searchRes = await xhs.search("Gemini 3.7");
   assert.equal(openPageCalled, false);
-  assert.equal(searchRes.error?.code, "runtime-unavailable");
+  assert.equal(searchRes.error?.code, "auth-required");
   assert.equal(searchRes.items.length, 0);
 
   // Fetch still requires auth
   const fetchRes = await xhs.fetch("https://www.xiaohongshu.com/explore/note123");
   assert.equal(openPageCalled, false);
   assert.equal(fetchRes.error?.code, "auth-required");
+});
+
+test("XiaohongshuSource: maps explore and post-submit login walls to different failures", async () => {
+  setXhsNativeSearchEnabled(true);
+  try {
+    for (const scenario of [
+      { initial: "login-wall", after: "login-wall", expected: "auth-expired" },
+      { initial: "ready", after: "login-wall", expected: "search-restricted" },
+    ] as const) {
+      let submitted = false;
+      const page = {
+        navigate: async () => {},
+        waitForLoad: async () => {},
+        waitForSelector: async () => {},
+        call: async (fn: { name?: string }) => {
+          if (fn.name === "detectXhsPageState") return submitted ? scenario.after : scenario.initial;
+          return { available: false, feeds: [] };
+        },
+        evaluate: async (expression: string) => expression === "location.href"
+          ? submitted
+            ? "https://www.xiaohongshu.com/search_result?keyword=test"
+            : "https://www.xiaohongshu.com/explore"
+          : 0,
+        focus: async () => true,
+        insertText: async () => {},
+        click: async () => { submitted = true; return true; },
+        pressKey: async () => { submitted = true; },
+        close: async () => {},
+      } as unknown as CdpPageLease;
+      const runtime = {
+        verifyAuthenticationForOperation: async () => true,
+        createPage: async () => page,
+      } as unknown as NativeBrowserRuntime;
+
+      const result = await new XiaohongshuSource(runtime).search("test");
+      assert.equal(result.error?.code, scenario.expected);
+    }
+  } finally {
+    setXhsNativeSearchEnabled(true);
+  }
 });

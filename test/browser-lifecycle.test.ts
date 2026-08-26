@@ -16,6 +16,7 @@ import type {
   CdpPageLease,
 } from "../src/host/browser/types.ts";
 import type { SpawnedBrowserProcess } from "../src/host/browser/process-manager.ts";
+import { ProfileStore } from "../src/host/browser/profile-store.ts";
 
 class FakeCdpClient extends EventEmitter {
   public closed = false;
@@ -40,6 +41,7 @@ class FakeCdpClient extends EventEmitter {
       return {
         cookies: [
           { name: "web_session", domain: ".xiaohongshu.com" },
+          { name: "a1", domain: ".xiaohongshu.com" },
           { name: "auth_token", domain: ".x.com" },
           { name: "ct0", domain: ".x.com" },
         ],
@@ -576,6 +578,248 @@ test("Browser lifecycle: 10. two platforms start in parallel without blocking ea
 
     await pXhs.close();
     await pX.close();
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS auth: web_session without a1 never reaches live verification", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-cookie-gate-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const profileStore = new ProfileStore(tmpDir);
+  profileStore.saveMetadata("xiaohongshu", {
+    platform: "xiaohongshu",
+    sessionEstablished: true,
+    browserKind: "edge",
+    lastVerifiedAt: Date.now(),
+  });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  let liveCalls = 0;
+  class StaleCookieCdp extends FakeCdpClient {
+    async send<T = any>(method: string, params: any = {}, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+      if (method === "Storage.getCookies") {
+        return { cookies: [{ name: "web_session", domain: ".xiaohongshu.com" }] } as T;
+      }
+      return super.send(method, params, sessionId, signal, timeoutMs);
+    }
+  }
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => new StaleCookieCdp() as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+    async () => { liveCalls++; return true; },
+  );
+
+  try {
+    assert.equal(await sm.verifyAuthenticationForOperation("xiaohongshu", undefined, "interactive"), false);
+    assert.equal(liveCalls, 0);
+    assert.equal(profileStore.loadMetadata("xiaohongshu")?.sessionEstablished, false);
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS auth: valid cookie names still require a usable live page", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-live-gate-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const profileStore = new ProfileStore(tmpDir);
+  profileStore.saveMetadata("xiaohongshu", {
+    platform: "xiaohongshu",
+    sessionEstablished: true,
+    browserKind: "edge",
+    lastVerifiedAt: Date.now(),
+  });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  let liveCalls = 0;
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => new FakeCdpClient() as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+    async () => { liveCalls++; return false; },
+  );
+
+  try {
+    assert.equal(await sm.verifyAuthenticationForOperation("xiaohongshu", undefined, "interactive"), false);
+    assert.equal(liveCalls, 1);
+    assert.equal(profileStore.loadMetadata("xiaohongshu")?.sessionEstablished, false);
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS auth: stale negative metadata self-heals from the real browser profile", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-auth-self-heal-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const profileStore = new ProfileStore(tmpDir);
+  profileStore.saveMetadata("xiaohongshu", {
+    platform: "xiaohongshu",
+    sessionEstablished: false,
+    browserKind: "edge",
+    lastVerifiedAt: Date.now(),
+  });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  let liveCalls = 0;
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => new FakeCdpClient() as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+    async () => { liveCalls++; return true; },
+  );
+
+  try {
+    assert.equal(await sm.verifyAuthenticationForOperation("xiaohongshu", undefined, "interactive"), true);
+    assert.equal(liveCalls, 1);
+    assert.equal(profileStore.loadMetadata("xiaohongshu")?.sessionEstablished, true);
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS status verification reuses an existing page without opening or closing a tab", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-status-tab-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  class StatusPageCdp extends FakeCdpClient {
+    async send<T = any>(method: string, params: any = {}, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+      if (method === "Target.getTargets") {
+        return {
+          targetInfos: [{ targetId: "page-1", type: "page", url: "https://www.xiaohongshu.com/explore" }],
+        } as unknown as T;
+      }
+      if (method === "Runtime.evaluate" && String(params.expression).includes("security-verification")) {
+        return { result: { value: "ready", type: "string" } } as unknown as T;
+      }
+      return super.send(method, params, sessionId, signal, timeoutMs);
+    }
+  }
+  let cdp: StatusPageCdp | undefined;
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => (cdp = new StatusPageCdp()) as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+  );
+
+  try {
+    assert.equal(await sm.checkAuthentication("xiaohongshu"), true);
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Target.createTarget").length,
+      0,
+      "a status refresh must not open a visible verification tab",
+    );
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Target.closeTarget").length,
+      0,
+      "a status refresh must not close the user's tab",
+    );
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Page.navigate").length,
+      0,
+      "a status refresh must not navigate the user's existing Xiaohongshu tab",
+    );
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Target.detachFromTarget").length,
+      1,
+      "the verifier should only detach its CDP session",
+    );
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS auth: a restricted detail tab cannot invalidate a usable explore session", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-mixed-tabs-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  class MixedPageCdp extends FakeCdpClient {
+    async send<T = any>(method: string, params: any = {}, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+      if (method === "Target.getTargets") {
+        return {
+          targetInfos: [
+            { targetId: "restricted-detail", type: "page", url: "https://www.xiaohongshu.com/explore/abc123" },
+            { targetId: "usable-explore", type: "page", url: "https://www.xiaohongshu.com/explore" },
+          ],
+        } as unknown as T;
+      }
+      if (method === "Target.attachToTarget") {
+        this.sentCommands.push({ method, params, sessionId });
+        return { sessionId: `session-${params.targetId}` } as unknown as T;
+      }
+      if (method === "Runtime.evaluate") {
+        const expression = String(params.expression);
+        if (expression.includes("document.readyState")) {
+          return { result: { value: true, type: "boolean" } } as unknown as T;
+        }
+        if (expression.includes("security-verification")) {
+          const value = sessionId === "session-usable-explore" ? "ready" : "login-wall";
+          return { result: { value, type: "string" } } as unknown as T;
+        }
+      }
+      return super.send(method, params, sessionId, signal, timeoutMs);
+    }
+  }
+  let cdp: MixedPageCdp | undefined;
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => (cdp = new MixedPageCdp()) as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+  );
+
+  try {
+    assert.equal(await sm.checkAuthentication("xiaohongshu"), true);
+    const attachedTargets = cdp?.sentCommands
+      .filter((command) => command.method === "Target.attachToTarget")
+      .map((command) => command.params.targetId);
+    assert.deepEqual(attachedTargets, ["usable-explore"]);
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Target.createTarget").length,
+      0,
+      "mixed-tab verification must reuse an existing page",
+    );
+  } finally {
+    await sm.dispose();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test("XHS login: polling reuses the login tab instead of creating temporary verification tabs", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-test-xhs-login-tab-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const fakeProc = createFakeProcessManager({ onKill: (pid) => fakeProc.killPid(pid) });
+  let liveCalls = 0;
+  const pageStates = ["login-wall", "ready", "ready"];
+  class LoginPageCdp extends FakeCdpClient {
+    async send<T = any>(method: string, params: any = {}, sessionId?: string, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
+      if (method === "Runtime.evaluate" && String(params.expression).includes("security-verification")) {
+        return {
+          result: { value: pageStates.shift() ?? "ready", type: "string" },
+        } as unknown as T;
+      }
+      return super.send(method, params, sessionId, signal, timeoutMs);
+    }
+  }
+  let cdp: LoginPageCdp | undefined;
+  const sm = new SessionManager(
+    "auto", tmpDir, 300000, fakeProc.launcher,
+    async () => (cdp = new LoginPageCdp()) as any,
+    fakeProc.isPidAlive, fakeProc.killPid,
+    async () => { liveCalls++; return true; },
+  );
+
+  try {
+    const result = await sm.login("xiaohongshu");
+    assert.equal(result.authenticated, true);
+    assert.equal(liveCalls, 0, "interactive login must not run the temporary-tab verifier");
+    assert.equal(
+      cdp?.sentCommands.filter((command) => command.method === "Target.createTarget").length,
+      0,
+      "polling must reuse the existing login page",
+    );
+    assert.equal(new ProfileStore(tmpDir).loadMetadata("xiaohongshu")?.sessionEstablished, true);
   } finally {
     await sm.dispose();
     fs.rmSync(tmpDir, { recursive: true, force: true });

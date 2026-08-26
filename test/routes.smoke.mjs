@@ -160,8 +160,8 @@ test("platform/status automatically verifies persisted sessions before respondin
     ...deps,
     sourceRegistry: localRegistry,
     nativeRuntime: {
-      verifyAuthenticationForOperation: async (platform) => {
-        verifyCalls.push(platform);
+      verifyAuthenticationForOperation: async (platform, _signal, mode) => {
+        verifyCalls.push({ platform, mode });
         verified = true;
         return true;
       },
@@ -174,7 +174,10 @@ test("platform/status automatically verifies persisted sessions before respondin
   await g()(req, res);
   const body = JSON.parse(res.body);
   assert.equal(body.ok, true);
-  assert.deepEqual(verifyCalls.sort(), ["x", "xiaohongshu"]);
+  assert.deepEqual(verifyCalls.sort((a, b) => a.platform.localeCompare(b.platform)), [
+    { platform: "x", mode: "headless" },
+    { platform: "xiaohongshu", mode: "interactive" },
+  ]);
   assert.equal(body.value.platforms.x.authenticated, true);
   assert.equal(body.value.platforms.xiaohongshu.authenticated, true);
 });

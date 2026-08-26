@@ -139,12 +139,17 @@ export class SpecializedSourceRegistry {
       return { ...outcome, retrievalMode: "native-browser" };
     }
 
-    // Never fallback on explicit aborted signal
+    // Do not hide platform authentication/access failures behind indexed web
+    // results. They cannot provide native details or real comments and would
+    // make an explicit platform search look successful when it was not.
     if (signal?.aborted || outcome.error.code === "aborted") {
       return outcome;
     }
+    if (!outcome.error.retryable) {
+      return outcome;
+    }
 
-    // Fallback on failure
+    // Retryable browser/runtime failures may still use indexed discovery.
     return fallbackSearchToGeneralWeb(
       query,
       platform,

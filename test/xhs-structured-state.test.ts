@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractXhsSearchState, extractXhsDetailState } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
+import { extractXhsSearchState, extractXhsDetailState, extractXhsCommentState } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
 import { buildXhsNoteUrl } from "../src/host/sources/xiaohongshu/query.ts";
 import { parseXhsMetricNumber, isNoteFeed, normalizeXhsFeed } from "../src/host/sources/xiaohongshu/normalize.ts";
 import type { XhsRawSearchFeed } from "../src/host/sources/xiaohongshu/types.ts";
@@ -208,4 +208,49 @@ test("extractXhsDetailState: extracts note detail from noteDetailMap (direct key
   // Case 3: Missing entry
   const res3 = extractXhsDetailState("note_non_exist");
   assert.equal(res3.available, false);
+});
+
+test("extractXhsDetailState: unwraps reactive detail maps and extracts hydrated comments", () => {
+  (globalThis as any).window = {
+    __INITIAL_STATE__: {
+      note: {
+        noteDetailMap: {
+          value: {
+            note_ref_1: {
+              note: {
+                noteId: "note_ref_1",
+                title: "Ref detail title",
+                desc: "Ref detail body",
+              },
+              comments: {
+                list: [{
+                  id: "comment-ref-1",
+                  content: "hydrated comment",
+                  userInfo: { userId: "user-ref-1", nickname: "Commenter" },
+                  subComments: [{ id: "reply-ref-1", content: "hydrated reply" }],
+                }],
+                hasMore: true,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const detail = extractXhsDetailState("note_ref_1");
+  assert.equal(detail.available, true);
+  assert.equal(detail.title, "Ref detail title");
+
+  assert.deepEqual(extractXhsCommentState("note_ref_1"), {
+    data: {
+      comments: [{
+        id: "comment-ref-1",
+        content: "hydrated comment",
+        userInfo: { userId: "user-ref-1", nickname: "Commenter" },
+        subComments: [{ id: "reply-ref-1", content: "hydrated reply" }],
+      }],
+      has_more: true,
+    },
+  });
 });

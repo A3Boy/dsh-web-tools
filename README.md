@@ -41,7 +41,7 @@ While keeping the tool interface unified, dsh-web-tools normalizes search intent
 
 - **Native-Capability Adaptation Across 8 Web Providers**: Keeps the standard `web_search` / `web_fetch` contracts while compiling unified search intent into provider-specific native parameters instead of reducing every backend to the same lowest-common-denominator feature set.
 - **SearchHints → Provider-Specific Parameter Compilation**: Normalizes technical, research, news, date, region, and domain constraints from queries, compiling them into provider-native parameters through deterministic code without additional LLM latency.
-- **Xiaohongshu & Twitter / X Platform Sources**: Twitter / X supports native search and tweet extraction; Xiaohongshu supports native note details with default safe web discovery (native in-platform search available experimentally).
+- **Xiaohongshu & Twitter / X Platform Sources**: Both platforms support signed-in native search, detail extraction, and returned comments or replies through dedicated local browser profiles.
 - **Multi-Source Scheduling & Resilience**: Features multi-API-key pooling, 401 failover, 429 cooldown windows, configurable Ordered / Round-Robin / Random routing, and failover chains.
 - **Native DSH Tool Integration**: Plugs directly into standard `web_search` / `web_fetch` without requiring new tool declarations, and includes a session-level "Search Mode" toggle.
 
@@ -110,17 +110,19 @@ Unlike general search engines, the plugin connects directly to native social pla
 
 * **Xiaohongshu**:
   * **Note Detail & Comment Fetch (`web_fetch`)**: Uses the dedicated browser profile to extract structured `__INITIAL_STATE__` data with DOM fallback while preserving signed `xsec_token` URLs. When the page loads comment data, top-level comments and returned nested replies are extracted individually.
-  * **Search Discovery (`web_search`)**: Defaults to general-web discovery (`site:xiaohongshu.com`); native in-platform search is experimental and can be enabled with `XHS_NATIVE_SEARCH=1`. The experimental path enters through the real search controls on `/explore`, never direct `/search_result` navigation, and distinguishes login walls, security verification, and a genuinely signed-out session.
+  * **Native Search Discovery (`web_search`)**: Uses the signed-in browser and the real search controls on `/explore`, entering only the cleaned topic query rather than platform names or `site:` operators. It distinguishes login walls, security verification, and a genuinely signed-out session. Operators can temporarily disable this path with `XHS_NATIVE_SEARCH=0` while diagnosing browser issues.
 
 * **Twitter / X**:
   * **Native Search, Tweet Detail & Replies**: Captures the X web client's GraphQL data streams (SearchTimeline / TweetDetail) over CDP, parses the target tweet and its reply tree structurally, and uses DOM extraction as a supplement and fallback. Supports `from:`, `since:`, and `until:` operators.
 
 Each detail fetch includes at most 30 comments or replies, with up to 800 characters per entry. Additional pages or nested replies are explicitly marked as truncated to keep model context bounded.
 
+> **Capability Boundary**: For Xiaohongshu notes where the primary content resides in images, the fetcher returns the title, text description, engagement metrics, image count, and loaded comments; it does not perform optical character recognition (OCR) on image text or automatically paginate through all comments.
+
 Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects the platform and is removed before the native search runs; for example, `小红书: DeepSeek Harness` enters only `DeepSeek Harness` into Xiaohongshu's search box.
 
-* **General-Web Fallback**: Uses configured general search or fetch providers when a platform source is disabled, temporarily unavailable, or reports a retryable failure. Non-retryable sign-in, access-control, and invalid-detail errors are returned directly so indexed content is not presented as native detail or comments.
-* **Automated Session Verification**: Checks required cookies after login and re-checks persisted profiles during status requests and platform operations. An expired session still requires sign-in again.
+* **General-Web Fallback**: Uses configured general search or fetch providers when a platform source is disabled, temporarily unavailable, or reports a retryable failure. Non-retryable sign-in, access-control, search-restriction, and invalid-detail errors are returned directly so indexed content is not presented as native platform results, details, or comments.
+* **Automated Session Verification**: Cookies are only the first gate. Xiaohongshu requires both `a1` and `web_session`, then performs a stabilized live `/explore` check in the interactive browser. A visible login wall invalidates the old session and restores the sign-in action; a wall appearing only after search submission is reported directly as `search-restricted` rather than being hidden behind indexed web results.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/platformSessions.png" width="900" alt="Xiaohongshu and Twitter X signed-in sessions verified automatically" />
@@ -176,7 +178,7 @@ New installations default to **Exa**; existing installations keep their saved pr
 
 | Scenario | Recommended Provider | Notes |
 | --- | --- | --- |
-| **Social Discovery & Content Detail** | **Xiaohongshu / Twitter / X** | X provides native search and detail retrieval; Xiaohongshu combines web discovery with native note-detail extraction |
+| **Social Discovery & Content Detail** | **Xiaohongshu / Twitter / X** | Both platforms provide signed-in native search, detail retrieval, and returned comments or replies |
 | **Semantic Search / Technical Documentation** | **Exa** | Semantic modes plus category, date, domain, and highlight parameters |
 | **Pre-Extracted Search Context** | **Brave Search** | Prefers LLM Context with Classic Search fallback |
 | **Configurable Search Depth and Extraction** | **Tavily** / **Parallel** | Provider-native depth modes and content extraction endpoints |

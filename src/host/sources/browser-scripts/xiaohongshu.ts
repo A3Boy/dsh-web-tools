@@ -1,4 +1,5 @@
 import type { XhsStructuredSearchExtraction } from "../xiaohongshu/types.ts";
+export { detectXhsPageState, type XhsPageState } from "../../browser/xiaohongshu-page-state.ts";
 
 export interface XhsNoteExtraction {
   id: string;
@@ -11,64 +12,6 @@ export interface XhsNoteExtraction {
   comments?: number;
   collects?: number;
   coverImage?: string;
-}
-
-export type XhsPageState = "ready" | "login-wall" | "security-verification" | "signed-out";
-
-export function detectXhsPageState(): XhsPageState {
-  const href = location.href;
-  const bodyText = document.body?.innerText || "";
-  const visible = (element: Element | null): boolean => {
-    if (!element) return false;
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
-    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
-  };
-
-  if (
-    visible(document.querySelector(".security-verify, #security-verify")) ||
-    /captcha|security.?verification/i.test(href) ||
-    /安全验证|安全限制|IP存在风险|访问受限|异常访问|操作频繁/.test(`${document.title}\n${bodyText}`)
-  ) {
-    return "security-verification";
-  }
-
-  if (/website-login|\/login(?:\/|\?|$)/i.test(href)) {
-    return "signed-out";
-  }
-
-  if (
-    visible(document.querySelector(".login-modal, .login-container")) ||
-    /登录后推荐更懂你的笔记|登录后查看/.test(bodyText)
-  ) {
-    return "login-wall";
-  }
-
-  return "ready";
-}
-
-export function setXhsSearchInput(query: string): boolean {
-  const input = document.querySelector<HTMLInputElement>("#search-input");
-  if (!input) return false;
-  input.focus();
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  if (setter) setter.call(input, query);
-  else input.value = query;
-  input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: query }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-  return input.value === query;
-}
-
-export function submitXhsSearch(): boolean {
-  const input = document.querySelector<HTMLInputElement>("#search-input");
-  const button = document.querySelector<HTMLElement>(".input-button .search-icon, .input-button");
-  if (!input) return false;
-
-  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
-  input.dispatchEvent(new KeyboardEvent("keypress", { key: "Enter", code: "Enter", bubbles: true }));
-  input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
-  button?.click();
-  return Boolean(button);
 }
 
 export function extractXhsSearchState(): XhsStructuredSearchExtraction {
@@ -122,10 +65,19 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
     const href = linkEl.getAttribute("href") || "";
     if (!href) continue;
 
-    const fullUrl = href.startsWith("http") ? href : `https://www.xiaohongshu.com${href}`;
-
     const idMatch = href.match(/\/(?:search_result|explore)\/([a-zA-Z0-9]+)/);
     const id = idMatch ? idMatch[1] : href;
+    const sourceUrl = new URL(href, "https://www.xiaohongshu.com");
+    const fullUrl = idMatch
+      ? (() => {
+          const canonical = new URL(`/explore/${encodeURIComponent(id)}`, sourceUrl.origin);
+          for (const key of ["xsec_token", "xsec_source"]) {
+            const value = sourceUrl.searchParams.get(key);
+            if (value) canonical.searchParams.set(key, value);
+          }
+          return canonical.toString();
+        })()
+      : sourceUrl.toString();
 
     const titleEl = el.querySelector(".title span") || el.querySelector(".footer .title") || el.querySelector(".title");
     const title = titleEl ? (titleEl.textContent || "").trim() : "";
@@ -173,7 +125,8 @@ export function extractXhsDetailState(noteId: string): {
   images?: string[];
 } {
   const state = (window as any).__INITIAL_STATE__;
-  const map = state?.note?.noteDetailMap;
+  const rawMap = state?.note?.noteDetailMap;
+  const map = rawMap?.value ?? rawMap?._value ?? rawMap;
 
   if (!map || typeof map !== "object") {
     return { available: false };
@@ -187,7 +140,9 @@ export function extractXhsDetailState(noteId: string): {
     );
   }
 
-  const note = entry?.note;
+  entry = entry?.value ?? entry?._value ?? entry;
+  const rawNote = entry?.note;
+  const note = rawNote?.value ?? rawNote?._value ?? rawNote;
   if (!note) {
     return { available: false };
   }
@@ -232,6 +187,38 @@ export function extractXhsDetailState(noteId: string): {
     collects: parseCount(interact?.collectedCount),
     comments: parseCount(interact?.commentCount),
     images: images && images.length > 0 ? images : undefined,
+  };
+}
+
+/** Extract the comments already hydrated into the signed-in detail page state. */
+export function extractXhsCommentState(noteId: string): unknown | undefined {
+  const state = (window as any).__INITIAL_STATE__;
+  const rawMap = state?.note?.noteDetailMap;
+  const map = rawMap?.value ?? rawMap?._value ?? rawMap;
+  if (!map || typeof map !== "object") return undefined;
+
+  let entry = map[noteId];
+  if (!entry) {
+    entry = Object.values(map).find((value: any) => {
+      const resolvedEntry = value?.value ?? value?._value ?? value;
+      const rawNote = resolvedEntry?.note;
+      const note = rawNote?.value ?? rawNote?._value ?? rawNote;
+      return note?.noteId === noteId;
+    });
+  }
+
+  entry = entry?.value ?? entry?._value ?? entry;
+  const rawComments = entry?.comments;
+  const commentState = rawComments?.value ?? rawComments?._value ?? rawComments;
+  const rawList = commentState?.list ?? commentState?.comments ?? commentState;
+  const list = rawList?.value ?? rawList?._value ?? rawList;
+  if (!Array.isArray(list)) return undefined;
+
+  return {
+    data: {
+      comments: list,
+      has_more: Boolean(commentState?.hasMore ?? commentState?.has_more),
+    },
   };
 }
 

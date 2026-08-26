@@ -97,6 +97,30 @@ test("SessionManager: status() returns stopped + auth unknown if metadata sessio
   }
 });
 
+test("SessionManager: recent cold metadata is not treated as live authentication proof", async () => {
+  const tmpDir = path.join(os.tmpdir(), "dsh-session-test-recent-" + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  try {
+    const profileStore = new ProfileStore(tmpDir);
+    profileStore.saveMetadata("xiaohongshu", {
+      platform: "xiaohongshu",
+      sessionEstablished: true,
+      browserKind: "edge",
+      lastVerifiedAt: Date.now(),
+    });
+    const sessionManager = new SessionManager("auto", tmpDir);
+    const status = await sessionManager.status("xiaohongshu");
+
+    assert.equal(status.runtimeState, "stopped");
+    assert.equal(status.sessionEstablished, true);
+    assert.equal(status.authenticated, false);
+    assert.equal(status.authState, "unknown");
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test("SessionManager: status() returns signed-out if no profile metadata exists", async () => {
   const tmpDir = path.join(os.tmpdir(), "dsh-session-test-empty-" + Date.now());
   fs.mkdirSync(tmpDir, { recursive: true });

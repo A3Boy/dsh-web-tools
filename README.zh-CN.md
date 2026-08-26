@@ -41,7 +41,7 @@ dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina�
 
 - **8 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
 - **SearchHints → Provider-specific 参数编译**：将 Query 中的技术 / 论文 / 新闻、时效、域名、地区与语言等搜索意图归一化，再按不同 Provider 的能力映射为各自原生参数；整个过程由确定性代码完成，不增加额外 LLM 调用。
-- **小红书与 Twitter / X 平台来源**：Twitter / X 支持原生搜索与推文详情抓取；小红书支持原生笔记详情，搜索默认通过通用 Web 发现，站内原生搜索保留为实验能力。
+- **小红书与 Twitter / X 平台来源**：两个平台均通过独立的本地浏览器 Profile 提供已登录站内搜索、详情抓取，以及页面实际返回的评论或回复。
 - **多搜索源调度与自动容灾**：支持多 API Key 分配、鉴权失败切换、429 冷却、Ordered / Round-Robin / Random 路由，以及可配置 Provider Fallback。
 - **DSH 原生工具集成**：直接复用标准 `web_search` / `web_fetch`，模型侧无需学习额外工具，同时提供会话级「联网搜索」模式。
 
@@ -110,17 +110,19 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
 
 * **小红书**：
   * **笔记详情与评论抓取 (`web_fetch`)**：通过专用浏览器 Profile 解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL；页面成功加载评论数据时，同时逐条提取一级评论与已返回的楼中楼回复。
-  * **搜索发现 (`web_search`)**：默认采用通用 Web 发现（`site:xiaohongshu.com`）；站内原生搜索定位为实验能力，可通过 `XHS_NATIVE_SEARCH=1` 显式开启。实验路径从 `/explore` 的真实搜索框进入，不再直接导航 `/search_result`，并会区分登录墙、安全验证和真实退出登录。
+  * **站内搜索发现 (`web_search`)**：默认使用已登录浏览器，从 `/explore` 的真实搜索框进入，只输入清洗后的主题词，不带平台名或 `site:` 限定；同时区分登录墙、安全验证和真实退出登录。排查浏览器问题时可通过 `XHS_NATIVE_SEARCH=0` 临时关闭。
 
 * **Twitter / X**：
   * **原生搜索、推文详情与回复**：通过 CDP 捕获 X Web 客户端自身的 GraphQL 数据流（SearchTimeline / TweetDetail），结构化解析目标推文及其回复树，并以 DOM 作为补充与兜底；支持 `from:`、`since:`、`until:` 等搜索算子。
 
 单次详情抓取最多附带 30 条评论或回复，单条内容最多保留 800 个字符；仍有后续分页或楼中楼内容时会明确标记为截断，避免无界占用模型上下文。
 
+> **能力边界说明**：对于正文主要位于图片中的小红书笔记，目前会返回标题、文字描述、互动数据、图片数量以及页面已加载的评论，但暂不识别图片中的文字，也不会自动抓取全部评论分页。
+
 Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选择平台，插件会在实际站内搜索前移除它；例如 `小红书: DeepSeek Harness` 最终输入小红书搜索框的是 `DeepSeek Harness`。
 
-* **通用 Web 降级 (Web Fallback)**：平台来源未启用、运行时暂不可用或发生可重试故障时，改由已配置的通用搜索或抓取 Provider 处理；登录失效、访问受限、无效详情地址等非重试错误会直接返回，不会用索引内容冒充原生详情或评论。
-* **登录态自动验证**：完成登录后插件会检查所需 Cookie；已保存的 Profile 会在状态查询和平台操作前复核，登录失效时仍需重新登录。
+* **通用 Web 降级 (Web Fallback)**：平台来源未启用、运行时暂不可用或发生可重试故障时，改由已配置的通用搜索或抓取 Provider 处理；登录失效、访问受限、站内搜索受限、无效详情地址等非重试错误会直接返回，不会用索引内容冒充原生站内结果、详情或评论。
+* **登录态自动验证**：Cookie 只作为第一层门槛。小红书要求同时存在 `a1` 与 `web_session`，随后还会通过交互浏览器稳定检查 `/explore` 的真实页面状态；可见登录墙会使旧 Session 立即失效并重新显示登录入口。搜索提交后的独立登录墙会直接标记为 `search-restricted`，不会再用网页索引结果掩盖站内搜索失败。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/platformSessions.png" width="900" alt="小红书与 Twitter X 登录态自动验证" />
@@ -176,7 +178,7 @@ dsh plugin --profile web remove dsh-web-tools
 
 | 需求场景 | 推荐首选 | 说明 |
 | --- | --- | --- |
-| **社媒内容发现 / 详情抓取** | **小红书 / Twitter / X** | X 支持原生搜索与详情；小红书使用 Web 发现 + 原生笔记详情抓取 |
+| **社媒内容发现 / 详情抓取** | **小红书 / Twitter / X** | 两个平台均支持已登录站内搜索、详情抓取，以及实际返回的评论或回复 |
 | **语义检索 / 技术文档** | **Exa** | 支持语义模式、分类、日期、域名与高亮参数 |
 | **预提取搜索上下文** | **Brave Search** | 优先使用 LLM Context，失败时回退 Classic Search |
 | **可调深度搜索与正文提取** | **Tavily** / **Parallel** | 提供 Provider 原生深度档位与内容提取接口 |

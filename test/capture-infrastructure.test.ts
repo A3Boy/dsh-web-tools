@@ -88,6 +88,29 @@ test("beginJsonCapture: calls Network.enable on the correct session", async () =
   assert.equal(enableCalls[0].sessionId, "s1");
 });
 
+test("CdpPage input helpers use browser-level CDP text, key, and mouse events", async () => {
+  const fake = new FakeClient();
+  const page = makePage(fake);
+  fake.responses.set("Input.insertText", {});
+  fake.responses.set("Input.dispatchKeyEvent", {});
+  fake.responses.set("Input.dispatchMouseEvent", {});
+  fake.responses.set("Runtime.evaluate", { result: { value: { x: 10, y: 20 }, type: "object" } });
+
+  await page.insertText("DeepSeek Harness");
+  await page.pressKey("Enter");
+  assert.equal(await page.click(".search-icon"), true);
+
+  assert.equal(fake.sent.filter((entry) => entry.method === "Input.insertText").length, 1);
+  assert.deepEqual(
+    fake.sent.filter((entry) => entry.method === "Input.dispatchKeyEvent").map((entry) => entry.params.type),
+    ["keyDown", "keyUp"],
+  );
+  assert.deepEqual(
+    fake.sent.filter((entry) => entry.method === "Input.dispatchMouseEvent").map((entry) => entry.params.type),
+    ["mouseMoved", "mousePressed", "mouseReleased"],
+  );
+});
+
 test("beginJsonCapture: captures a matching response", async () => {
   const fake = new FakeClient();
   const page = makePage(fake);

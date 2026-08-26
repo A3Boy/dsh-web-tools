@@ -13,6 +13,10 @@ export declare class CdpPage implements CdpPageLease {
     waitForSelector(selector: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
     evaluate<T>(expression: string, signal?: AbortSignal): Promise<T>;
     call<T>(fn: (...args: any[]) => T, args?: unknown[], signal?: AbortSignal): Promise<T>;
+    focus(selector: string, signal?: AbortSignal): Promise<boolean>;
+    insertText(text: string, signal?: AbortSignal): Promise<void>;
+    pressKey(key: "Enter", signal?: AbortSignal): Promise<void>;
+    click(selector: string, signal?: AbortSignal): Promise<boolean>;
     scrollBy(pixels: number, signal?: AbortSignal): Promise<void>;
     /**
      * Install a JSON network capture BEFORE navigation, scoped to THIS page

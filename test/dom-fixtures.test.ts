@@ -64,6 +64,7 @@ test("DOM Fixture: extractVisibleXhsSearch correctly extracts note items preserv
   const results = extractVisibleXhsSearch();
   assert.equal(results.length, 1);
   assert.equal(results[0].id, "65f123456789abcdef012345");
+  assert.equal(new URL(results[0].url).pathname, "/explore/65f123456789abcdef012345");
   assert.ok(results[0].url.includes("xsec_token=CB123456789abcdef"));
   assert.equal(results[0].title, "东京小众咖啡馆推荐");
   assert.equal(results[0].authorName, "东京探店达人");

@@ -1,4 +1,5 @@
 import { CdpClient } from "./cdp/client.ts";
+import { type LiveSessionVerifier } from "./live-auth-verifier.ts";
 import { type SpawnedBrowserProcess } from "./process-manager.ts";
 import type { BrowserInfo, BrowserPlatform, BrowserRunMode, BrowserSessionStatus, CdpPageLease, NativeBrowserRuntime } from "./types.ts";
 export type ProcessLauncher = (browser: BrowserInfo, profileDir: string, initialUrl?: string, minimized?: boolean, headless?: boolean) => Promise<SpawnedBrowserProcess>;
@@ -15,14 +16,16 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private readonly cdpFactory;
     private readonly isPidAliveFn;
     private readonly killPidFn;
+    private readonly liveSessionVerifier;
     private disposed;
-    constructor(browserChoice?: "auto" | "edge" | "chrome" | string, baseDirOverride?: string, idleShutdownMs?: number, launcher?: ProcessLauncher, cdpFactory?: CdpClientFactory, isPidAliveFn?: PidChecker, killPidFn?: PidKiller);
+    constructor(browserChoice?: "auto" | "edge" | "chrome" | string, baseDirOverride?: string, idleShutdownMs?: number, launcher?: ProcessLauncher, cdpFactory?: CdpClientFactory, isPidAliveFn?: PidChecker, killPidFn?: PidKiller, liveSessionVerifier?: LiveSessionVerifier);
     private getRecord;
     private enqueue;
     detect(): Promise<BrowserInfo | null>;
     checkAuthentication(platform: BrowserPlatform): Promise<boolean>;
     verifyAuthenticationForOperation(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<boolean>;
     private internalCheckAuth;
+    private hasRequiredCookies;
     status(platform: BrowserPlatform): Promise<BrowserSessionStatus>;
     login(platform: BrowserPlatform, signal?: AbortSignal): Promise<BrowserSessionStatus>;
     private prepareInteractiveLogin;

@@ -146,6 +146,43 @@ test("P7.0 SpecializedSourceRegistry: falls back gracefully to general web when 
   assert.equal(outcome.items.length, 1);
 });
 
+test("SpecializedSourceRegistry: non-retryable platform search failures return immediately", async () => {
+  const registry = new SpecializedSourceRegistry();
+  const restrictedSource: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "search-restricted", message: "login wall after submit", retryable: false },
+    }),
+    fetch: async () => ({ item: undefined }),
+  };
+  let fallbackCalled = false;
+  registry.registerSource(restrictedSource);
+  registry.setFallbackProviders({
+    search: async () => {
+      fallbackCalled = true;
+      return { sources: [{ title: "Indexed result", url: "https://example.com" }] };
+    },
+  } as any, undefined);
+
+  const outcome = await registry.search("小红书: DeepSeek Harness", {
+    hints: { platform: "xiaohongshu", cleanQuery: "DeepSeek Harness" },
+  });
+
+  assert.equal(fallbackCalled, false);
+  assert.equal(outcome.error?.code, "search-restricted");
+  assert.equal(outcome.retrievalMode, undefined);
+});
+
 test("SpecializedSourceRegistry: non-retryable platform fetch failures return immediately", async () => {
   const registry = new SpecializedSourceRegistry();
   const blockedSource: SpecializedSource = {

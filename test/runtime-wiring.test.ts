@@ -83,8 +83,20 @@ test("Runtime Wiring: routed fetch never turns source failures or empty content 
   );
 
   const response = toRoutedFetchResponse(url, {
-    item: { id: url, title: "小红书笔记", url, text: "正文", platform: "xiaohongshu" },
+    item: {
+      id: url,
+      title: "小红书笔记",
+      url,
+      text: "正文",
+      author: { name: "作者" },
+      likes: 12,
+      replies: 3,
+      platform: "xiaohongshu",
+    },
   });
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.content, "正文");
+  assert.match(response.body.content, /^# 小红书笔记/);
+  assert.match(response.body.content, /Author: 作者/);
+  assert.match(response.body.content, /Engagement: likes 12, comments\/replies 3/);
+  assert.match(response.body.content, /\n\n正文$/);
 });

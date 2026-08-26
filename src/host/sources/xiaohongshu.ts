@@ -3,6 +3,7 @@ import {
   extractXhsSearchState,
   extractVisibleXhsSearch,
   extractXhsDetailState,
+  extractXhsCommentState,
   extractXhsNoteDetail,
   type XhsNoteExtraction,
 } from "./browser-scripts/xiaohongshu.ts";
@@ -19,11 +20,9 @@ import type {
   SourceItem,
 } from "./types.ts";
 
-// XHS Native Search is experimental and disabled by default in production.
-// XHS search is environment-sensitive (account/session/IP/browser/risk-control).
-// Enable only for debugging: XHS_NATIVE_SEARCH=1
-// The production path uses general-web fallback (site:xiaohongshu.com).
-let xhsNativeSearchEnabled = (process.env.XHS_NATIVE_SEARCH ?? "0") === "1";
+// Native search is the production default. Operators can temporarily disable
+// it with XHS_NATIVE_SEARCH=0 when diagnosing platform or browser issues.
+let xhsNativeSearchEnabled = (process.env.XHS_NATIVE_SEARCH ?? "1") !== "0";
 export function setXhsNativeSearchEnabled(v: boolean) { xhsNativeSearchEnabled = v; }
 export function isXhsNativeSearchEnabled() { return xhsNativeSearchEnabled; }
 
@@ -31,6 +30,7 @@ export class XiaohongshuSource implements SpecializedSource {
   readonly id = "xiaohongshu" as const;
   readonly name = "小红书";
   private runtime: NativeBrowserRuntime;
+  private readonly noteUrlCache = new Map<string, string>();
 
   constructor(runtime?: NativeBrowserRuntime) {
     this.runtime = runtime || createNativeBrowserRuntime();
@@ -47,7 +47,7 @@ export class XiaohongshuSource implements SpecializedSource {
       authenticated: sessionStatus.authenticated,
       sessionEstablished: sessionStatus.sessionEstablished,
       capabilities: {
-        nativeSearch: isXhsNativeSearchEnabled(),  // experimental — disabled by default
+        nativeSearch: isXhsNativeSearchEnabled(),  // signed-in in-platform search
         nativeFetch: true,                          // XHS detail fetch using the dedicated browser profile
         webSearchFallback: true,                    // general web discovery via site:xiaohongshu.com
       },
@@ -64,9 +64,9 @@ export class XiaohongshuSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    // Experimental native search path (disabled by default)
+    // Prefer the signed-in in-platform search path.
     if (xhsNativeSearchEnabled) {
-      return this.experimentalNativeSearch(query, req, signal);
+      return this.nativeSearch(query, req, signal);
     }
 
     // Production: do not start browser. Signal registry to use general-web fallback.
@@ -80,7 +80,7 @@ export class XiaohongshuSource implements SpecializedSource {
     };
   }
 
-  private async experimentalNativeSearch(
+  private async nativeSearch(
     query: string,
     req?: SourceSearchRequest,
     signal?: AbortSignal,
@@ -110,7 +110,7 @@ export class XiaohongshuSource implements SpecializedSource {
         const code = navigation.state === "signed-out"
           ? "auth-expired"
           : navigation.state === "login-wall"
-            ? "search-restricted"
+            ? navigation.stage === "explore" ? "auth-expired" : "search-restricted"
             : navigation.state === "security-verification"
               ? "blocked"
               : "parse-failed";
@@ -118,7 +118,7 @@ export class XiaohongshuSource implements SpecializedSource {
           items: [],
           error: {
             code,
-            message: `Xiaohongshu UI search did not become ready (${navigation.state})`,
+            message: `Xiaohongshu UI search did not become ready (${navigation.state} at ${navigation.stage})`,
             retryable: false,
           },
         };
@@ -202,6 +202,7 @@ export class XiaohongshuSource implements SpecializedSource {
       }
 
       const items = Array.from(collectedMap.values()).slice(0, maxResults);
+      for (const item of items) this.rememberNoteUrl(item.id, item.url);
       return { items };
     } catch (err: any) {
       if (signal?.aborted) {
@@ -220,6 +221,20 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
+    const noteId = extractNoteIdFromUrl(url);
+    if (!noteId) {
+      return {
+        error: {
+          code: "parse-failed",
+          message: `Could not identify Xiaohongshu note ID from ${url}`,
+          retryable: false,
+        },
+      };
+    }
+    const navigationUrl = hasXhsAccessToken(url)
+      ? url
+      : this.noteUrlCache.get(noteId) || url;
+
     const isAuth = await this.runtime.verifyAuthenticationForOperation(
       "xiaohongshu",
       signal,
@@ -243,22 +258,11 @@ export class XiaohongshuSource implements SpecializedSource {
     try {
       commentCapture = await page.beginJsonCapture({
         urlIncludes: "/api/sns/web/v2/comment/page",
-        timeoutMs: 6000,
+        timeoutMs: 15000,
         signal,
       });
-      await page.navigate(url, signal);
+      await page.navigate(navigationUrl, signal);
       await page.waitForLoad(signal);
-
-      const noteId = extractNoteIdFromUrl(url);
-      if (!noteId) {
-        return {
-          error: {
-            code: "parse-failed",
-            message: `Could not identify Xiaohongshu note ID from ${url}`,
-            retryable: false,
-          },
-        };
-      }
 
       const finalUrl = await page.evaluate<string>("location.href", signal);
       const finalNoteId = extractNoteIdFromUrl(finalUrl);
@@ -271,8 +275,10 @@ export class XiaohongshuSource implements SpecializedSource {
           },
         };
       }
+      this.rememberNoteUrl(noteId, finalUrl);
 
       let detail: any;
+      let structuredCommentPayload: unknown;
 
       // 1. Structured detail (PRIMARY) — poll __INITIAL_STATE__.note.noteDetailMap directly
       // Does NOT wait for DOM selectors; if structured state is present, returns immediately
@@ -287,6 +293,11 @@ export class XiaohongshuSource implements SpecializedSource {
             (structured.title?.trim() || structured.text?.trim())
           ) {
             detail = structured;
+            try {
+              structuredCommentPayload = await page.call(extractXhsCommentState, [noteId], signal);
+            } catch {
+              // Detail is still valid; comments can arrive later or via network capture.
+            }
             break;
           }
         } catch {
@@ -340,6 +351,35 @@ export class XiaohongshuSource implements SpecializedSource {
         platform: "xiaohongshu",
       };
 
+      // The detail page hydrates its initial comment page into noteDetailMap.
+      // Prefer that deterministic state over waiting for a network request that
+      // may have completed before the CDP listener was attached.
+      if (!structuredCommentPayload && (detail.comments || 0) > 0) {
+        const commentStart = Date.now();
+        while (Date.now() - commentStart < 4000) {
+          if (signal?.aborted) break;
+          try {
+            structuredCommentPayload = await page.call(extractXhsCommentState, [noteId], signal);
+          } catch {
+            // Keep polling while the SPA hydrates its comment state.
+          }
+          if (structuredCommentPayload) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      }
+
+      if (structuredCommentPayload) {
+        commentCapture.cancel();
+        const parsed = extractXhsComments(structuredCommentPayload);
+        return {
+          item: appendCommentsToItem(item, parsed.comments, {
+            heading: "Comments",
+            truncated: parsed.truncated || (detail.comments || 0) > parsed.comments.length,
+          }),
+          retrievalMode: "native-browser",
+        };
+      }
+
       const commentOutcome = await commentCapture.wait();
       if (commentOutcome.state === "captured" && commentOutcome.status >= 200 && commentOutcome.status < 300) {
         const parsed = extractXhsComments(commentOutcome.json);
@@ -374,6 +414,25 @@ export class XiaohongshuSource implements SpecializedSource {
       commentCapture?.cancel();
       await page.close();
     }
+  }
+
+  private rememberNoteUrl(noteId: string, url: string): void {
+    if (!noteId || !hasXhsAccessToken(url)) return;
+    this.noteUrlCache.delete(noteId);
+    this.noteUrlCache.set(noteId, url);
+    while (this.noteUrlCache.size > 100) {
+      const oldest = this.noteUrlCache.keys().next().value;
+      if (!oldest) break;
+      this.noteUrlCache.delete(oldest);
+    }
+  }
+}
+
+function hasXhsAccessToken(url: string): boolean {
+  try {
+    return Boolean(new URL(url).searchParams.get("xsec_token"));
+  } catch {
+    return false;
   }
 }
 

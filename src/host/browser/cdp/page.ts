@@ -129,6 +129,40 @@ export class CdpPage implements CdpPageLease {
     return this.evaluate<T>(expression, signal);
   }
 
+  async focus(selector: string, signal?: AbortSignal): Promise<boolean> {
+    return this.evaluate<boolean>(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return document.activeElement === el; })()`,
+      signal,
+    );
+  }
+
+  async insertText(text: string, signal?: AbortSignal): Promise<void> {
+    await this.client.send("Input.insertText", { text }, this.sessionId, signal);
+  }
+
+  async pressKey(key: "Enter", signal?: AbortSignal): Promise<void> {
+    const params = {
+      key,
+      code: key,
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    };
+    await this.client.send("Input.dispatchKeyEvent", { ...params, type: "keyDown" }, this.sessionId, signal);
+    await this.client.send("Input.dispatchKeyEvent", { ...params, type: "keyUp" }, this.sessionId, signal);
+  }
+
+  async click(selector: string, signal?: AbortSignal): Promise<boolean> {
+    const point = await this.evaluate<{ x: number; y: number } | null>(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r = el.getBoundingClientRect(); if (!r.width || !r.height) return null; return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`,
+      signal,
+    );
+    if (!point) return false;
+    await this.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, this.sessionId, signal);
+    await this.client.send("Input.dispatchMouseEvent", { type: "mousePressed", button: "left", clickCount: 1, ...point }, this.sessionId, signal);
+    await this.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", button: "left", clickCount: 1, ...point }, this.sessionId, signal);
+    return true;
+  }
+
   async scrollBy(pixels: number, signal?: AbortSignal): Promise<void> {
     await this.evaluate(`window.scrollBy({ top: ${pixels}, behavior: 'smooth' })`, signal);
     await new Promise((r) => setTimeout(r, 200));

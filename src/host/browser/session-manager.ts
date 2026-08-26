@@ -6,6 +6,8 @@ import { locateBrowser } from "./locator.ts";
 import { validatePlatformUrl } from "./paths.ts";
 import { ProfileStore } from "./profile-store.ts";
 import { StateStore } from "./state-store.ts";
+import { verifyLiveBrowserSession, type LiveSessionVerifier } from "./live-auth-verifier.ts";
+import { detectXhsPageState } from "./xiaohongshu-page-state.ts";
 import { isPidAlive as defaultIsPidAlive, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
 import type {
   BrowserInfo,
@@ -72,8 +74,8 @@ const PLATFORM_AUTH_CONFIG: Record<
   xiaohongshu: {
     initialUrl: "https://www.xiaohongshu.com/explore",
     domains: ["xiaohongshu.com"],
-    requiredCookies: ["web_session"],
-    verifyPredicate: (names) => names.has("web_session"),
+    requiredCookies: ["a1", "web_session"],
+    verifyPredicate: (names) => names.has("a1") && names.has("web_session"),
   },
   x: {
     initialUrl: "https://x.com/home",
@@ -93,6 +95,7 @@ export class SessionManager implements NativeBrowserRuntime {
   private readonly cdpFactory: CdpClientFactory;
   private readonly isPidAliveFn: PidChecker;
   private readonly killPidFn: PidKiller;
+  private readonly liveSessionVerifier: LiveSessionVerifier;
   private disposed = false;
 
   constructor(
@@ -112,6 +115,7 @@ export class SessionManager implements NativeBrowserRuntime {
         process.kill(pid);
       } catch {}
     },
+    liveSessionVerifier: LiveSessionVerifier = verifyLiveBrowserSession,
   ) {
     this.browserChoice = browserChoice;
     this.idleShutdownMs = idleShutdownMs;
@@ -119,6 +123,7 @@ export class SessionManager implements NativeBrowserRuntime {
     this.cdpFactory = cdpFactory;
     this.isPidAliveFn = isPidAliveFn;
     this.killPidFn = killPidFn;
+    this.liveSessionVerifier = liveSessionVerifier;
     this.profileStore = new ProfileStore(baseDirOverride);
     this.stateStore = new StateStore(baseDirOverride);
   }
@@ -162,14 +167,13 @@ export class SessionManager implements NativeBrowserRuntime {
     signal?: AbortSignal,
     mode: BrowserRunMode = "headless",
   ): Promise<boolean> {
-    const meta = this.profileStore.loadMetadata(platform);
-    if (!meta || !meta.sessionEstablished) {
-      return false;
-    }
-
     try {
+      // Metadata is only a cached observation. A transient page/target race can
+      // make an earlier probe write `sessionEstablished: false` even though the
+      // dedicated profile still contains valid cookies. Operations must verify
+      // the real profile so the next search can self-heal without another login.
       const session = await this.acquireSession(platform, mode, undefined, signal);
-      const isAuth = await this.internalCheckAuth(session);
+      const isAuth = await this.internalCheckAuth(session, signal);
       if (isAuth) {
         this.profileStore.saveMetadata(platform, {
           platform,
@@ -192,21 +196,36 @@ export class SessionManager implements NativeBrowserRuntime {
     }
   }
 
-  private async internalCheckAuth(session: RunningSession): Promise<boolean> {
+  private async internalCheckAuth(session: RunningSession, signal?: AbortSignal): Promise<boolean> {
+    try {
+      if (!await this.hasRequiredCookies(session)) return false;
+      return await this.liveSessionVerifier({
+        platform: session.platform,
+        cdp: session.cdp,
+        signal,
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private async hasRequiredCookies(session: RunningSession): Promise<boolean> {
     const config = PLATFORM_AUTH_CONFIG[session.platform];
     try {
       const res = await session.cdp.send<{
         cookies: Array<{ name: string; domain: string }>;
       }>("Storage.getCookies");
-      const rawCookies = res.cookies || [];
-      const matched = rawCookies.filter((c) => {
-        const cookieDomain = (c.domain || "").toLowerCase().replace(/^\./, "");
-        return config.domains.some((d) => {
-          const target = d.toLowerCase().replace(/^\./, "");
-          return cookieDomain === target || cookieDomain.endsWith("." + target);
-        });
-      });
-      const names = new Set(matched.map((c) => c.name));
+      const names = new Set(
+        (res.cookies || [])
+          .filter((cookie) => {
+            const cookieDomain = (cookie.domain || "").toLowerCase().replace(/^\./, "");
+            return config.domains.some((domain) => {
+              const target = domain.toLowerCase().replace(/^\./, "");
+              return cookieDomain === target || cookieDomain.endsWith("." + target);
+            });
+          })
+          .map((cookie) => cookie.name),
+      );
       return config.verifyPredicate(names);
     } catch {
       return false;
@@ -228,6 +247,12 @@ export class SessionManager implements NativeBrowserRuntime {
     const rec = this.getRecord(platform);
     if (rec.session) {
       const auth = await this.internalCheckAuth(rec.session);
+      this.profileStore.saveMetadata(platform, {
+        platform,
+        sessionEstablished: auth,
+        browserKind: rec.session.browser.kind,
+        lastVerifiedAt: Date.now(),
+      });
       return {
         platform,
         runtimeAvailable: true,
@@ -236,6 +261,7 @@ export class SessionManager implements NativeBrowserRuntime {
         mode: rec.session.mode,
         authState: auth ? "authenticated" : "signed-out",
         authenticated: auth,
+        sessionEstablished: auth,
         verifiedAt: Date.now(),
       };
     }
@@ -263,6 +289,12 @@ export class SessionManager implements NativeBrowserRuntime {
           }
         });
         const authenticated = await this.internalCheckAuth(tempSession);
+        this.profileStore.saveMetadata(platform, {
+          platform,
+          sessionEstablished: authenticated,
+          browserKind: tempSession.browser.kind,
+          lastVerifiedAt: Date.now(),
+        });
         rec.session = tempSession;
         rec.state = "ready";
         this.scheduleIdleTimer(rec);
@@ -274,6 +306,7 @@ export class SessionManager implements NativeBrowserRuntime {
           mode: tempSession.mode,
           authState: authenticated ? "authenticated" : "signed-out",
           authenticated,
+          sessionEstablished: authenticated,
           verifiedAt: Date.now(),
         };
       } catch {
@@ -284,15 +317,16 @@ export class SessionManager implements NativeBrowserRuntime {
     // Check profile metadata: did user establish session previously?
     const meta = this.profileStore.loadMetadata(platform);
     if (meta && meta.sessionEstablished) {
-      // If verified in the last 2 hours without a running browser, treat as authenticated
-      const isRecentlyVerified = meta.lastVerifiedAt && Date.now() - meta.lastVerifiedAt < 2 * 3600 * 1000;
+      // Persisted metadata only proves that this profile established a session
+      // before. Without a running browser, live usability is unknown even when
+      // the previous verification was recent; the status route will probe it.
       return {
         platform,
         runtimeAvailable: true,
         runtimeState: "stopped",
         browser,
-        authState: isRecentlyVerified ? "authenticated" : "unknown",
-        authenticated: Boolean(isRecentlyVerified),
+        authState: "unknown",
+        authenticated: false,
         sessionEstablished: true,
         verifiedAt: meta.lastVerifiedAt,
       };
@@ -321,19 +355,47 @@ export class SessionManager implements NativeBrowserRuntime {
     // It acquires an operation lease to prevent idle shutdown during polling.
     const rec = this.getRecord(platform);
     this.retainLease(rec);
+    let loginPage: CdpPage | undefined;
 
     try {
       const session = await this.acquireSession(platform, "interactive", config.initialUrl, signal);
 
-      await this.prepareInteractiveLogin(session, config.initialUrl, signal);
+      // A new login attempt disarms stale metadata immediately. It becomes
+      // established again only after cookies and live page usability agree.
+      this.profileStore.saveMetadata(platform, {
+        platform,
+        sessionEstablished: false,
+        browserKind: session.browser.kind,
+        lastVerifiedAt: Date.now(),
+      });
+
+      loginPage = await this.prepareInteractiveLogin(session, config.initialUrl, signal);
+      if (platform === "xiaohongshu" && !loginPage) {
+        throw new Error("Unable to inspect the Xiaohongshu login page");
+      }
 
       const start = Date.now();
       const timeoutMs = 300000; // 5 min timeout for manual interaction
       let authenticated = false;
+      let consecutiveReadyStates = 0;
 
       while (Date.now() - start < timeoutMs) {
         if (signal?.aborted || this.disposed) throw new Error("Login aborted by user");
-        authenticated = await this.internalCheckAuth(session);
+        const hasCookies = await this.hasRequiredCookies(session);
+        if (platform === "xiaohongshu") {
+          try {
+            const pageState = hasCookies && loginPage
+              ? await loginPage.call(detectXhsPageState, [], signal)
+              : undefined;
+            consecutiveReadyStates = pageState === "ready" ? consecutiveReadyStates + 1 : 0;
+            authenticated = consecutiveReadyStates >= 2;
+          } catch {
+            consecutiveReadyStates = 0;
+            authenticated = false;
+          }
+        } else {
+          authenticated = hasCookies;
+        }
         if (authenticated) {
           this.profileStore.saveMetadata(platform, {
             platform,
@@ -379,6 +441,16 @@ export class SessionManager implements NativeBrowserRuntime {
         lastError: authenticated ? undefined : "Login timed out",
       };
     } finally {
+      if (loginPage) {
+        try {
+          await rec.session?.cdp.send(
+            "Target.detachFromTarget",
+            { sessionId: loginPage.sessionId },
+          );
+        } catch {
+          // Detaching the inspector must never close the user's login tab.
+        }
+      }
       this.releaseLease(rec);
     }
   }
@@ -387,50 +459,46 @@ export class SessionManager implements NativeBrowserRuntime {
     session: RunningSession,
     initialUrl: string,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<CdpPage | undefined> {
     try {
       const targets = await session.cdp.send<{
         targetInfos: Array<{ targetId: string; type: string }>;
       }>("Target.getTargets");
       let pageTarget = targets.targetInfos?.find((t) => t.type === "page");
 
-      if (pageTarget) {
-        const attachRes = await session.cdp.send<{ sessionId: string }>(
-          "Target.attachToTarget",
-          {
-            targetId: pageTarget.targetId,
-            flatten: true,
-          },
-          undefined,
-          signal,
-        );
-        const pageSessionId = attachRes.sessionId;
-        await session.cdp.send("Page.enable", {}, pageSessionId, signal);
-        await session.cdp.send("Page.navigate", { url: initialUrl }, pageSessionId, signal);
-      } else {
+      if (!pageTarget) {
         const createRes = await session.cdp.send<{ targetId: string }>(
           "Target.createTarget",
-          { url: initialUrl },
+          { url: "about:blank" },
           undefined,
           signal,
         );
         pageTarget = { targetId: createRes.targetId, type: "page" };
       }
 
-      if (pageTarget) {
-        const boundsRes = await session.cdp.send<{ windowId: number }>(
-          "Browser.getWindowForTarget",
-          { targetId: pageTarget.targetId },
-        );
-        if (boundsRes?.windowId) {
-          await session.cdp.send("Browser.setWindowBounds", {
-            windowId: boundsRes.windowId,
-            bounds: { windowState: "normal" },
-          });
-        }
+      const attachRes = await session.cdp.send<{ sessionId: string }>(
+        "Target.attachToTarget",
+        { targetId: pageTarget.targetId, flatten: true },
+        undefined,
+        signal,
+      );
+      const page = new CdpPage(pageTarget.targetId, attachRes.sessionId, session.cdp, async () => {});
+      await page.navigate(initialUrl, signal);
+
+      const boundsRes = await session.cdp.send<{ windowId: number }>(
+        "Browser.getWindowForTarget",
+        { targetId: pageTarget.targetId },
+      );
+      if (boundsRes?.windowId) {
+        await session.cdp.send("Browser.setWindowBounds", {
+          windowId: boundsRes.windowId,
+          bounds: { windowState: "normal" },
+        });
       }
+      return page;
     } catch {
       // Non-critical interactive prep error
+      return undefined;
     }
   }
 
