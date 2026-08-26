@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Unified multi-provider web search and fetch for DeepSeek Harness — BYOK, per-provider credential pools, quota & health monitoring, deterministic fallback, native settings UI, and self-hosted search",
   "author": "A3Boy",
   "license": "MIT",
