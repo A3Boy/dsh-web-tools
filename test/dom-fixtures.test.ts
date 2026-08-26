@@ -1,158 +1,142 @@
-/**
- * Real DOM HTML fixture tests for Xiaohongshu & X DOM parsers.
- */
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseXhsSearchDom, parseXhsNoteDetailDom } from "../browser-bridge/src/sites/xiaohongshu.ts";
-import { parseXTweetDom } from "../browser-bridge/src/sites/x.ts";
+import test from "node:test";
+import { extractVisibleXhsSearch, extractXhsNoteDetail } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
+import { extractVisibleXTweets } from "../src/host/sources/browser-scripts/x.ts";
 
-// Simple lightweight mock DOM Document for Node.js test environment
-class MockElement {
-  tagName: string;
-  attributes: Record<string, string>;
-  textContent: string;
-  children: MockElement[];
+test("DOM Fixture: extractVisibleXhsSearch correctly extracts note items preserving xsec_token", () => {
+  const fakeHtml = `
+    <section class="note-item">
+      <a class="cover" href="/search_result/65f123456789abcdef012345?xsec_token=CB123456789abcdef&xsec_source=pc_search">
+        <img class="cover" src="https://ci.xiaohongshu.com/cover.jpg" />
+      </a>
+      <div class="footer">
+        <a class="title"><span>东京小众咖啡馆推荐</span></a>
+        <div class="author-wrapper">
+          <a class="author" href="/user/profile/5a123456">
+            <span class="name">东京探店达人</span>
+          </a>
+          <span class="like-wrapper">
+            <span class="count">1.2万</span>
+          </span>
+        </div>
+      </div>
+    </section>
+  `;
 
-  constructor(
-    tagName: string,
-    attributes: Record<string, string> = {},
-    textContent = "",
-    children: MockElement[] = [],
-  ) {
-    this.tagName = tagName;
-    this.attributes = attributes;
-    this.textContent = textContent;
-    this.children = children;
-  }
-
-  getAttribute(name: string): string | null {
-    return this.attributes[name] ?? null;
-  }
-
-  querySelector(selector: string): MockElement | null {
-    const list = this.querySelectorAll(selector);
-    return list.length > 0 ? list[0] : null;
-  }
-
-  querySelectorAll(selector: string): MockElement[] {
-    const results: MockElement[] = [];
-
-    const matchPart = (sel: string, el: MockElement): boolean => {
-      const s = sel.trim();
-      if (s === "section.note-item") {
-        return el.tagName === "SECTION" && (el.attributes["class"] ?? "").includes("note-item");
+  (globalThis as any).document = {
+    querySelectorAll: (selector: string) => {
+      if (selector === "section.note-item") {
+        return [
+          {
+            querySelector: (sel: string) => {
+              if (sel === "a.cover" || sel.includes("/search_result/")) {
+                return {
+                  getAttribute: (attr: string) =>
+                    attr === "href"
+                      ? "/search_result/65f123456789abcdef012345?xsec_token=CB123456789abcdef&xsec_source=pc_search"
+                      : null,
+                };
+              }
+              if (sel === ".title span" || sel === ".footer .title" || sel === ".title") {
+                return { textContent: "东京小众咖啡馆推荐" };
+              }
+              if (sel.includes("author") && sel.includes(".name")) {
+                return { textContent: "东京探店达人" };
+              }
+              if (sel.includes("author")) {
+                return { getAttribute: (attr: string) => (attr === "href" ? "/user/profile/5a123456" : null) };
+              }
+              if (sel.includes(".like-wrapper") || sel === ".count") {
+                return { textContent: "1.2万" };
+              }
+              if (sel.includes("img")) {
+                return { getAttribute: () => "https://ci.xiaohongshu.com/cover.jpg" };
+              }
+              return null;
+            },
+          },
+        ];
       }
-      if (s.startsWith("section:has")) {
-        return el.tagName === "SECTION" && el.children.some((c) => c.tagName === "A");
-      }
-      if (s.includes('a[href*="/search_result/"]')) {
-        return el.tagName === "A" && (el.attributes["href"] ?? "").includes("/search_result/");
-      }
-      if (s.includes('a[href*="/explore/"]')) {
-        return el.tagName === "A" && (el.attributes["href"] ?? "").includes("/explore/");
-      }
-      if (s.includes('a[href*="/status/"]')) {
-        return el.tagName === "A" && (el.attributes["href"] ?? "").includes("/status/");
-      }
-      if (s === 'article[data-testid="tweet"]') {
-        return el.tagName === "ARTICLE" && el.attributes["data-testid"] === "tweet";
-      }
-      if (s === '[data-testid="tweetText"]') {
-        return el.attributes["data-testid"] === "tweetText";
-      }
-      if (s === '[data-testid="User-Name"]') {
-        return el.attributes["data-testid"] === "User-Name";
-      }
-      if (s === '[data-testid="like"]') {
-        return el.attributes["data-testid"] === "like";
-      }
-      if (s === "time") {
-        return el.tagName === "TIME";
-      }
-      if (s === "#detail-title") {
-        return el.attributes["id"] === "detail-title";
-      }
-      if (s === "#detail-desc") {
-        return el.attributes["id"] === "detail-desc";
-      }
-      if (s === ".username") {
-        return (el.attributes["class"] ?? "").includes("username");
-      }
-      if (s.includes(".title")) {
-        return (el.attributes["class"] ?? "").includes("title");
-      }
-      if (s.includes(".author")) {
-        return (el.attributes["class"] ?? "").includes("author");
-      }
-      if (s.includes(".count")) {
-        return (el.attributes["class"] ?? "").includes("count");
-      }
-      return false;
-    };
-
-    const matchSingle = (el: MockElement): boolean => {
-      return selector.split(",").some((part) => matchPart(part, el));
-    };
-
-    const walk = (el: MockElement) => {
-      if (matchSingle(el)) {
-        results.push(el);
-      }
-      for (const child of el.children) {
-        walk(child);
-      }
-    };
-
-    walk(this);
-    return results;
-  }
-}
-
-test("DOM Fixture: parseXhsSearchDom correctly extracts note items preserving xsec_token", () => {
-  const linkEl = new MockElement("A", { href: "/search_result/654321?xsec_token=SEC_TOKEN_ABC" });
-  const titleEl = new MockElement("SPAN", { class: "title" }, "上海最美咖啡馆打卡");
-  const authorEl = new MockElement("SPAN", { class: "author" }, "咖啡探险家");
-  const countEl = new MockElement("SPAN", { class: "count" }, "1.2万");
-  const footerEl = new MockElement("DIV", { class: "footer" }, "", [titleEl, authorEl, countEl]);
-  const sectionEl = new MockElement("SECTION", { class: "note-item" }, "", [linkEl, footerEl]);
-
-  sectionEl.querySelector = (sel: string) => {
-    if (sel.includes("/search_result/")) return linkEl;
-    if (sel.includes("title")) return titleEl;
-    if (sel.includes("author")) return authorEl;
-    if (sel.includes("count")) return countEl;
-    return null;
-  };
-
-  const fakeDoc = {
-    querySelectorAll(sel: string) {
-      return [sectionEl];
+      return [];
     },
   };
 
-  const items = parseXhsSearchDom(fakeDoc as unknown as Document);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].title, "上海最美咖啡馆打卡");
-  assert.equal(items[0].author, "咖啡探险家");
-  assert.equal(items[0].likes, 12000);
-  assert.equal(items[0].url, "https://www.xiaohongshu.com/search_result/654321?xsec_token=SEC_TOKEN_ABC");
+  const results = extractVisibleXhsSearch();
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "65f123456789abcdef012345");
+  assert.equal(new URL(results[0].url).pathname, "/explore/65f123456789abcdef012345");
+  assert.ok(results[0].url.includes("xsec_token=CB123456789abcdef"));
+  assert.equal(results[0].title, "东京小众咖啡馆推荐");
+  assert.equal(results[0].authorName, "东京探店达人");
+  assert.equal(results[0].likes, 12000);
 });
 
-test("DOM Fixture: parseXTweetDom correctly extracts tweets with testid attributes", () => {
-  const doc = new MockElement("DOCUMENT", {}, "", [
-    new MockElement("ARTICLE", { "data-testid": "tweet" }, "", [
-      new MockElement("A", { href: "/sama/status/1234567890" }, "", []),
-      new MockElement("DIV", { "data-testid": "User-Name" }, "Sam Altman @sama · 2h", []),
-      new MockElement("DIV", { "data-testid": "tweetText" }, "The pace of AI progress is truly remarkable.", []),
-      new MockElement("TIME", { datetime: "2026-08-20T10:00:00.000Z" }, "2h", []),
-      new MockElement("DIV", { "data-testid": "like" }, "5.4K", []),
-    ]),
-  ]);
+test("DOM Fixture: extractVisibleXTweets correctly extracts tweets with testid attributes", () => {
+  (globalThis as any).document = {
+    querySelectorAll: (selector: string) => {
+      if (selector === "article[data-testid='tweet']") {
+        return [
+          {
+            querySelector: (sel: string) => {
+              if (sel === "time") {
+                return {
+                  closest: () => ({ getAttribute: () => "https://x.com/karpathy/status/1760000000000000000" }),
+                  getAttribute: () => "2025-02-20T12:00:00.000Z",
+                };
+              }
+              if (sel === "[data-testid='tweetText']") {
+                return { textContent: "The hottest new programming language is English." };
+              }
+              if (sel === "[data-testid='User-Name']") {
+                return { textContent: "Andrej Karpathy @karpathy" };
+              }
+              if (sel === "[data-testid='like']") {
+                return { getAttribute: () => "15.4K Likes", textContent: "15.4K" };
+              }
+              if (sel === "[data-testid='retweet']") {
+                return { getAttribute: () => "3.2K Retweets", textContent: "3.2K" };
+              }
+              if (sel === "[data-testid='reply']") {
+                return { getAttribute: () => "850 Replies", textContent: "850" };
+              }
+              return null;
+            },
+            querySelectorAll: () => [],
+          },
+        ];
+      }
+      return [];
+    },
+  };
 
-  const tweets = parseXTweetDom(doc as unknown as Document);
-  assert.equal(tweets.length, 1);
-  assert.equal(tweets[0].text, "The pace of AI progress is truly remarkable.");
-  assert.equal(tweets[0].authorHandle, "@sama");
-  assert.equal(tweets[0].likes, 5400);
-  assert.equal(tweets[0].url, "https://x.com/sama/status/1234567890");
+  const results = extractVisibleXTweets();
+  assert.equal(results.length, 1);
+  assert.equal(results[0].id, "1760000000000000000");
+  assert.equal(results[0].authorHandle, "@karpathy");
+  assert.equal(results[0].authorName, "Andrej Karpathy");
+  assert.equal(results[0].text, "The hottest new programming language is English.");
+  assert.equal(results[0].likes, 15400);
+  assert.equal(results[0].retweets, 3200);
+  assert.equal(results[0].replies, 850);
+});
+
+test("DOM Fixture: extractXhsNoteDetail recognizes the real 安全限制 page", () => {
+  (globalThis as any).document = {
+    title: "小红书",
+    querySelector: (selector: string) => {
+      if (selector === "#detail-title" || selector === ".title") {
+        return { textContent: "安全限制" };
+      }
+      if (selector === "#detail-desc" || selector === ".desc" || selector === ".content") {
+        return { textContent: "IP存在风险，请切换可靠网络环境后重试" };
+      }
+      return null;
+    },
+    querySelectorAll: () => [],
+  };
+
+  const detail = extractXhsNoteDetail();
+  assert.equal(detail.isBlocked, true);
+  assert.equal(detail.title, undefined);
+  assert.equal(detail.text, undefined);
 });

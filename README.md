@@ -1,14 +1,14 @@
 <div align="center">
 
 <p align="center">
-  <img src="assets/logo.png" alt="dsh-web-tools" width="160" />
+  <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/logo.png" alt="dsh-web-tools" width="160" />
 </p>
 
 # dsh-web-tools
 
-A unified multi-provider Web Runtime for DeepSeek Harness.
+Empower DeepSeek Harness with unified search and deep content extraction across the open web and social platforms.
 
-Preserves the native DSH `web_search` / `web_fetch` tool contracts while providing multi-provider aggregation, automatic fallback, multi-key pooling, quota and health monitoring, provider-native preference tuning, page content extraction, and per-session Search Mode at the host runtime layer.
+**Native-Capability Adaptation Across 8 Web Providers · SearchHints Semantic Compilation · Multi-Source Resilience · Xiaohongshu & Twitter / X Retrieval**
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -27,220 +27,193 @@ Preserves the native DSH `web_search` / `web_fetch` tool contracts while providi
 
 </div>
 
+## What problem does it solve?
+
+When web access depends on a single provider, exhausted quota, rate limits, or timeouts can interrupt retrieval. Wrapping multiple APIs with a naive proxy often flattens them to a lowest common denominator, failing to leverage each provider's specialized search modes, categories, freshness, domain rules, and extraction capabilities.
+
+dsh-web-tools connects Exa, Tavily, Firecrawl, Parallel, Brave, You.com, Jina, SearXNG, Xiaohongshu, and Twitter / X to DSH’s standard `web_search` / `web_fetch` interface.
+
+While keeping the tool interface unified, dsh-web-tools normalizes search intents through SearchHints and compiles queries into native provider-specific parameters. This leverages each engine's native categories, freshness filters, domain policies, regional targeting, and content extraction, while maximizing uptime through multi-key allocation, automated failover, and dedicated browser profiles.
+
+---
+
+**Key Highlights**:
+
+- **Native-Capability Adaptation Across 8 Web Providers**: Keeps the standard `web_search` / `web_fetch` contracts while compiling unified search intent into provider-specific native parameters instead of reducing every backend to the same lowest-common-denominator feature set.
+- **SearchHints → Provider-Specific Parameter Compilation**: Normalizes technical, research, news, date, region, and domain constraints from queries, compiling them into provider-native parameters through deterministic code without additional LLM latency.
+- **Xiaohongshu & Twitter / X Platform Sources**: Both platforms support signed-in native search, detail extraction, and returned comments or replies through dedicated local browser profiles.
+- **Multi-Source Scheduling & Resilience**: Features multi-API-key pooling, 401 failover, 429 cooldown windows, configurable Ordered / Round-Robin / Random routing, and failover chains.
+- **Native DSH Tool Integration**: Plugs directly into standard `web_search` / `web_fetch` without requiring new tool declarations, and includes a session-level "Search Mode" toggle.
+
+```text
+                         DSH Agent
+                            │
+                 web_search / web_fetch
+                            │
+                            ▼
+                       SearchHints
+            topic / freshness / domains
+               locale / cleanQuery ...
+                            │
+                 Provider-specific
+                    compilation
+                            │
+      ┌────────┬─────────┬───────────┬──────────┐
+      │  Exa   │ Tavily  │ Firecrawl │ Parallel │ ...
+      │        │         │           │          │
+      │category│ topic   │ github    │objective │
+      │ date   │ chunks  │ research  │ policy   │
+      │domains │ time    │ tbs       │ queries  │
+      └────────┴─────────┴───────────┴──────────┘
+
+```
+
 <p align="center">
-  <img src="assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools settings and multi-provider routing" />
+  <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools search strategy and multi-provider routing" />
 </p>
 
-## Features
+## Native-Capability Adaptation Across 8 Web Providers
 
-- **Zero-Overhead SearchHints Semantic Layer**: Built-in deterministic intent extraction directly from queries (coding, academic research, news freshness, and domain constraints like `site:github.com` or `after:YYYY-MM-DD`), intelligently mapping to native parameters and specialized indices without LLM planning overhead or latency.
-- **8 Search Providers Deeply Adapted**:
-  - **Parallel**: Dual-layer semantics (`objective` soft-steering + clean `search_queries`) and `source_policy` domain/freshness filters.
-  - **Firecrawl**: Coding/technical queries query the **Developer Index** (`categories: ["developer"]`), supporting `research` and `tbs` time filters.
-  - **Exa**: Exact category mapping (`publication` / `news` / `financial report`), ISO-8601 date ranges, and domain constraints.
-  - **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
-  - **Brave Search**: LLM Context endpoint with `pd/pw/pm/py` freshness filters, country, and search language.
-  - **Tavily**: Full-tier `chunks_per_source` chunking control, `news` topic and time range filtering (gracefully falls back to general search for finance/code).
-  - **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
-  - **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
-- **Platform Search Sources (Xiaohongshu & Twitter / X)**:
-  - **Browser Bridge Architecture**: Leverages user authenticated browser sessions via a lightweight MV3 extension, with **0 raw cookie storage on the Host process**, bypassing fragile reverse-engineered APIs.
-  - **Xiaohongshu**: Waterfall DOM incremental extraction preserving complete signed `xsec_token` URLs, note text, and engagement metrics.
-  - **Twitter / X**: Native query operator mapping (`from:`, `since:`, `lang:`) and semantic DOM tweet extraction.
-  - **Graceful Web Fallback**: Seamlessly falls back to `site:xiaohongshu.com` / `(site:x.com OR site:twitter.com)` when disconnected.
-- **Native DSH Tool Compatibility**: No bespoke tools like `web_search_exa`; agents invoke standard `web_search` and `web_fetch` contracts seamlessly.
-- **Multi-Query Support**: Handles DSH `queries[]` payloads concurrently across independent search dimensions.
-- **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.
-- **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
-- **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately without redundant network overhead.
-- **Configurable Routing Policies**: Supports Ordered, Round-Robin, and Random initial provider routing.
-- **One-Click Preference Presets**: Offers Fast, Deep, Economy, and Recommended presets to quickly adjust execution parameters across providers.
-- **Native Page Extraction (Extract / Scrape)**: Transparently routes `web_fetch` to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader).
-- **Session-Level Search Mode**: Chat input toggle that forces the agent to complete web research before generating answers.
-- **Proxy and Self-Hosted Support**: Full support for system proxies, `HTTP(S)_PROXY`, `NO_PROXY`, and self-hosted SearXNG instances without API keys.
+The tool interface and search semantics are unified for the DSH agent, but underlying provider capabilities are not.
 
-> dsh-web-tools does not provide shared API keys or proxy services. All requests originate directly from the local DSH host process to upstream APIs.
+dsh-web-tools expresses query intent through SearchHints and crafts dedicated requests for each provider, rather than compressing all backends into a single set of lowest-common-denominator parameters.
+
+For example, when searching for "AI coding references from the past week":
+
+* **Exa**: Maps category filters, ISO date ranges, and domain constraints;
+* **Firecrawl**: Maps technical queries to the native `github` category, research queries to `research`, and applies `tbs` freshness filters;
+* **Parallel**: Deconstructs the query into `objective`, clean `search_queries`, and `source_policy`;
+* **Brave Search**: Maps freshness, country, and language parameters with priority LLM Context endpoint;
+* **You.com**: Leverages `boost_domains` for soft domain preference.
+
+All adaptations run through deterministic code without invoking an extra LLM call.
+
+* **Exa**: Category mapping (`publication` / `news` / `financial report`), ISO-8601 date ranges, and domain constraints.
+* **Firecrawl**: Maps coding and technical queries to the `github` category, academic queries to `research`, and supports `tbs`, domain constraints, and clean Markdown extraction.
+* **Parallel**: Dual-layer semantics (`objective` soft-steering + clean `search_queries`) and `source_policy` domain/freshness filters.
+* **Tavily**: Supports `basic` / `advanced` / `fast` / `ultra-fast` search depths; `basic`, `advanced`, and `fast` support `chunks_per_source`, with native `news` / `finance` topics, date ranges, country, and domain constraints.
+* **Brave Search**: LLM Context endpoint with `pd/pw/pm/py` freshness filters, country, and search language.
+* **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
+* **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
+* **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
+* **Native Page Extraction (`web_fetch`)**: Transparently routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader).
+
+---
+
+## Social Platform Sources
+
+Unlike general search engines, the plugin connects directly to native social platform sessions:
+
+* **Native Isolated Browser Architecture**:
+  * Directly controls local Edge / Chrome instances using dedicated profiles over CDP.
+  * **0 browser extensions and 0 Playwright / Chromium bundles**. Cookies remain managed by the dedicated browser profile and are not written to plugin configuration, logs, or relays; the browser still sends them to the platform during normal authenticated requests.
+
+* **Xiaohongshu**:
+  * **Note Detail & Comment Fetch (`web_fetch`)**: Uses the dedicated browser profile to extract structured `__INITIAL_STATE__` data with DOM fallback while preserving signed `xsec_token` URLs. When the page loads comment data, top-level comments and returned nested replies are extracted individually.
+  * **Native Search Discovery (`web_search`)**: Uses the signed-in browser and the real search controls on `/explore`, entering only the cleaned topic query rather than platform names or `site:` operators. It distinguishes login walls, security verification, and a genuinely signed-out session. Operators can temporarily disable this path with `XHS_NATIVE_SEARCH=0` while diagnosing browser issues.
+
+* **Twitter / X**:
+  * **Native Search, Tweet Detail & Replies**: Captures the X web client's GraphQL data streams (SearchTimeline / TweetDetail) over CDP, parses the target tweet and its reply tree structurally, and uses DOM extraction as a supplement and fallback. Supports `from:`, `since:`, and `until:` operators.
+
+Each detail fetch includes at most 30 comments or replies, with up to 800 characters per entry. Additional pages or nested replies are explicitly marked as truncated to keep model context bounded.
+
+> **Capability Boundary**: For Xiaohongshu notes where the primary content resides in images, the fetcher returns the title, text description, engagement metrics, image count, and loaded comments; it does not perform optical character recognition (OCR) on image text or automatically paginate through all comments.
+
+Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects the platform and is removed before the native search runs; for example, `小红书: DeepSeek Harness` enters only `DeepSeek Harness` into Xiaohongshu's search box.
+
+* **General-Web Fallback**: Uses configured general search or fetch providers when a platform source is disabled, temporarily unavailable, or reports a retryable failure. Non-retryable sign-in, access-control, search-restriction, and invalid-detail errors are returned directly so indexed content is not presented as native platform results, details, or comments.
+* **Automated Session Verification**: Cookies are only the first gate. Xiaohongshu requires both `a1` and `web_session`, then performs a stabilized live `/explore` check in the interactive browser. A visible login wall invalidates the old session and restores the sign-in action; a wall appearing only after search submission is reported directly as `search-restricted` rather than being hidden behind indexed web results.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/platformSessions.png" width="900" alt="Xiaohongshu and Twitter X signed-in sessions verified automatically" />
+</p>
+
+---
+
+## Fallback & Resilience
+
+* **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.
+* **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
+* **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately.
+* **Configurable Routing Policies**: `web_search` supports Ordered, Round-Robin, and Random starting-provider selection. `web_fetch` always follows the deterministic fetch-capable chain.
+* **Session-Level Search Mode**: Requires at least one completed `web_search` or `web_fetch` call before an answer. A failed call still counts as an attempt, and the agent is instructed to disclose what could not be verified.
+* **Proxy Support**: Supports the Windows system proxy, `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, with automatic loopback bypass.
+
+---
 
 ## Installation & Updates
 
-### Install
-
 ```bash
+# Install
 dsh plugin --profile web add github:A3Boy/dsh-web-tools
-```
 
-Restart `dsh web` and navigate to:
-
-```text
-Settings → Web Search
-```
-
-### Update
-
-```bash
+# Update
 dsh plugin --profile web update dsh-web-tools
-```
 
-The settings card checks GitHub Releases in the background and prompts when a new stable version is available.
-
-### Uninstall
-
-```bash
+# Remove
 dsh plugin --profile web remove dsh-web-tools
+
 ```
+
+Restart `dsh web` and navigate to `Settings` → `Web Search`.
+
+---
 
 ## Provider Capabilities
 
-| Provider | Search | Fetch / Extract | Key Integrations & Deep Adaptations | Quota Inspection |
-| --- | :---: | :---: | --- | :---: |
-| [Exa](https://exa.ai) | ✅ | ✅ `/contents` | Semantic retrieval (`auto` / `fast` / `deep`), `category` mappings (publication / news / financial report), query-aware highlights, ISO-8601 date ranges, domain filters | Dashboard only |
-| [Tavily](https://tavily.com) | ✅ | ✅ `/extract` | Search depth (`basic` / `advanced` / `fast` / `ultra-fast`), full-tier `chunks_per_source` control, `news` topic & time range filters, auto parameters | ✅ Official API |
-| [Firecrawl](https://firecrawl.dev) | ✅ | ✅ `/scrape` | Structured search, coding queries routed to **Developer Index**, `research` category, `tbs` time filters, clean markdown scraping, `onlyMainContent` filter | ✅ Official API |
-| [Parallel](https://parallel.ai) | ✅ | ✅ `/v1/extract` | Agent-optimized dual-layer search (`advanced` / `basic` / `turbo`), `objective` soft-steering, `source_policy` domain/freshness filters, LLM-ranked excerpts, full content extraction | Dashboard only |
-| [Brave Search](https://brave.com/search/api/) | ✅ | — | LLM Context endpoint preferred, `pd/pw/pm/py` freshness presets, country & search language targeting, automatic fallback to Classic Web Search | ✅ Response headers |
-| [You.com](https://you.com) | ✅ | ✅ `/v1/contents` | AI highlights extraction, native **`boost_domains`** soft-weighting, freshness & geo targeting, Markdown contents endpoint | ✅ Official API (USD) |
-| [Jina](https://jina.ai) | ✅ | ✅ Reader | Query noise reduction, ReaderLM-v2 markdown conversion, token budget guards | Best effort (Reader) |
-| [SearXNG](https://docs.searxng.org) | ✅ | — | Open-source meta-search engine, category mappings (it/science/news) & `time_range`, keyless and privacy-focused | Self-hosted (unlimited) |
+| Provider | Search | Fetch / Extract | Key Integrations & Adaptations | Quota Inspection |
+| --- | --- | --- | --- | --- |
+| [Exa](https://exa.ai) | Yes | Yes, `/contents` | Semantic retrieval (`auto` / `fast` / `deep`), `category` mappings, query-aware highlights, ISO-8601 date ranges | Dashboard only |
+| [Tavily](https://tavily.com) | Yes | Yes, `/extract` | Search depths (`basic` / `advanced` / `fast` / `ultra-fast`); the first three support chunking, plus `news` / `finance`, date, country, and domain parameters | Official API |
+| [Firecrawl](https://firecrawl.dev) | Yes | Yes, `/scrape` | Technical queries map to `github`, academic queries to `research`; supports `tbs`, domain constraints, and clean Markdown extraction | Official API |
+| [Parallel](https://parallel.ai) | Yes | Yes, `/v1/extract` | Agent dual-layer semantic search (`advanced` / `basic` / `turbo`), `objective` soft-steering, `source_policy` | Dashboard only |
+| [Brave Search](https://brave.com/search/api/) | Yes | — | Preferred LLM Context pre-extraction with `pd/pw/pm/py` freshness, country/lang filters, auto fallback to Classic Search | Response headers |
+| [You.com](https://you.com) | Yes | Yes, `/v1/contents` | Snippet highlights, native **`boost_domains`** soft-weighting, freshness and country/lang filters, markdown endpoint | Official API |
+| [Jina](https://jina.ai) | Yes | Yes, Reader | Search query noise filtering, ReaderLM-v2 high-precision markdown, token budget and truncation control | Best-effort |
+| [SearXNG](https://docs.searxng.org) | Yes | — | Open-source self-hosted metasearch with `categories` and supported `time_range` values; the adapter requires no API key | Instance-defined |
 
-<p align="center">
-  <img src="assets/providerDetail.png" width="900" alt="Provider settings and search preferences" />
-</p>
+### Quick Recommendation Guide
 
-## Configuration & Feature Matrix
+New installations default to **Exa**; existing installations keep their saved provider configuration.
 
-| Setting | Location | Options / Format | Impact & Behavior |
-| :--- | :--- | :--- | :--- |
-| **Master Toggle (Enabled)** | Header row | Switch toggle | Globally enables or disables the multi-provider Web runtime. When off, reverts to standard DSH behavior. |
-| **Search Routing Policy** | Header strategy bar | Ordered / Round-Robin / Random | **Ordered**: always starts from preferred; **Round-Robin**: rotates starting source per query to balance load; **Random**: picks starting source randomly. All cascade on failure. |
-| **Provider Order & Fallback** | Provider list | Drag handle (`⋮⋮`) | Reorders failover sequence; top item is the primary default provider. |
-| **Multi-Key Pool** | Provider modal | Add/remove keys (masked) | In-flight key load balancing; routes to lowest `inFlight` key and fails over to secondary keys on 401 errors. |
-| **Preference Presets** | Settings panel | Recommended / Fast / Deep / Economy / Custom | One-click application of native execution parameters across all providers (e.g. latency priority vs exhaustive retrieval). |
-| **Provider Attempt Timeout** | Advanced settings | 1000ms – 60000ms (default 10s) | Per-attempt budget before aborting and triggering fallback to the next provider. |
-| **Per-Session Search Mode** | Chat input row | Auto / Required | When **Required**, enforces at least one `web_search`/`web_fetch` call before the agent finalizes an answer. |
-| **Proxy Configuration** | System / Env vars | `HTTP(S)_PROXY` / `NO_PROXY` | System and environment proxy support. Loopback and local targets (`localhost`, `127.0.0.1`, SearXNG) automatically bypass. |
-
-## Quick Selection Guide
-
-Exa is the default provider for new installations based on project P5 benchmark evaluation.
-
-| Use Case | Recommended Provider | Notes |
+| Scenario | Recommended Provider | Notes |
 | --- | --- | --- |
-| Default / Technical Documentation | **Exa** | High semantic relevance, precise highlights |
-| Low-Latency Agent Grounding | **Brave Search** (LLM Context) | Fast response with pre-extracted context |
-| Deep Research & Structured Extract | **Tavily** / **Parallel** | Thorough discovery and deep page parsing |
-| High-Quality Webpage Markdown Scraping | **Firecrawl** / **Jina** / **You.com** | Robust main content extraction |
-| News & General Topics | **You.com** | Broad coverage and real-time freshness |
-| Private Intranet / Keyless Setup | **SearXNG** | Zero external API keys, fully self-hosted |
+| **Social Discovery & Content Detail** | **Xiaohongshu / Twitter / X** | Both platforms provide signed-in native search, detail retrieval, and returned comments or replies |
+| **Semantic Search / Technical Documentation** | **Exa** | Semantic modes plus category, date, domain, and highlight parameters |
+| **Pre-Extracted Search Context** | **Brave Search** | Prefers LLM Context with Classic Search fallback |
+| **Configurable Search Depth and Extraction** | **Tavily** / **Parallel** | Provider-native depth modes and content extraction endpoints |
+| **Content-to-Markdown Extraction** | **Firecrawl** / **Jina** | Main-content filtering, scraping, and Reader conversion |
+| **Freshness, Region, and Domain Preference** | **You.com** | Freshness, locale, and `boost_domains` parameters |
+| **Self-Hosted Metasearch** | **SearXNG** | Uses your SearXNG endpoint; the adapter requires no API key |
 
-## Routing & Resilience
+---
 
-### 1. Search Routing Policy
-
-Choose how the runtime selects the initial search provider:
-- **Ordered (Default)**: Always starts with the first configured provider in the list.
-- **Round-Robin**: Rotates the initial provider sequentially per query to distribute request load across multiple providers.
-- **Random**: Randomly selects a provider as the starting point.
-
-> When the initial provider fails, the runtime always cascades through the remaining providers in order regardless of the routing policy.
-
-### 2. Automatic Fallback Chain
-
-Drag and drop providers in the settings page to customize the fallback order. Failover triggers on:
-- Request timeouts (configurable per-attempt timeout, default 10s)
-- Network errors or DNS lookup failures
-- Upstream 5xx server errors
-- 429 rate limits or exhausted credits (402, 432, 433)
-
-### 3. 429 Retry-After Cooldown
-
-When an upstream provider responds with HTTP 429 and a `Retry-After` header, it is placed in temporary cooldown. Subsequent queries skip this provider with zero network overhead until the cooldown expires.
-
-### 4. Multi-Key Pooling & Isolation
-
-Add multiple API keys to any hosted provider:
-- Requests prioritize keys with the lowest active in-flight count.
-- Authentication errors (401/403) mark that specific key unhealthy and immediately try alternative keys under the same provider before cascading to the next provider.
-- Keys are masked in the UI to prevent credential exposure.
-
-## Search Mode
-
-The web interface includes a session-level Search Mode toggle beside the chat input:
-
-- **Auto**: The agent autonomously decides whether to use web retrieval tools based on context.
-- **Required**: Enforces at least one `web_search` or `web_fetch` call before finalizing a response. If web retrieval fails entirely, the agent is instructed to state what could not be verified.
-
-<p align="center">
-  <img src="assets/searchMode.png" width="480" alt="Search Mode Toggle" />
-</p>
-
-## Interactive Test Search
-
-The settings page provides an integrated test console to verify the live fallback chain:
-- Inspect the selected winning provider
-- View end-to-end latency and result count
-- Review detailed attempt logs (success, timeout, authentication failure, rate limit)
-- Preview retrieved titles, URLs, and snippet excerpts
-
-<p align="center">
-  <img src="assets/overviewAndTestSearch.png" width="850" alt="Test Search" />
-</p>
-
-## Proxy Configuration
-
-Built-in proxy resolution supports:
-
-```text
-HTTP_PROXY / HTTPS_PROXY
-Windows System Proxy settings
-NO_PROXY
-```
-
-Loopback addresses (`localhost`, `127.0.0.1`, `::1`, `*.local`) automatically bypass proxies.
-
-## Security & Privacy
-
-- **Local Storage & Direct Transport**: API keys remain in the local DSH credential vault. The host process communicates directly with provider endpoints without intermediate relays.
-- **Masked Credentials**: Full API keys are never exposed back to the client UI. Authorization headers are sanitized in logs and test outputs.
-- **Self-Hosting**: Supports air-gapped or private environments using a local SearXNG instance.
-
-## Development
+## Local Development
 
 ```bash
-# Install dependencies
-pnpm install
+pnpm install          # Install dependencies
+pnpm test             # Run test suite
+pnpm run typecheck    # Type checking
+pnpm run build        # Build bundle into lib/
 
-# Run test suite
-pnpm test
-
-# Type checking
-pnpm run typecheck
-
-# Build bundle
-pnpm run build
 ```
 
-> After making changes in `src/`, run `pnpm run build` to generate the `lib/` artifacts. Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+---
 
-## FAQ
+## Frequently Asked Questions
 
-<details>
-<summary><b>Plugin still displays the old version after updating?</b></summary>
-
-If upgrading via `file:` or package store encounters caching, run `pnpm install` in your DSH profile directory:
+If cache issues occur after upgrading via local path or symlinks, reinstall from the profile directory:
 
 ```bash
-cd ~/.dsh/profiles/web
-pnpm install
+cd ~/.dsh/profiles/web && pnpm install
+
 ```
 
-For local plugin development, use `link:` instead of `file:` to ensure immediate updates.
-</details>
+Exa and Parallel balances are checked in their provider dashboards; Brave quota information comes from actual search response headers. Quota display is informational and does not affect routing or fallback.
 
-<details>
-<summary><b>Why do some providers show "Dashboard only" for quota?</b></summary>
+Xiaohongshu and Twitter / X each use a dedicated local browser profile. The plugin does not export raw cookies to configuration, logs, or third-party relays; the browser sends them through normal authenticated requests to the corresponding platform domains.
 
-Certain providers (e.g., Exa, Parallel) do not currently expose a lightweight public balance endpoint for individual API keys. Quota display is an informational helper and does not affect search functionality or failover.
-</details>
+---
 
 ## License
 

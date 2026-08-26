@@ -80,7 +80,7 @@ export default [
     format: 'cjs',
     platform: 'browser',
     dts: false,
-    sourcemap: true,
+    sourcemap: false,
     // clean stays off: the build script removes lib/ wholesale before tsc, so
     // a tsdown clean here would wipe the lib types tsc just emitted.
     clean: false,

@@ -40,6 +40,7 @@ export interface ConfigView {
     providerAttemptTimeoutMs: number;
     fallbackOrder: string[];
     providers: ProviderView[];
+    platformEnabled?: Record<string, boolean>;
     /**
      * Proxy support state: whether a proxy is configured (env var or Windows
      * system proxy) and whether undici (the proxy engine) is loadable. When a

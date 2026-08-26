@@ -1,22 +1,13 @@
-/**
- * dsh-web-tools — Twitter / X Specialized Platform Source Adapter.
- *
- * Implements `SpecializedSource` on Host:
- * - Probes authenticated status via Browser Bridge.
- * - Dispatches DOM search via `BridgeClient`.
- * - Fetches structured tweet content and threads.
- *
- * @module
- */
-import type { SpecializedSource, SpecializedPlatformId, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
-import { BridgeClient } from "./bridge-client.ts";
+import { type NativeBrowserRuntime } from "../browser/index.ts";
+import type { SpecializedSource, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
+export declare function parseXMetricNumber(text?: string): number | undefined;
+export declare function buildXSearchUrl(query: string, req?: SourceSearchRequest): string;
 export declare class XSource implements SpecializedSource {
-    readonly id: SpecializedPlatformId;
-    private bridgeClient;
-    constructor(bridgeClient?: BridgeClient);
-    probe(): Promise<SourceStatus>;
-    search(request: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
+    readonly id: "x";
+    readonly name = "Twitter / X";
+    private runtime;
+    constructor(runtime?: NativeBrowserRuntime);
+    status(): Promise<SourceStatus>;
+    search(query: string, req?: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
     fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome>;
 }
-/** Default Twitter / X Source instance */
-export declare const defaultXSource: XSource;

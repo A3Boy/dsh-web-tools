@@ -16,7 +16,9 @@ export declare class WebToolsApiError extends Error {
 /** Call one API method; throws WebToolsApiError on failure. */
 export declare function call<T>(method: string, payload?: unknown): Promise<T>;
 import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type { BrowserPlatform, PlatformStatusResponse } from "../shared/platform-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView, } from "../shared/api-types.ts";
+export type { BrowserPlatform, PlatformStatusResponse, } from "../shared/platform-types.ts";
 export declare const api: {
     configGet: () => Promise<ConfigView>;
     configSave: (payload: Record<string, unknown>) => Promise<{
@@ -56,22 +58,14 @@ export declare const api: {
         defaultProvider: string;
         fallbackOrder: string[];
     }>;
-    bridgeStatus: () => Promise<{
-        connected: boolean;
-        platforms: Record<string, {
-            enabled: boolean;
-            authenticated: boolean;
-            bridgeConnected: boolean;
-            account?: any;
-            lastError?: string;
-        }>;
-    }>;
-    bridgeBootstrap: () => Promise<{
-        ticket: string;
-        expiresAt: number;
-    }>;
-    bridgeConnectAuth: (platform: string) => Promise<{
+    platformStatus: () => Promise<PlatformStatusResponse>;
+    platformLogin: (platform: BrowserPlatform) => Promise<{
         status: string;
-        url?: string;
+    }>;
+    platformStop: (platform: BrowserPlatform) => Promise<{
+        ok: boolean;
+    }>;
+    platformReset: (platform: BrowserPlatform) => Promise<{
+        ok: boolean;
     }>;
 };

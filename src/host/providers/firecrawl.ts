@@ -9,7 +9,7 @@
  *
  * @module
  */
-import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { FirecrawlProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
@@ -21,7 +21,7 @@ const FIRECRAWL_SCRAPE_URL = `${FIRECRAWL_BASE}/scrape`;
 /**
  * Build the /v2/search request body for Firecrawl.
  * Maps:
- *  - topic=code → categories: ["developer"] (Firecrawl Developer Index for issues, PRs, docs, repos)
+ *  - topic=code → categories: ["github"] (repositories, code, issues, and documentation)
  *  - topic=research → categories: ["research"]
  *  - freshness preset → tbs (qdr:d for day, qdr:w for week, qdr:m for month, qdr:y for year)
  *  - hard domains → includeDomains / excludeDomains (mutually exclusive)
@@ -40,7 +40,7 @@ export function buildFirecrawlSearchBody(
 
   // 1. Categories mapping
   if (hints?.topic === "code") {
-    body.categories = ["developer"];
+    body.categories = ["github"];
   } else if (hints?.topic === "research") {
     body.categories = ["research"];
   }
@@ -103,14 +103,17 @@ export const FirecrawlProvider: ProviderAdapter = {
     });
     throwIfHttp("Firecrawl", res);
     const raw = await res.json();
-    // Firecrawl /search returns results in `data.web` or `data.developer` (Developer Index) or `data` directly.
+    // Firecrawl v2 normally returns `data` directly. Keep the nested envelopes
+    // for compatibility with older/category-specific responses.
     const results = Array.isArray(raw?.data?.web)
       ? raw.data.web
-      : Array.isArray(raw?.data?.developer)
-        ? raw.data.developer
-        : Array.isArray(raw?.data)
-          ? raw.data
-          : [];
+      : Array.isArray(raw?.data?.github)
+        ? raw.data.github
+        : Array.isArray(raw?.data?.developer)
+          ? raw.data.developer
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : [];
     const sources = results
       .map((r: Record<string, unknown>) => {
         const url = typeof r?.url === "string" ? r.url : "";
@@ -161,4 +164,3 @@ export const FirecrawlProvider: ProviderAdapter = {
     return { text: markdown };
   },
 };
-

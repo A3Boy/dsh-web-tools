@@ -1,0 +1,506 @@
+{
+  "data": {
+    "threaded_conversation_with_injections_v2": {
+      "instructions": [
+        {
+          "type": "TimelineClearCache"
+        },
+        {
+          "type": "TimelineAddEntries",
+          "entries": [
+            {
+              "entryId": "tweet-2091688655828246890",
+              "sortIndex": "2091776180796522496",
+              "content": {
+                "__typename": "TimelineTimelineItem",
+                "entryType": "TimelineTimelineItem",
+                "itemContent": {
+                  "__typename": "TimelineTweet",
+                  "itemType": "TimelineTweet",
+                  "tweetDisplayType": "Tweet",
+                  "tweet_results": {
+                    "result": {
+                      "__typename": "Tweet",
+                      "rest_id": "2091688655828246890",
+                      "legacy": {
+                        "full_text": "Good Sunday. Reset has been propagated to accounts and we landed some fixes to usage for things mentioned yesterday as issues we found. You should feel a positive difference. More to come tomorrow and will keep communicating.",
+                        "created_at": "Mon Aug 24 00:46:51 +0000 2026",
+                        "favorite_count": 7470,
+                        "retweet_count": 317,
+                        "reply_count": 1069,
+                        "entities": {
+                          "urls": []
+                        }
+                      },
+                      "core": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "1953337039510003712",
+                            "core": {
+                              "name": "Tibo",
+                              "screen_name": "thsottiaux"
+                            },
+                            "avatar": {
+                              "image_url": "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg"
+                            },
+                            "profile_bio": {
+                              "description": "Codex & ChatGPT @OpenAI",
+                              "entities": {
+                                "description": {}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "content": {
+                "__typename": "TimelineTimelineModule",
+                "clientEventInfo": {
+                  "component": "tweet",
+                  "details": {
+                    "conversationDetails": {
+                      "conversationSection": "HighQuality"
+                    },
+                    "timelinesDetails": {
+                      "controllerData": "DAACDAAEDAABCgABAAAAAAAAAAEKAAIAAAAAAAAAAAoAAwAAAaAyem33AAAAAA=="
+                    }
+                  }
+                },
+                "displayType": "VerticalConversation",
+                "entryType": "TimelineTimelineModule",
+                "items": [
+                  {
+                    "entryId": "conversationthread-2091691767267774755-tweet-2091691767267774755",
+                    "item": {
+                      "clientEventInfo": {
+                        "component": "tweet",
+                        "details": {
+                          "conversationDetails": {
+                            "conversationSection": "HighQuality"
+                          },
+                          "timelinesDetails": {
+                            "controllerData": "DAACDAAEDAABCgABAAAAAAAAAAEKAAIAAAAAAAAAAAoAAwAAAaAyem33AAAAAA=="
+                          }
+                        },
+                        "element": "tweet"
+                      },
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "cashtag_attachments": [],
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "action_counts": {
+                                    "favorites_count": 663
+                                  },
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/profile_images/2003489138499063808/FYcuAUjF_normal.jpg"
+                                  },
+                                  "banner": {
+                                    "image_url": "https://pbs.twimg.com/profile_banners/896791810000990208/1771177856"
+                                  },
+                                  "core": {
+                                    "created_at": "Sun Aug 13 17:53:23 +0000 2017",
+                                    "name": "hooftly",
+                                    "screen_name": "hooftly"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "VXNlcjo4OTY3OTE4MTAwMDA5OTAyMDg=",
+                                  "is_blue_verified": true,
+                                  "location": {
+                                    "location": "Edmonton"
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "notifications_settings": {
+                                    "notifications_enabled": false
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "pinned_items": {},
+                                  "possibly_sensitive": false,
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "profile_bio": {
+                                    "description": "Building for a better tomorrow | DeFi Maxi | Privacy advocate | @EqualFiLabs",
+                                    "entities": {
+                                      "description": {},
+                                      "url": {
+                                        "urls": [
+                                          {
+                                            "display_url": "equalfi.org",
+                                            "expanded_url": "https://equalfi.org",
+                                            "indices": [
+                                              0,
+                                              23
+                                            ],
+                                            "url": "https://t.co/Fx6mqRusqT"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "profile_description_language": "en",
+                                  "profile_image_shape": "Circle",
+                                  "profile_metadata": {
+                                    "profile_interstitial_type": ""
+                                  },
+                                  "profile_translation": {
+                                    "translator_type": "none"
+                                  },
+                                  "relationship_counts": {
+                                    "followers": 395,
+                                    "following": 370
+                                  },
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": false,
+                                    "live_following": false,
+                                    "muting": false
+                                  },
+                                  "rest_id": "896791810000990208",
+                                  "super_follow_eligible": false,
+                                  "super_followed_by": false,
+                                  "super_following": false,
+                                  "tweet_counts": {
+                                    "media_tweets": 56,
+                                    "tweets": 1481
+                                  },
+                                  "verification": {
+                                    "verified": false
+                                  },
+                                  "website": {
+                                    "url": "https://t.co/Fx6mqRusqT"
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "2091691767267774755"
+                              ],
+                              "editable_until_msecs": "1787536753000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {},
+                            "grok_translated_post_with_availability": {
+                              "data": {
+                                "associated_data": {},
+                                "destination_language": "zh",
+                                "entities": {
+                                  "hashtags": [],
+                                  "symbols": [],
+                                  "urls": [],
+                                  "user_mentions": []
+                                },
+                                "source_language": "en",
+                                "translation": "为什么你一直说所有付费用户，但然后又排除商业账户。\n\n超级令人沮丧"
+                              },
+                              "is_available": true
+                            },
+                            "has_birdwatch_notes": false,
+                            "is_translatable": true,
+                            "legacy": {
+                              "bookmark_count": 1,
+                              "bookmarked": false,
+                              "conversation_id_str": "2091688655828246890",
+                              "created_at": "Mon Aug 24 00:59:13 +0000 2026",
+                              "display_text_range": [
+                                12,
+                                99
+                              ],
+                              "entities": {
+                                "user_mentions": [
+                                  {
+                                    "id_str": "1953337039510003712",
+                                    "indices": [
+                                      0,
+                                      11
+                                    ],
+                                    "name": "Tibo",
+                                    "screen_name": "thsottiaux"
+                                  }
+                                ]
+                              },
+                              "favorite_count": 108,
+                              "favorited": false,
+                              "full_text": "@thsottiaux Why do you keep saying all paid users but then exclude biz accounts.\n\nSuper frustrating",
+                              "id_str": "2091691767267774755",
+                              "in_reply_to_screen_name": "thsottiaux",
+                              "in_reply_to_status_id_str": "2091688655828246890",
+                              "in_reply_to_user_id_str": "1953337039510003712",
+                              "is_quote_status": false,
+                              "lang": "en",
+                              "quote_count": 0,
+                              "reply_count": 12,
+                              "retweet_count": 3,
+                              "retweeted": false,
+                              "user_id_str": "896791810000990208"
+                            },
+                            "quick_promote_eligibility": {
+                              "eligibility": "IneligibleNotVerified"
+                            },
+                            "rest_id": "2091691767267774755",
+                            "source": "<a href=\"http://twitter.com/download/android\" rel=\"nofollow\">Twitter for Android</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "38877",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "conversationthread-2091691767267774755-tweet-2091709346371838240",
+                    "item": {
+                      "clientEventInfo": {
+                        "component": "tweet",
+                        "details": {
+                          "conversationDetails": {
+                            "conversationSection": "HighQuality"
+                          },
+                          "timelinesDetails": {
+                            "controllerData": "DAACDAAEDAABCgABAAAAAAAAAAEKAAIAAAAAAAAAAAoAAwAAAaAyem33AAAAAA=="
+                          }
+                        },
+                        "element": "tweet"
+                      },
+                      "itemContent": {
+                        "__typename": "TimelineTweet",
+                        "itemType": "TimelineTweet",
+                        "tweetDisplayType": "Tweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "cashtag_attachments": [],
+                            "core": {
+                              "user_results": {
+                                "result": {
+                                  "__typename": "User",
+                                  "action_counts": {
+                                    "favorites_count": 9339
+                                  },
+                                  "affiliates_highlighted_label": {},
+                                  "avatar": {
+                                    "image_url": "https://pbs.twimg.com/profile_images/2075819673263001600/pj1vyX6I_normal.jpg"
+                                  },
+                                  "banner": {
+                                    "image_url": ""
+                                  },
+                                  "core": {
+                                    "created_at": "Thu Aug 07 06:07:07 +0000 2025",
+                                    "name": "Tibo",
+                                    "screen_name": "thsottiaux"
+                                  },
+                                  "dm_permissions": {
+                                    "can_dm": true
+                                  },
+                                  "follow_request_sent": false,
+                                  "has_graduated_access": true,
+                                  "id": "VXNlcjoxOTUzMzM3MDM5NTEwMDAzNzEy",
+                                  "is_blue_verified": true,
+                                  "location": {
+                                    "location": ""
+                                  },
+                                  "media_permissions": {
+                                    "can_media_tag": true
+                                  },
+                                  "notifications_settings": {
+                                    "notifications_enabled": false
+                                  },
+                                  "parody_commentary_fan_label": "None",
+                                  "pinned_items": {},
+                                  "possibly_sensitive": false,
+                                  "privacy": {
+                                    "protected": false
+                                  },
+                                  "profile_bio": {
+                                    "description": "Codex & ChatGPT @OpenAI",
+                                    "entities": {
+                                      "description": {}
+                                    }
+                                  },
+                                  "profile_image_shape": "Circle",
+                                  "profile_metadata": {
+                                    "profile_interstitial_type": ""
+                                  },
+                                  "profile_translation": {
+                                    "translator_type": "none"
+                                  },
+                                  "relationship_counts": {
+                                    "followers": 504893,
+                                    "following": 71
+                                  },
+                                  "relationship_perspectives": {
+                                    "blocked_by": false,
+                                    "blocking": false,
+                                    "followed_by": false,
+                                    "following": false,
+                                    "live_following": false,
+                                    "muting": false
+                                  },
+                                  "rest_id": "1953337039510003712",
+                                  "super_follow_eligible": false,
+                                  "super_followed_by": false,
+                                  "super_following": false,
+                                  "tweet_counts": {
+                                    "media_tweets": 128,
+                                    "tweets": 2712
+                                  },
+                                  "verification": {
+                                    "verified": false
+                                  },
+                                  "website": {
+                                    "url": ""
+                                  }
+                                }
+                              }
+                            },
+                            "edit_control": {
+                              "edit_tweet_ids": [
+                                "2091709346371838240"
+                              ],
+                              "editable_until_msecs": "1787540944000",
+                              "edits_remaining": "5",
+                              "is_edit_eligible": false
+                            },
+                            "grok_analysis_button": true,
+                            "grok_annotations": {},
+                            "grok_translated_post_with_availability": {
+                              "data": {
+                                "associated_data": {},
+                                "destination_language": "zh",
+                                "entities": {
+                                  "hashtags": [],
+                                  "symbols": [],
+                                  "urls": [],
+                                  "user_mentions": []
+                                },
+                                "source_language": "en",
+                                "translation": "它确实包括商业账户！刚刚检查了一下，它还在传播中，但商业账户也应该在 5 分钟内全部完成。"
+                              },
+                              "is_available": true
+                            },
+                            "has_birdwatch_notes": false,
+                            "is_translatable": true,
+                            "legacy": {
+                              "bookmark_count": 0,
+                              "bookmarked": false,
+                              "conversation_id_str": "2091688655828246890",
+                              "created_at": "Mon Aug 24 02:09:04 +0000 2026",
+                              "display_text_range": [
+                                9,
+                                149
+                              ],
+                              "entities": {
+                                "user_mentions": [
+                                  {
+                                    "id_str": "896791810000990208",
+                                    "indices": [
+                                      0,
+                                      8
+                                    ],
+                                    "name": "hooftly",
+                                    "screen_name": "hooftly"
+                                  }
+                                ]
+                              },
+                              "favorite_count": 156,
+                              "favorited": false,
+                              "full_text": "@hooftly It does include business accounts! Just checked and it was still propagating, but should be all done in 5 minutes for business accounts too.",
+                              "id_str": "2091709346371838240",
+                              "in_reply_to_screen_name": "hooftly",
+                              "in_reply_to_status_id_str": "2091691767267774755",
+                              "in_reply_to_user_id_str": "896791810000990208",
+                              "is_quote_status": false,
+                              "lang": "en",
+                              "quote_count": 0,
+                              "reply_count": 7,
+                              "retweet_count": 2,
+                              "retweeted": false,
+                              "user_id_str": "1953337039510003712"
+                            },
+                            "quick_promote_eligibility": {
+                              "eligibility": "IneligibleNotVerified"
+                            },
+                            "rest_id": "2091709346371838240",
+                            "source": "<a href=\"https://mobile.twitter.com\" rel=\"nofollow\">Twitter Web App</a>",
+                            "unmention_data": {},
+                            "views": {
+                              "count": "30592",
+                              "state": "EnabledWithCount"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "entryId": "conversationthread-2091691767267774755-cursor-showmore-266227976",
+                    "item": {
+                      "clientEventInfo": {
+                        "component": "cursor",
+                        "details": {
+                          "conversationDetails": {
+                            "conversationSection": "HighQuality"
+                          },
+                          "timelinesDetails": {
+                            "controllerData": "DAACDAAEDAABCgABAAAAAAAAAAEKAAIAAAAAAAAAAAoAAwAAAaAyem35AAAAAA=="
+                          }
+                        },
+                        "element": "tweet"
+                      },
+                      "itemContent": {
+                        "__typename": "TimelineTimelineCursor",
+                        "cursorType": "ShowMore",
+                        "displayTreatment": {
+                          "actionText": "显示回复"
+                        },
+                        "itemType": "TimelineTimelineCursor",
+                        "value": "DAABCwABAAAAMEVtUEM2d0FBQUFNL2dHSk4wdkdwL0FBQUFBSWRCejZSYzl1aElCMEhMcFIvbXRFaggAAgAAAAYKAAMdBy6Uf5rRIw8ABAoAAAACHQculH-a0SMdBz6Rc9uhIAAA"
+                      }
+                    }
+                  }
+                ],
+                "metadata": {
+                  "conversationMetadata": {
+                    "allTweetIds": [
+                      "2091710149954285923"
+                    ],
+                    "enableDeduplication": true
+                  }
+                }
+              },
+              "entryId": "conversationthread-2091691767267774755",
+              "sortIndex": "2091776180796522486"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -16,14 +16,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
-  IconChevronRightOutline14,
   IconSearchOutline16,
   IconEditOutline16,
   IconSettingsOutline16,
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView } from "./api.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
+import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
@@ -34,9 +34,7 @@ import {
   testOutcomeStatus,
   quotaSummary,
   outcomeLabel,
-  resolveUiLanguage,
   translateDict,
-  type UiLangPref,
   type TFunc,
   type ProviderStatus,
 } from "./logic.ts";
@@ -385,8 +383,6 @@ export function WebToolsSection(props: SectionProps) {
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [dshActive, setDshActive] = useState<string>(() => ui?.getActiveLocale() ?? "zh");
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const [bridgeState, setBridgeState] = useState<{ connected: boolean; platforms: Record<string, any> } | null>(null);
-  const [bridgeTicket, setBridgeTicket] = useState<string | null>(null);
   // Follow DSH-wide locale switches directly — the page always mirrors DSH.
   useEffect(() => {
     if (!ui) return;
@@ -406,7 +402,6 @@ export function WebToolsSection(props: SectionProps) {
   const [versionInfo, setVersionInfo] = useState<VersionCheckView | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [detailFor, setDetailFor] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
@@ -423,6 +418,26 @@ export function WebToolsSection(props: SectionProps) {
     }
   }, [config?.providerAttemptTimeoutMs]);
 
+  const [platformState, setPlatformState] = useState<PlatformStatusResponse | null>(null);
+  const platformStateRef = useRef<PlatformStatusResponse | null>(null);
+  platformStateRef.current = platformState;
+  const isFetchingPlatform = useRef(false);
+
+  const loadPlatformStatus = async () => {
+    if (isFetchingPlatform.current) return;
+    isFetchingPlatform.current = true;
+    try {
+      const p = await api.platformStatus();
+      if (mounted.current && !arePlatformStatusesEqual(platformStateRef.current, p)) {
+        setPlatformState(p);
+      }
+    } catch {
+      // Non-blocking
+    } finally {
+      isFetchingPlatform.current = false;
+    }
+  };
+
   const load = async () => {
     const token = ++loadToken.current;
     try {
@@ -434,12 +449,7 @@ export function WebToolsSection(props: SectionProps) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
     }
 
-    try {
-      const b = await api.bridgeStatus();
-      if (token === loadToken.current) setBridgeState(b);
-    } catch {
-      // Non-blocking bridge status
-    }
+    await loadPlatformStatus();
   };
 
   const loadQuotas = async (force = false) => {
@@ -457,13 +467,40 @@ export function WebToolsSection(props: SectionProps) {
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
 
-    // Poll bridge/platforms status periodically so login in browser reflects automatically
-    const timer = setInterval(() => {
-      api.bridgeStatus().then(setBridgeState).catch(() => {});
-    }, 2500);
+    let timer: NodeJS.Timeout | undefined;
+    const scheduleNextPoll = () => {
+      if (!mounted.current) return;
+      const isVisible = typeof document === "undefined" || document.visibilityState === "visible";
+      const interval = getPlatformPollIntervalMs(isVisible, platformStateRef.current);
+      if (interval > 0) {
+        timer = setTimeout(async () => {
+          await loadPlatformStatus();
+          scheduleNextPoll();
+        }, interval);
+      }
+    };
+
+    scheduleNextPoll();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadPlatformStatus();
+        if (timer) clearTimeout(timer);
+        scheduleNextPoll();
+      } else {
+        if (timer) clearTimeout(timer);
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
 
     return () => {
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
       loadToken.current += 1;
       mounted.current = false;
     };
@@ -482,8 +519,6 @@ export function WebToolsSection(props: SectionProps) {
     try {
       await api.configSave(patch);
       await load();
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -493,55 +528,32 @@ export function WebToolsSection(props: SectionProps) {
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
 
-  // Pair extension using Promise-based window.postMessage with pairing relay ACK
-  const pairExtension = (ticket: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        window.removeEventListener("message", onMessage);
-        resolve(false);
-      }, 5000);
-
-      const onMessage = (event: MessageEvent) => {
-        if (event.source !== window || event.origin !== window.location.origin) return;
-        const data = event.data;
-        if (data && data.type === "DSH_WEB_TOOLS_BRIDGE_PAIR_ACK") {
-          clearTimeout(timer);
-          window.removeEventListener("message", onMessage);
-          resolve(Boolean(data.ok && data.res?.ok !== false));
-        }
-      };
-
-      window.addEventListener("message", onMessage);
-      window.postMessage({
-        type: "DSH_WEB_TOOLS_BRIDGE_PAIR",
-        ticket,
-        port: window.location.port ? Number(window.location.port) : 3080,
-      }, window.location.origin);
-    });
+  // Dedicated Browser Profile Login
+  const loginPlatform = async (platform: "xiaohongshu" | "x") => {
+    try {
+      await api.platformLogin(platform);
+      await loadPlatformStatus();
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
 
-  // Trigger pairing relay with Extension and connect platform
-  const connectPlatform = async (platform: "xiaohongshu" | "x") => {
+  const resetPlatformSession = async (platform: "xiaohongshu" | "x") => {
     try {
-      const currentStatus = await api.bridgeStatus().catch(() => ({ connected: false, platforms: {} }));
-      if (!currentStatus.connected) {
-        // Issue pairing ticket
-        const { ticket } = await api.bridgeBootstrap();
-        // Wait for explicit pairing relay ACK
-        await pairExtension(ticket);
-      }
-
-      // Trigger official connect auth endpoint (extension handles opening login tab)
-      await api.bridgeConnectAuth(platform);
-    } catch {
-      // Fallback direct open if extension is entirely unavailable
-      const fallbackUrl = platform === "xiaohongshu" ? "https://creator.xiaohongshu.com/" : "https://x.com/i/flow/login";
-      window.open(fallbackUrl, "_blank");
+      await api.platformReset(platform);
+      await loadPlatformStatus();
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
   const toggleProvider = (name: string, enabled: boolean) => {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
+  };
+  const togglePlatform = (name: "xiaohongshu" | "x", enabled: boolean) => {
+    const current = config.platformEnabled ?? { xiaohongshu: true, x: true };
+    const platformEnabled = { ...current, [name]: enabled };
+    void save({ platformEnabled });
   };
   const setBaseUrl = (name: string, baseUrl: string) => {
     const providerBaseUrls: Record<string, string> = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
@@ -739,17 +751,7 @@ export function WebToolsSection(props: SectionProps) {
 
       {/* 平台搜索源 (Platform Sources) */}
       <section>
-        <SettingsGroup
-          title={
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-              <span>{t("platformSourcesTitle")}</span>
-              <span style={{ fontSize: 12, fontWeight: "normal", color: bridgeState?.connected ? stateColor.success : text.tertiary, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                {bridgeState?.connected ? <StateDot state="done" size={6} /> : <span style={{ width: 6, height: 6, borderRadius: "50%", background: surface.border }} />}
-                {bridgeState?.connected ? t("bridgeStatusConnected") : t("bridgeStatusDisconnected")}
-              </span>
-            </div>
-          }
-        >
+        <SettingsGroup title={t("platformSourcesTitle")}>
           {/* Xiaohongshu Row */}
           <SettingsRow
             icon={
@@ -759,25 +761,45 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xiaohongshuTitle")}
             subtitle={
-              bridgeState?.platforms?.xiaohongshu?.authenticated
-                ? `${t("platformAccountPrefix")}${bridgeState.platforms.xiaohongshu.account?.accountLabel ?? t("platformConnected")}`
-                : undefined
+              (config.platformEnabled?.xiaohongshu ?? true) === false
+                ? t("platformDisabled")
+                : platformState?.platforms?.xiaohongshu?.authenticated
+                  ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
+                  : platformState?.platforms?.xiaohongshu?.sessionEstablished
+                    ? t("platformVerifying")
+                    : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {bridgeState?.platforms?.xiaohongshu?.authenticated ? (
-                  <StateDot state="done" size={6} />
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void connectPlatform("xiaohongshu");
-                    }}
-                  >
-                    {t("loginButton")}
-                  </Button>
+                {(config.platformEnabled?.xiaohongshu ?? true) && (
+                  platformState?.platforms?.xiaohongshu?.authenticated ? (
+                    <>
+                      <StateDot state="done" size={6} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void resetPlatformSession("xiaohongshu")}
+                      >
+                        {t("clearSessionButton")}
+                      </Button>
+                    </>
+                  ) : platformState?.platforms?.xiaohongshu?.sessionEstablished ? (
+                    <StateDot state="ongoing" size={6} />
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void loginPlatform("xiaohongshu")}
+                    >
+                      {t("loginButton")}
+                    </Button>
+                  )
                 )}
+                <Switch
+                  checked={config.platformEnabled?.xiaohongshu ?? true}
+                  onChange={(v) => togglePlatform("xiaohongshu", v)}
+                  label={t("xiaohongshuTitle")}
+                />
               </div>
             }
           />
@@ -791,25 +813,45 @@ export function WebToolsSection(props: SectionProps) {
             }
             title={t("xTitle")}
             subtitle={
-              bridgeState?.platforms?.x?.authenticated
-                ? `${t("platformAccountPrefix")}${bridgeState.platforms.x.account?.accountLabel ?? t("platformConnected")}`
-                : undefined
+              (config.platformEnabled?.x ?? true) === false
+                ? t("platformDisabled")
+                : platformState?.platforms?.x?.authenticated
+                  ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
+                  : platformState?.platforms?.x?.sessionEstablished
+                    ? t("platformVerifying")
+                    : t("platformNotLoggedIn")
             }
             trailing={
               <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {bridgeState?.platforms?.x?.authenticated ? (
-                  <StateDot state="done" size={6} />
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void connectPlatform("x");
-                    }}
-                  >
-                    {t("loginButton")}
-                  </Button>
+                {(config.platformEnabled?.x ?? true) && (
+                  platformState?.platforms?.x?.authenticated ? (
+                    <>
+                      <StateDot state="done" size={6} />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void resetPlatformSession("x")}
+                      >
+                        {t("clearSessionButton")}
+                      </Button>
+                    </>
+                  ) : platformState?.platforms?.x?.sessionEstablished ? (
+                    <StateDot state="ongoing" size={6} />
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void loginPlatform("x")}
+                    >
+                      {t("loginButton")}
+                    </Button>
+                  )
                 )}
+                <Switch
+                  checked={config.platformEnabled?.x ?? true}
+                  onChange={(v) => togglePlatform("x", v)}
+                  label={t("xTitle")}
+                />
               </div>
             }
             isLast

@@ -14,6 +14,7 @@ import type { WebToolsContext } from "./context-types.ts";
 import { type PoolEntry } from "./pool.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { SearchMode, SearchModeView, VersionCheckView } from "../shared/api-types.ts";
+import type { SpecializedSourceRegistry } from "./sources/registry.ts";
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export declare function keyIdOf(key: string): string;
 /** Route prefix (client fetches `/web-tools/api/<method>`). */
@@ -32,6 +33,8 @@ export interface RouteDeps {
     testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
     testFullSearch: (query: string) => Promise<Record<string, unknown>>;
     describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
+    nativeRuntime: import("./browser/types.ts").NativeBrowserRuntime;
+    sourceRegistry: SpecializedSourceRegistry;
     /**
      * Live pool entries for one provider (real key health from the executor),
      * so the card's per-key state matches what search actually uses.

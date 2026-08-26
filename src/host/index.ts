@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID, WebToolsWebError } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
@@ -29,8 +29,12 @@ import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages }
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 
-import { defaultSourceRegistry } from "./sources/registry.ts";
-import { defaultBridgeServer } from "./sources/bridge-server.ts";
+import { SpecializedSourceRegistry } from "./sources/registry.ts";
+import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
+import { XSource } from "./sources/x.ts";
+import { createNativeBrowserRuntime } from "./browser/index.ts";
+import { extractSearchHints } from "./search-hints.ts";
+import type { SourceFetchOutcome } from "./sources/types.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -49,6 +53,50 @@ const RELEASES_API = "https://api.github.com/repos/A3Boy/dsh-web-tools/releases/
 const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
+
+export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) {
+  if (outcome.error) {
+    const error = new WebToolsWebError(
+      `platform fetch failed (${outcome.error.code}): ${outcome.error.message}`,
+    );
+    if (outcome.error.code === "aborted") error.code = "WEB_ABORTED";
+    throw error;
+  }
+
+  const item = outcome.item;
+  const rawContent = item?.text?.trim();
+  if (!item || !rawContent) {
+    throw new WebToolsWebError(`platform fetch returned empty content for ${url}`);
+  }
+
+  const sections: string[] = [];
+  if (item.title?.trim() && !rawContent.startsWith(item.title.trim())) {
+    sections.push(`# ${item.title.trim()}`);
+  }
+
+  const metadata: string[] = [];
+  const author = item.author?.handle || item.author?.name;
+  if (author) metadata.push(`Author: ${author}`);
+  if (item.publishedAt) metadata.push(`Published: ${item.publishedAt}`);
+  const engagement = [
+    typeof item.likes === "number" ? `likes ${item.likes}` : undefined,
+    typeof item.collects === "number" ? `collects ${item.collects}` : undefined,
+    typeof item.retweets === "number" ? `retweets ${item.retweets}` : undefined,
+    typeof item.replies === "number" ? `comments/replies ${item.replies}` : undefined,
+  ].filter(Boolean);
+  if (engagement.length > 0) metadata.push(`Engagement: ${engagement.join(", ")}`);
+  if (metadata.length > 0) sections.push(metadata.join("\n"));
+  sections.push(rawContent);
+  if (item.images?.length) sections.push(`Images: ${item.images.length} attached`);
+  const content = sections.join("\n\n");
+
+  return {
+    url,
+    statusCode: 200,
+    body: { kind: "text" as const, content },
+    truncated: false,
+  };
+}
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -171,55 +219,77 @@ export function apply(ctx: WebToolsContext) {
   // ONE shared health store so search + fetch respect the same cooldowns.
   const healthStore = createProviderHealthStore();
 
+  const sourceRegistry = new SpecializedSourceRegistry();
+
   const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore);
+
+  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
+
+  sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
+
+  // Sync platformEnabled from config on boot and live updates
+  configHandle.onMounted(() => {
+    const cfg = readConfig();
+    if (cfg.platformEnabled) {
+      sourceRegistry.setPlatformEnabled(cfg.platformEnabled);
+    }
+  });
 
   // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
   const routedSearchProvider = {
     id: PROVIDER_ID,
     available: () => generalSearchProvider.available(),
-    search: (request: { query: string; maxResults?: number }, signal?: AbortSignal) =>
-      defaultSourceRegistry.routeSearch(request, generalSearchProvider, signal),
+    search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
+      const outcome = await sourceRegistry.search(
+        request.query,
+        { maxResults: request.maxResults, hints: extractSearchHints(request.query) },
+        signal,
+      );
+      if (outcome.error) {
+        throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
+      }
+      return {
+        sources: outcome.items.map((item) => ({
+          url: item.url,
+          title: item.title,
+          snippet: item.snippet,
+          publishedAt: item.publishedAt,
+        })),
+        truncated: false,
+      };
+    },
   };
   ctx.web.registerSearchProvider(routedSearchProvider as never);
 
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
-
   // Wrap fetch provider with SpecializedSourceRouter
   const routedFetchProvider = {
-    id: PROVIDER_ID,
+    id: `${PROVIDER_ID}-fetch`,
     available: () => generalFetchProvider.available(),
-    fetch: (request: { url: string }, signal?: AbortSignal) =>
-      defaultSourceRegistry.routeFetch(request.url, generalFetchProvider, signal),
+    fetch: async (request: { url: string }, signal?: AbortSignal) => {
+      const outcome = await sourceRegistry.fetch(request.url, signal);
+      return toRoutedFetchResponse(request.url, outcome);
+    },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
 
-  // Load and persist durable bridgeKey hash via credentials service BEFORE opening upgrade route
-  const BRIDGE_HASH_REF = "dsh-web-tools:bridge_key_hash";
-  defaultBridgeServer.setPersistHook(
-    (hash) => {
-      void writeCredential(ctx, BRIDGE_HASH_REF, hash);
-    },
-  );
-  void readCredential(ctx, BRIDGE_HASH_REF).then((persisted) => {
-    if (persisted.value) {
-      defaultBridgeServer.setPersistHook(
-        (hash) => {
-          void writeCredential(ctx, BRIDGE_HASH_REF, hash);
-        },
-        [persisted.value],
-      );
-    }
-  }).catch(() => {});
+  // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
+  const nativeRuntime = createNativeBrowserRuntime();
+  const xhsSource = new XiaohongshuSource(nativeRuntime);
+  const xSource = new XSource(nativeRuntime);
+  sourceRegistry.registerSource(xhsSource);
+  sourceRegistry.registerSource(xSource);
 
-  // Register WebSocket upgrade route for Browser Bridge if supported by host webServer
-  if (typeof ctx.webServer.registerUpgrade === "function") {
-    ctx.effect(
-      () => defaultBridgeServer.registerUpgradeRoute(ctx.webServer),
-      "dsh-web-tools: browser-bridge websocket",
-    );
-  }
+  // Hook NativeBrowserRuntime lifecycle into Cordis effect
+  ctx.effect(
+    () => {
+      return () => {
+        nativeRuntime.dispose().catch(() => {});
+      };
+    },
+    "dsh-web-tools: native browser runtime",
+  );
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
@@ -288,7 +358,7 @@ export function apply(ctx: WebToolsContext) {
         backend: (result as unknown as { backend?: string }).backend,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
-        results: result.sources.slice(0, 5).map((s) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
+        results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
         attempts: (result as unknown as { attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }> }).attempts,
       };
     } catch (e) {
@@ -313,25 +383,31 @@ export function apply(ctx: WebToolsContext) {
     const chainNames = new Set<string>([cfg.defaultProvider, ...cfg.fallbackOrder]);
     const summary = stats.summary();
 
-    // Query every provider that is EITHER in the search chain OR has
-    // credentials configured — a provider like You.com that is configured
-    // but not yet in the chain should still show its balance in the card.
+    // Read all credentials in parallel ONCE
+    const credentialEntries = await Promise.all(
+      PROVIDER_LIST.map(async (meta) => {
+        const ref = credRefOf(meta.name);
+        const cred = await readCredential(ctx, ref);
+        return { meta, ref, cred };
+      }),
+    );
+
     const wanted = new Set<string>(chainNames);
-    for (const meta of PROVIDER_LIST) {
-      const cred = await readCredential(ctx, credRefOf(meta.name));
+    for (const { meta, cred } of credentialEntries) {
       if ((cred.value ?? "").trim().length > 0) wanted.add(meta.name);
     }
+
+    const credMap = new Map(credentialEntries.map((e) => [e.meta.name, e.cred]));
 
     // Parallel, timeout-bounded, only providers that can report quota.
     const results = await Promise.allSettled(
       PROVIDER_LIST.filter((meta) => wanted.has(meta.name)).map(async (meta): Promise<[string, QuotaSnapshot]> => {
-        const ref = credRefOf(meta.name);
-        const cred = await readCredential(ctx, ref);
+        const cred = credMap.get(meta.name);
         const localSearches = summary.byProvider[meta.name]?.success ?? 0;
         // Multi-key pool: query EVERY key and merge — the card shows the
         // TOTAL pool balance, not one key's. Each key is authenticated
         // separately (never join the raw string).
-        const keys = buildPool(cred.value ?? "").map((e) => e.key);
+        const keys = buildPool(cred?.value ?? "").map((e) => e.key);
         if (keys.length === 0) {
           const snapshot = await withTimeoutMs(
             quotaOf(meta.name, "", cfg.providerBaseUrls[meta.name], localSearches),
@@ -433,6 +509,8 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
+        nativeRuntime,
+        sourceRegistry,
         checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,

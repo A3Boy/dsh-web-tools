@@ -356,6 +356,7 @@ export function createFetchProvider(
         if (healthStore?.isCoolingDown(providerName)) continue;
         const index = selectIndex(entries);
         const entry = entries[index];
+        if (entry) reserveKey(entries, index);
         const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];
         try {
           const { text } = await runWithTimeout(
@@ -378,11 +379,16 @@ export function createFetchProvider(
         } catch (error) {
           const err = toProviderError(error);
           if (err.code === "auth") markUnhealthy(entries, index);
+          if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
+            healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
+          }
           lastError = err;
           const decision = classifyFailure(err);
           if (decision === "terminal") throw toWebError(error);
           if (decision === "non-retryable") break;
           // retryable → next fetch-capable provider in the chain
+        } finally {
+          if (entry) releaseKey(entries, index);
         }
       }
       const reason = lastError

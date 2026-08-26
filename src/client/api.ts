@@ -49,9 +49,39 @@ export async function call<T>(method: string, payload?: unknown): Promise<T> {
 // typed endpoint wrappers (wire types shared with the Host — see shared/api-types)
 // ---------------------------------------------------------------------------
 
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type {
+  ConfigView,
+  CredentialsView,
+  QuotaDescribeView,
+  SearchMode,
+  SearchModeView,
+  TestProviderView,
+  TestSearchView,
+  SearchRoutingPolicy,
+  VersionCheckView,
+} from "../shared/api-types.ts";
+import type {
+  BrowserPlatform,
+  PlatformStatusResponse,
+} from "../shared/platform-types.ts";
 
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+export type {
+  ConfigView,
+  CredentialsView,
+  ProviderView,
+  QuotaDescribeView,
+  QuotaView,
+  SearchMode,
+  SearchModeView,
+  TestProviderView,
+  TestSearchView,
+  SearchRoutingPolicy,
+  VersionCheckView,
+} from "../shared/api-types.ts";
+export type {
+  BrowserPlatform,
+  PlatformStatusResponse,
+} from "../shared/platform-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
@@ -74,7 +104,12 @@ export const api = {
     call<Record<string, any>>("provider-options/batch", { providers }),
   routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
-  bridgeStatus: () => call<{ connected: boolean; platforms: Record<string, { enabled: boolean; authenticated: boolean; bridgeConnected: boolean; account?: any; lastError?: string }> }>("bridge/status"),
-  bridgeBootstrap: () => call<{ ticket: string; expiresAt: number }>("bridge/bootstrap"),
-  bridgeConnectAuth: (platform: string) => call<{ status: string; url?: string }>("bridge/connect-auth", { platform }),
+  platformStatus: () =>
+    call<PlatformStatusResponse>("platform/status"),
+  platformLogin: (platform: BrowserPlatform) =>
+    call<{ status: string }>("platform/login", { platform }),
+  platformStop: (platform: BrowserPlatform) =>
+    call<{ ok: boolean }>("platform/stop", { platform }),
+  platformReset: (platform: BrowserPlatform) =>
+    call<{ ok: boolean }>("platform/reset", { platform }),
 };

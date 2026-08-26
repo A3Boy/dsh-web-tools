@@ -34,6 +34,7 @@ export declare const DEFAULT_SETTINGS: {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    platformEnabled: Record<string, boolean>;
     providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
     searchRoutingPolicy: ToolSearchRoutingPolicy;
@@ -46,6 +47,7 @@ export interface WebToolsSettings {
     fallbackOrder: string[];
     providerBaseUrls: Record<string, string>;
     providerEnabled: Record<string, boolean>;
+    platformEnabled: Record<string, boolean>;
     providerOptions: StoredProviderOptions;
     /** Brave per-key quota snapshots captured from search response headers. */
     braveQuotaCache: Record<string, QuotaSnapshot>;

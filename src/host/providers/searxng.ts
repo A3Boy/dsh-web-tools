@@ -27,7 +27,7 @@ export const SEARXNG_META = {
  *  - topic=code → categories=it
  *  - topic=research → categories=science
  *  - topic=news → categories=news
- *  - freshness preset → time_range: "day" | "week" | "month" | "year"
+ *  - freshness preset → time_range: "day" | "month" | "year"
  *  - language → language (e.g. "zh-CN", "en")
  */
 export function buildSearxngUrl(
@@ -55,8 +55,9 @@ export function buildSearxngUrl(
   }
 
   // 2. Time range
-  if (hints?.freshness?.preset) {
-    url.searchParams.set("time_range", hints.freshness.preset);
+  const freshnessPreset = hints?.freshness?.preset;
+  if (freshnessPreset === "day" || freshnessPreset === "month" || freshnessPreset === "year") {
+    url.searchParams.set("time_range", freshnessPreset);
   }
 
   // 3. Language

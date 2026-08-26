@@ -12,7 +12,7 @@
  *   (X-RateLimit-Limit / X-RateLimit-Remaining / X-RateLimit-Reset).
  * @module
  */
-import { providerError, throwIfHttp, classifyHttpStatus, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
+import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type { BraveProviderOptions } from "../../shared/provider-options.ts";
@@ -110,9 +110,7 @@ export const BraveProvider: ProviderAdapter = {
 
         if (res.ok) {
         // Capture quota headers on success (same as classic endpoint).
-        const snapshot = braveQuotaFromHeaders(res.headers);
-        lastKnownQuotaByKey.set(apiKey, snapshot);
-        persistHook?.(apiKey, snapshot);
+        defaultQuotaManager.recordFromHeaders(token, res.headers);
 
         const raw = await res.json();
         const generic = Array.isArray(raw?.grounding?.generic) ? raw.grounding.generic : [];
@@ -163,9 +161,7 @@ export const BraveProvider: ProviderAdapter = {
       signal,
     });
     throwIfHttp("Brave", res);
-    const snapshot = braveQuotaFromHeaders(res.headers);
-    lastKnownQuotaByKey.set(token, snapshot);
-    persistHook?.(token, snapshot);
+    defaultQuotaManager.recordFromHeaders(token, res.headers);
     const raw = await res.json();
     const results = Array.isArray(raw?.web?.results) ? raw.web.results : [];
     const sources = results
@@ -187,37 +183,63 @@ export const BraveProvider: ProviderAdapter = {
   },
 };
 
-/** Last-known Brave quota snapshots, keyed by API key. */
-const lastKnownQuotaByKey = new Map<string, QuotaSnapshot>();
+export class BraveQuotaManager {
+  private cache = new Map<string, QuotaSnapshot>();
+  private persistHook?: (apiKey: string, snapshot: QuotaSnapshot) => void;
+  private disposed = false;
 
-/**
- * Optional persistence hook: when a search captures Brave's rate-limit
- * headers, the snapshot is handed here so the host can persist it (Brave has
- * no quota endpoint — the header is the ONLY quota signal, and it must
- * survive restarts). Pure module: hook stays unset unless the host wires it.
- */
-let persistHook: ((apiKey: string, snapshot: QuotaSnapshot) => void) | undefined;
+  constructor(persistHook?: (apiKey: string, snapshot: QuotaSnapshot) => void) {
+    this.persistHook = persistHook;
+  }
+
+  seed(apiKey: string, snapshot: QuotaSnapshot): void {
+    if (this.disposed) return;
+    this.cache.set(apiKey, snapshot);
+  }
+
+  async getQuota(apiKey: string): Promise<QuotaSnapshot> {
+    return this.cache.get(apiKey) ?? {
+      supported: false,
+      authoritative: false,
+      unit: "requests",
+      source: "dashboard",
+      fetchedAt: Date.now(),
+      note: "Run a search first — Brave reports quota in search response headers",
+    };
+  }
+
+  recordFromHeaders(apiKey: string, headers: Headers): QuotaSnapshot {
+    const snapshot = braveQuotaFromHeaders(headers);
+    if (!this.disposed) {
+      this.cache.set(apiKey, snapshot);
+      this.persistHook?.(apiKey, snapshot);
+    }
+    return snapshot;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.persistHook = undefined;
+    this.cache.clear();
+  }
+}
+
+/** Last-known Brave quota snapshots, keyed by API key (default manager fallback). */
+const defaultQuotaManager = new BraveQuotaManager();
 
 /** Set the persistence callback (host wires this to its settings store). */
 export function setBraveQuotaPersist(hook: (apiKey: string, snapshot: QuotaSnapshot) => void): void {
-  persistHook = hook;
+  defaultQuotaManager["persistHook"] = hook;
 }
 
 /** Seed the in-memory cache from persisted state (host calls on startup). */
 export function seedBraveQuota(apiKey: string, snapshot: QuotaSnapshot): void {
-  lastKnownQuotaByKey.set(apiKey, snapshot);
+  defaultQuotaManager.seed(apiKey, snapshot);
 }
 
 /** Quota for the settings card: last-known snapshot for the given key. */
 export async function braveQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
-  return lastKnownQuotaByKey.get(apiKey) ?? {
-    supported: false,
-    authoritative: false,
-    unit: "requests",
-    source: "dashboard",
-    fetchedAt: Date.now(),
-    note: "Run a search first — Brave reports quota in search response headers",
-  };
+  return defaultQuotaManager.getQuota(apiKey);
 }
 
 /** Parse Brave quota from the search response headers (monthly window). */

@@ -24,7 +24,7 @@ export declare const SEARXNG_META: {
  *  - topic=code → categories=it
  *  - topic=research → categories=science
  *  - topic=news → categories=news
- *  - freshness preset → time_range: "day" | "week" | "month" | "year"
+ *  - freshness preset → time_range: "day" | "month" | "year"
  *  - language → language (e.g. "zh-CN", "en")
  */
 export declare function buildSearxngUrl(instanceUrl: string, query: string, apiKey?: string, hints?: Readonly<SearchHints>): URL;

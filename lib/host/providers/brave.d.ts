@@ -34,6 +34,16 @@ export declare const BRAVE_META: {
     readonly needsBaseUrl: false;
 };
 export declare const BraveProvider: ProviderAdapter;
+export declare class BraveQuotaManager {
+    private cache;
+    private persistHook?;
+    private disposed;
+    constructor(persistHook?: (apiKey: string, snapshot: QuotaSnapshot) => void);
+    seed(apiKey: string, snapshot: QuotaSnapshot): void;
+    getQuota(apiKey: string): Promise<QuotaSnapshot>;
+    recordFromHeaders(apiKey: string, headers: Headers): QuotaSnapshot;
+    dispose(): void;
+}
 /** Set the persistence callback (host wires this to its settings store). */
 export declare function setBraveQuotaPersist(hook: (apiKey: string, snapshot: QuotaSnapshot) => void): void;
 /** Seed the in-memory cache from persisted state (host calls on startup). */
