@@ -375,8 +375,19 @@ test("buildTavilySearchBody maps topic news, freshness week, and domains", () =>
   assert.equal(body.search_depth, "basic");
   assert.equal(body.chunks_per_source, 2);
   assert.equal(body.time_range, "week");
+  assert.equal(body.start_date, undefined);
+  assert.equal(body.end_date, undefined);
   assert.deepEqual(body.include_domains, ["reuters.com"]);
   assert.deepEqual(body.exclude_domains, ["spam.com"]);
+});
+
+test("buildTavilySearchBody forwards explicit date filters without time_range", () => {
+  const hints = extractSearchHints("OpenAI news after:2026-08-01 before:2026-08-20");
+  const body = buildTavilySearchBody("OpenAI news after:2026-08-01 before:2026-08-20", 5, undefined, hints);
+
+  assert.equal(body.time_range, undefined);
+  assert.equal(body.start_date, "2026-08-01");
+  assert.equal(body.end_date, "2026-08-20");
 });
 
 // ---- You.com deep adaptation tests ----

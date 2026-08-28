@@ -64,13 +64,15 @@ export function buildTavilySearchBody(
 
   // 2. Freshness & date filtering
   if (hints?.freshness?.preset) {
+    // Tavily does not allow time_range together with start_date or end_date.
     requestBody.time_range = hints.freshness.preset;
-  }
-  if (hints?.freshness?.after) {
-    requestBody.start_date = hints.freshness.after;
-  }
-  if (hints?.freshness?.before) {
-    requestBody.end_date = hints.freshness.before;
+  } else {
+    if (hints?.freshness?.after) {
+      requestBody.start_date = hints.freshness.after;
+    }
+    if (hints?.freshness?.before) {
+      requestBody.end_date = hints.freshness.before;
+    }
   }
 
   // 3. Domain constraints
