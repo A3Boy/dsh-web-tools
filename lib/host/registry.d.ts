@@ -1,5 +1,5 @@
 import { type SearchRoutingPolicy } from "./routing-policy.ts";
-import { type PoolEntry } from "./pool.ts";
+import { PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */

@@ -10,7 +10,7 @@
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { resolveSearchChain, type SearchRoutingPolicy, type SearchRoutingState } from "./routing-policy.ts";
-import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex, type PoolEntry } from "./pool.ts";
+import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex, PoolEntry } from "./pool.ts";
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -191,11 +191,11 @@ export function createSearchProvider(
           attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
           continue;
         }
-        const entries = await pools.poolOf(providerName);
-        // Keyless self-hosted (SearXNG) stays usable without keys; every other
-        // provider needs at least one configured key to attempt a search.
-        if (entries.length === 0 && isKeylessSelfHosted(adapter)) {
-          // fine — no keys required
+        let entries = await pools.poolOf(providerName);
+        const keyless = isKeylessSelfHosted(adapter);
+        if (entries.length === 0 && keyless) {
+          // Self-hosted keyless providers (SearXNG) execute with an empty key
+          entries = [new PoolEntry("", 0)];
         } else if (entries.length === 0) {
           attempts.push({ provider: providerName, outcome: "skipped-no-keys" });
           continue;

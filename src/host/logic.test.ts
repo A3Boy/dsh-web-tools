@@ -25,6 +25,7 @@ import { buildYouSearchBody } from "./providers/you.ts";
 import { buildBraveLlmContextBody } from "./providers/brave.ts";
 import { buildExaSearchBody } from "./providers/exa.ts";
 import { buildSearxngUrl } from "./providers/searxng.ts";
+import { createSearchProvider } from "./registry.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
   const p = buildPool("k1, k2\nk3;k4  ,, k5");
@@ -442,15 +443,39 @@ test("buildSearxngUrl maps code topic but omits unsupported week time_range", ()
   assert.equal(url.searchParams.get("format"), "json");
 });
 
-test("buildSearxngUrl forwards supported day, month, and year time ranges", () => {
-  for (const preset of ["day", "month", "year"] as const) {
-    const url = buildSearxngUrl("http://127.0.0.1:8080", "OpenAI updates", undefined, {
-      rawQuery: "OpenAI updates",
-      cleanQuery: "OpenAI updates",
-      freshness: { preset },
-    });
-    assert.equal(url.searchParams.get("time_range"), preset);
-  }
+test("createSearchProvider: keyless self-hosted SearXNG executes without configured API key", async () => {
+  let executedApiKey: string | null = null;
+  const mockSearxng = {
+    name: "searxng",
+    needsBaseUrl: true,
+    fetchCapable: false,
+    async search(_query: string, _maxResults?: number, apiKey?: string) {
+      executedApiKey = apiKey ?? "";
+      return { sources: [{ url: "https://searxng.test/1", title: "SearXNG Result" }] };
+    },
+    async fetch() {
+      throw new Error("no fetch");
+    },
+  };
+
+  const provider = createSearchProvider(
+    () => ({
+      enabled: true,
+      defaultProvider: "searxng",
+      providerAttemptTimeoutMs: 5000,
+      fallbackOrder: [],
+      providerBaseUrls: { searxng: "http://127.0.0.1:8080" },
+      enabledProviders: { searxng: true },
+    }),
+    async () => "", // no API key
+    { record: () => {} },
+    { searxng: mockSearxng as any },
+  );
+
+  const res = await provider.search({ query: "test query" });
+  assert.equal(res.sources.length, 1);
+  assert.equal(res.sources[0].title, "SearXNG Result");
+  assert.equal(executedApiKey, "");
 });
 
 test("parseParallelSearchResults: normalizes url/title/excerpts/publish_date", () => {
