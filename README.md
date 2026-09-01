@@ -202,6 +202,22 @@ pnpm run build        # Build bundle into lib/
 
 ## Frequently Asked Questions
 
+### Self-Hosted SearXNG Configuration & Troubleshooting
+
+When using Docker or self-hosted SearXNG, if you encounter `no usable provider` or HTTP 403 Forbidden errors, check the following:
+
+1. **Enable JSON Output Format**: SearXNG defaults to HTML-only output for privacy. Edit your SearXNG `settings.yml` and add `- json` under `search.formats`:
+   ```yaml
+   search:
+     formats:
+       - html
+       - json # Required for API queries
+   ```
+   Restart your SearXNG container (`docker restart searxng`) to apply changes.
+2. **Keyless Setup**: SearXNG is keyless by default — leave the API Key field empty in the settings card. Enter your instance URL in the `Base URL` field (e.g. `http://127.0.0.1:8080`) and click "Test Search" to verify connectivity.
+
+### Cache & Reinstallation
+
 If cache issues occur after upgrading via local path or symlinks, reinstall from the profile directory:
 
 ```bash

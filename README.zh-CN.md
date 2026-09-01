@@ -202,6 +202,22 @@ pnpm run build        # 编译构建 (产物输出至 lib/)
 
 ## 常见问题
 
+### 自建 SearXNG 配置与排错
+
+使用 Docker 或自托管 SearXNG 时，若提示 `no usable provider` 或返回 403 拒绝访问，请检查以下两项配置：
+
+1. **必须开启 JSON 格式输出**：SearXNG 默认仅启用了 HTML 输出。编辑 SearXNG 的 `settings.yml` 文件，在 `search.formats` 中增加 `- json`：
+   ```yaml
+   search:
+     formats:
+       - html
+       - json # 必须包含 json，供 API 接口调用
+   ```
+   修改后重启 SearXNG 容器（例如 `docker restart searxng`）生效。
+2. **免 Key 访问**：SearXNG 属于自建免 Key 搜索源，插件面板中无需填写 API Key（留空即可）。在 `Base URL` 中填入你的 SearXNG 实例地址（如 `http://127.0.0.1:8080`），点击「测试搜索」即可验证连通性。
+
+### 缓存与重新安装
+
 若使用本地包或软链接升级遇到缓存问题，可前往 Profile 目录重新安装：
 
 ```bash
