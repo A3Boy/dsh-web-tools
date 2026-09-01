@@ -31,3 +31,6 @@ coverage/
 
 # local pnpm lockfile (CI uses npm; a pnpm lock would drift from npm install)
 pnpm-lock.yaml
+
+# local test SearXNG deployment data
+searxng-data/
