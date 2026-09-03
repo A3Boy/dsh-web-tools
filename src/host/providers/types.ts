@@ -68,7 +68,12 @@ export interface ProviderMeta {
   description: string;
   /** Credential ref suffix (TAVILY → WEB_TOOLS_TAVILY). */
   credSuffix: string;
-  /** Whether the backend supports native fetch (正文抽取). */
+  /**
+   * Whether this provider exposes a native/provider-side page extraction API.
+   *
+   * false does NOT mean web_fetch is unavailable:
+   * dsh-web-tools automatically falls back to its built-in generic HTTP fetcher (Defuddle).
+   */
   fetchCapable: boolean;
   /** Needs a base URL (self-hosted like SearXNG) vs hosted. */
   needsBaseUrl: boolean;

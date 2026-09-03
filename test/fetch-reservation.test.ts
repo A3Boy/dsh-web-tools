@@ -85,11 +85,19 @@ test("Phase 5: 2. Fetch timeout/abort releases inFlight count", async () => {
     },
   };
 
+  // When Tavily timed out, createFetchProvider fell back to builtin-http which succeeded against the live network (or mock).
+  // Provide a failing generic fetcher so we can verify rejection and inFlight release.
+  const failingGenericFetcher = async () => {
+    throw new Error("Generic fetcher failed");
+  };
+
   const fetchProvider = createFetchProvider(
     resolveConfig,
     async () => keys,
     { tavily: fakeAdapter },
     poolStore as any,
+    undefined,
+    failingGenericFetcher as any,
   );
 
   await assert.rejects(async () => fetchProvider.fetch({ url: "https://example.com" }));

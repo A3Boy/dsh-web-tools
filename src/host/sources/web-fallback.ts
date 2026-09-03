@@ -83,11 +83,13 @@ export async function fallbackFetchToGeneralWeb(
     const res = await generalFetch.fetch({ url }, signal);
     return {
       item: {
-        id: url,
-        title: "Web Page",
-        url,
+        id: res.url || url,
+        title: res.metadata?.title || "Web Page",
+        url: res.url || url,
         text: res.body?.content || "",
         platform: "general",
+        author: res.metadata?.author ? { name: res.metadata.author } : undefined,
+        publishedAt: res.metadata?.publishedAt,
       },
       retrievalMode: "degraded-web",
     };

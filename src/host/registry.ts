@@ -17,6 +17,7 @@ import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import { extractSearchHints } from "./search-hints.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
+import { fetchGenericWebPage, GenericFetchError } from "./generic-fetch.ts";
 
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export const PROVIDER_ID = "dsh-web-tools";
@@ -41,6 +42,13 @@ export interface WebFetchProviderLike {
     statusCode: number;
     body: { kind: "html" | "text"; content: string };
     truncated: boolean;
+    backend?: string;
+    metadata?: {
+      title?: string;
+      author?: string;
+      publishedAt?: string;
+      description?: string;
+    };
   }>;
 }
 
@@ -308,9 +316,11 @@ export function createSearchProvider(
 }
 
 /**
- * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`. V1 routes
- * fetch through the default provider's native extract endpoint; providers
- * without native fetch fail with a classified error.
+ * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`.
+ * Routes fetch through configured native fetch providers (Tavily, Exa, Jina,
+ * Firecrawl, Parallel) when available/healthy, and deterministically falls
+ * back to the built-in generic HTTP fetcher (with SSRF guard + Defuddle Markdown
+ * parsing) when native providers are unavailable, keyless, or fail.
  */
 export function createFetchProvider(
   resolveConfig: () => WebToolsRuntimeConfig,
@@ -318,6 +328,7 @@ export function createFetchProvider(
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
   poolStore?: PoolStore,
   healthStore?: ProviderHealthStore,
+  genericFetcher: typeof fetchGenericWebPage = fetchGenericWebPage,
 ): WebFetchProviderLike {
   const pools = poolStore ?? createPoolStore(resolveKeys);
 
@@ -325,16 +336,8 @@ export function createFetchProvider(
     id: `${PROVIDER_ID}-fetch`,
     available() {
       const cfg = resolveConfig();
-      if (!cfg.enabled) return false;
-      const chain = fallbackChain({
-        defaultProvider: cfg.defaultProvider,
-        fallbackOrder: cfg.fallbackOrder,
-      });
-      return chain.some((name) => {
-        if (cfg.enabledProviders[name] === false) return false;
-        const adapter = adapterRegistry[name];
-        return adapter !== undefined && adapter.fetchCapable;
-      });
+      // Built-in generic fetcher is always available as long as dsh-web-tools is enabled.
+      return cfg.enabled;
     },
     async fetch(request: { url: string }, signal?: AbortSignal) {
       const cfg = resolveConfig();
@@ -342,12 +345,15 @@ export function createFetchProvider(
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
-      let lastError: ProviderError | undefined;
+      const attempts: Array<{ provider: string; outcome: string }> = [];
+      let lastNativeError: ProviderError | undefined;
+      void lastNativeError; // retained for debugging inspection if native chain fails
 
+      // 1. Attempt native fetch from configured, enabled, fetch-capable providers
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
         const adapter = adapterRegistry[providerName];
-        if (!adapter || !adapter.fetchCapable) continue; // not a fetch backend, skip
+        if (!adapter || !adapter.fetchCapable) continue; // not a native fetch backend, skip
         const entries = await pools.poolOf(providerName);
         if (entries.length === 0) continue; // no credentials for this backend
         const usable = entries.filter((e) => e.healthy);
@@ -369,6 +375,7 @@ export function createFetchProvider(
             signal,
           );
           if (entry) markUsed(entries, index);
+          attempts.push({ provider: providerName, outcome: "success" });
           return {
             url: request.url,
             statusCode: 200,
@@ -382,19 +389,64 @@ export function createFetchProvider(
           if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
             healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
           }
-          lastError = err;
+          lastNativeError = err;
+          attempts.push({ provider: providerName, outcome: `failed:${err.code}` });
           const decision = classifyFailure(err);
-          if (decision === "terminal") throw toWebError(error);
+          // Caller cancellation or terminal URL/SSRF errors should abort immediately without fallback
+          if (decision === "terminal") {
+            const terminalErr = toWebError(error);
+            terminalErr.attempts = attempts;
+            throw terminalErr;
+          }
           if (decision === "non-retryable") break;
-          // retryable → next fetch-capable provider in the chain
+          // retryable → try next fetch-capable provider in the chain
         } finally {
           if (entry) releaseKey(entries, index);
         }
       }
-      const reason = lastError
-        ? `${lastError.code}: ${lastError.message}`
-        : "no fetch-capable provider";
-      throw new WebToolsWebError(`web fetch failed: ${reason}`);
+
+      // If caller aborted, do not proceed to built-in generic fetch
+      if (signal?.aborted) {
+        const abortErr = new WebToolsWebError("web fetch aborted by caller");
+        abortErr.code = "WEB_ABORTED";
+        abortErr.attempts = attempts;
+        throw abortErr;
+      }
+
+      // 2. Fallback to built-in generic HTTP fetcher (Defuddle + linkedom)
+      try {
+        const res = await genericFetcher(request.url, signal);
+        attempts.push({ provider: "builtin-http", outcome: "success" });
+        return {
+          url: res.finalUrl,
+          statusCode: res.statusCode,
+          body: { kind: "text" as const, content: res.content },
+          truncated: res.truncated,
+          backend: res.backend,
+          metadata: {
+            title: res.title,
+            author: res.author,
+            publishedAt: res.publishedAt,
+            description: res.description,
+          },
+        };
+      } catch (genErr: unknown) {
+        if (genErr instanceof GenericFetchError) {
+          attempts.push({ provider: "builtin-http", outcome: `failed:${genErr.code}` });
+          const webErr = new WebToolsWebError(
+            `web fetch failed: ${genErr.message}`,
+          );
+          webErr.code = genErr.code;
+          webErr.attempts = attempts;
+          throw webErr;
+        }
+
+        const fallbackErr = new WebToolsWebError(
+          `web fetch failed: ${genErr instanceof Error ? genErr.message : String(genErr)}`,
+        );
+        fallbackErr.attempts = attempts;
+        throw fallbackErr;
+      }
     },
   };
 }

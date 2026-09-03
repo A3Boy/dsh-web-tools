@@ -2,6 +2,7 @@ import { type SearchRoutingPolicy } from "./routing-policy.ts";
 import { PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
+import { fetchGenericWebPage } from "./generic-fetch.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export declare const PROVIDER_ID = "dsh-web-tools";
 /** Structural mirror of the seam's WebSearchProvider contract. */
@@ -36,6 +37,13 @@ export interface WebFetchProviderLike {
             content: string;
         };
         truncated: boolean;
+        backend?: string;
+        metadata?: {
+            title?: string;
+            author?: string;
+            publishedAt?: string;
+            description?: string;
+        };
     }>;
 }
 /** A classified failure the executor throws (WebError-compatible shape). */
@@ -112,8 +120,10 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
     }) => void;
 }, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebSearchProviderLike;
 /**
- * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`. V1 routes
- * fetch through the default provider's native extract endpoint; providers
- * without native fetch fail with a classified error.
+ * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`.
+ * Routes fetch through configured native fetch providers (Tavily, Exa, Jina,
+ * Firecrawl, Parallel) when available/healthy, and deterministically falls
+ * back to the built-in generic HTTP fetcher (with SSRF guard + Defuddle Markdown
+ * parsing) when native providers are unavailable, keyless, or fail.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage): WebFetchProviderLike;
