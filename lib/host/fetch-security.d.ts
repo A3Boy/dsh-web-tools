@@ -30,4 +30,4 @@ export type DnsLookupFn = (hostname: string, options: {
  * Resolves the hostname via DNS and verifies that all resolved A and AAAA addresses
  * point to public IP spaces. Prevents DNS rebinding and private IP domain spoofing.
  */
-export declare function validateFetchDns(hostname: string, lookupFn?: DnsLookupFn): Promise<void>;
+export declare function validateFetchDns(hostname: string, lookupFn?: DnsLookupFn, signal?: AbortSignal): Promise<void>;

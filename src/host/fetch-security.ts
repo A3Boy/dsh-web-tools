@@ -214,6 +214,7 @@ export type DnsLookupFn = (hostname: string, options: { all: true }) => Promise<
 export async function validateFetchDns(
   hostname: string,
   lookupFn: DnsLookupFn = (h, opts) => dns.lookup(h, opts),
+  signal?: AbortSignal,
 ): Promise<void> {
   let cleanHost = hostname.toLowerCase();
   if (cleanHost.startsWith("[") && cleanHost.endsWith("]")) {
@@ -231,8 +232,29 @@ export async function validateFetchDns(
     return;
   }
 
+  if (signal?.aborted) {
+    throw new FetchSecurityError("WEB_INVALID_URL", "DNS resolution aborted by signal");
+  }
+
   try {
-    const records = await lookupFn(cleanHost, { all: true });
+    const lookupPromise = lookupFn(cleanHost, { all: true });
+    let records: Array<{ address: string; family: number }>;
+
+    if (signal) {
+      records = await Promise.race([
+        lookupPromise,
+        new Promise<never>((_, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new FetchSecurityError("WEB_INVALID_URL", "DNS resolution aborted by signal")),
+            { once: true },
+          );
+        }),
+      ]);
+    } else {
+      records = await lookupPromise;
+    }
+
     if (!records || records.length === 0) {
       throw new FetchSecurityError("WEB_INVALID_URL", `DNS resolution failed for hostname "${cleanHost}": no addresses found`);
     }

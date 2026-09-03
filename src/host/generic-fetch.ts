@@ -239,13 +239,23 @@ export async function fetchGenericWebPage(
   }
 
   try {
-    let currentParsedUrl = validateFetchUrl(initialUrl);
+    const validateAndResolveUrl = async (rawUrl: string): Promise<URL> => {
+      try {
+        const parsed = validateFetchUrl(rawUrl);
+        await validateFetchDns(parsed.hostname, customDnsLookup, controller.signal);
+        return parsed;
+      } catch (err: unknown) {
+        if (err instanceof FetchSecurityError) {
+          throw new GenericFetchError(err.code, err.message, { url: rawUrl });
+        }
+        throw err;
+      }
+    };
+
+    let currentParsedUrl = await validateAndResolveUrl(initialUrl);
     let currentUrl = currentParsedUrl.href;
     let hopCount = 0;
     let response: Response | undefined;
-
-    // Validate initial hostname DNS resolution
-    await validateFetchDns(currentParsedUrl.hostname, customDnsLookup);
 
     // Manual redirect loop to validate SSRF and DNS on every hop
     while (true) {
@@ -314,19 +324,9 @@ export async function fetchGenericWebPage(
         }
 
         // Re-validate target URL and DNS for SSRF / loopback / private IP
-        try {
-          const validatedNext = validateFetchUrl(nextUrl);
-          await validateFetchDns(validatedNext.hostname, customDnsLookup);
-          currentParsedUrl = validatedNext;
-          currentUrl = validatedNext.href;
-        } catch (secErr) {
-          if (secErr instanceof FetchSecurityError) {
-            throw new GenericFetchError(secErr.code, `Redirect to "${nextUrl}" blocked: ${secErr.message}`, {
-              url: nextUrl,
-            });
-          }
-          throw secErr;
-        }
+        const validatedNext = await validateAndResolveUrl(nextUrl);
+        currentParsedUrl = validatedNext;
+        currentUrl = validatedNext.href;
 
         hopCount++;
         continue;
