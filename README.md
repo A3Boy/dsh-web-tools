@@ -96,7 +96,7 @@ All adaptations run through deterministic code without invoking an extra LLM cal
 * **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
 * **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
 * **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
-* **Native Page Extraction (`web_fetch`)**: Transparently routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader).
+* **Native & Generic Page Extraction (`web_fetch`)**: Automatically routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader) when available; seamlessly falls back to the **built-in generic HTTP fetcher** (powered by local Defuddle Markdown parsing with SSRF/DNS protection) for SearXNG-only / Brave-only setups or when native extractors fail.
 
 ---
 

@@ -96,7 +96,7 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
 * **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
 * **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
 * **SearXNG**：自建元搜索支持 `categories` (it/science/news) 与 `time_range`。
-* **原生正文提取 (`web_fetch`)**：自动调用支持 Provider 的原生提取接口（如 Exa `/contents`、Tavily `/extract`、Firecrawl `/scrape`、Parallel `/v1/extract`、You.com `/v1/contents`、Jina Reader）。
+* **原生与通用正文提取 (`web_fetch`)**：配置 Tavily、Exa、Firecrawl、Parallel、You.com、Jina 时自动优先调用其原生云端提取接口；未配置或失败时，以及使用 SearXNG / Brave 时，自动平滑回退至**插件内置通用 HTTP 抓取器**（基于 Defuddle 纯本地 Markdown 解析与 SSRF / DNS 安全防护），无需额外配置或购买第三方 Fetch Key。
 
 ---
 
