@@ -245,6 +245,13 @@ export async function fetchGenericWebPage(
         await validateFetchDns(parsed.hostname, customDnsLookup, controller.signal);
         return parsed;
       } catch (err: unknown) {
+        if (controller.signal.aborted) {
+          throw new GenericFetchError(
+            abortCause === "timeout" ? "WEB_TIMEOUT" : "WEB_ABORTED",
+            abortCause === "timeout" ? `Fetch timed out after ${timeoutMs}ms` : "Fetch aborted by caller",
+            { url: rawUrl },
+          );
+        }
         if (err instanceof FetchSecurityError) {
           throw new GenericFetchError(err.code, err.message, { url: rawUrl });
         }

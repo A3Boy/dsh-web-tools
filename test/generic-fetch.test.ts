@@ -243,6 +243,49 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     );
   });
 
+  it("classifies WEB_TIMEOUT when DNS resolution hangs and times out", async () => {
+    const mockHangingDnsLookup = async () => {
+      return new Promise<never>(() => {}); // Never resolves
+    };
+
+    await assert.rejects(
+      () =>
+        fetchGenericWebPage("https://example.com/hanging-dns", {
+          timeoutMs: 30, // 30ms timeout
+          customDnsLookup: mockHangingDnsLookup,
+        }),
+      (err: unknown) => {
+        assert(err instanceof GenericFetchError);
+        assert.equal(err.code, "WEB_TIMEOUT");
+        assert(err.message.includes("timed out"));
+        return true;
+      },
+    );
+  });
+
+  it("classifies WEB_ABORTED when DNS resolution is canceled by caller AbortSignal", async () => {
+    const mockHangingDnsLookup = async () => {
+      return new Promise<never>(() => {}); // Never resolves
+    };
+
+    const callerController = new AbortController();
+    setTimeout(() => callerController.abort(new Error("caller canceled")), 20);
+
+    await assert.rejects(
+      () =>
+        fetchGenericWebPage("https://example.com/aborted-dns", {
+          signal: callerController.signal,
+          timeoutMs: 5000,
+          customDnsLookup: mockHangingDnsLookup,
+        }),
+      (err: unknown) => {
+        assert(err instanceof GenericFetchError);
+        assert.equal(err.code, "WEB_ABORTED");
+        return true;
+      },
+    );
+  });
+
   it("enforces bounded stream size and flags truncated when exceeding limit", async () => {
     const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     // Generate a payload exceeding 5MB
