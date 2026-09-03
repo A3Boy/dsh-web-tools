@@ -415,7 +415,10 @@ export function createFetchProvider(
 
       // 2. Fallback to built-in generic HTTP fetcher (Defuddle + linkedom)
       try {
-        const res = await genericFetcher(request.url, signal);
+        const res = await genericFetcher(request.url, {
+          signal,
+          timeoutMs: cfg.providerAttemptTimeoutMs,
+        });
         attempts.push({ provider: "builtin-http", outcome: "success" });
         return {
           url: res.finalUrl,

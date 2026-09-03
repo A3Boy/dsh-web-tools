@@ -1,5 +1,5 @@
 /** Version shipped by this plugin build. Keep in sync with package.json. */
-export const CURRENT_VERSION = "0.3.2";
+export const CURRENT_VERSION = "0.3.3";
 
 export function compareVersions(left: string, right: string): number {
   const parse = (value: string) => value.replace(/^v/i, "").split("-")[0].split(".").map((part) => Number(part) || 0);

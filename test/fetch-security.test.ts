@@ -1,14 +1,38 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { validateFetchUrl, FetchSecurityError } from "../src/host/fetch-security.ts";
+import {
+  validateFetchUrl,
+  validateFetchDns,
+  FetchSecurityError,
+} from "../src/host/fetch-security.ts";
 
-describe("fetch-security: SSRF and URL validation", () => {
+describe("fetch-security: SSRF, URL, and DNS validation", () => {
   it("allows valid public HTTPS and HTTP URLs", () => {
     const u1 = validateFetchUrl("https://example.com/articles/123?q=test");
     assert.equal(u1.href, "https://example.com/articles/123?q=test");
 
     const u2 = validateFetchUrl("http://93.184.216.34/index.html");
     assert.equal(u2.href, "http://93.184.216.34/index.html");
+  });
+
+  it("blocks userinfo credentials in URLs", () => {
+    const userinfoUrls = [
+      "https://user:password@example.com/page",
+      "http://admin:secret@public-domain.com/",
+      "http://user@example.com/path",
+    ];
+
+    for (const url of userinfoUrls) {
+      assert.throws(
+        () => validateFetchUrl(url),
+        (err: unknown) => {
+          assert(err instanceof FetchSecurityError);
+          assert.equal(err.code, "WEB_INVALID_URL");
+          assert(err.message.includes("userinfo"));
+          return true;
+        },
+      );
+    }
   });
 
   it("blocks non-HTTP protocols", () => {
@@ -154,5 +178,57 @@ describe("fetch-security: SSRF and URL validation", () => {
         },
       );
     }
+  });
+
+  it("resolves DNS and blocks domains resolving to private / loopback IP spaces", async () => {
+    // 1. Mock DNS resolving to 127.0.0.1
+    const mockLoopbackLookup = async () => [{ address: "127.0.0.1", family: 4 }];
+    await assert.rejects(
+      () => validateFetchDns("evil-rebinding.example.com", mockLoopbackLookup),
+      (err: unknown) => {
+        assert(err instanceof FetchSecurityError);
+        assert.equal(err.code, "WEB_FETCH_BLOCKED");
+        assert(err.message.includes("127.0.0.1"));
+        return true;
+      },
+    );
+
+    // 2. Mock DNS resolving to 10.0.0.5 or 192.168.1.1
+    const mockPrivateLookup = async () => [{ address: "10.0.0.5", family: 4 }];
+    await assert.rejects(
+      () => validateFetchDns("internal-service.example.com", mockPrivateLookup),
+      (err: unknown) => {
+        assert(err instanceof FetchSecurityError);
+        assert.equal(err.code, "WEB_FETCH_BLOCKED");
+        assert(err.message.includes("10.0.0.5"));
+        return true;
+      },
+    );
+
+    // 3. Mock DNS resolving to cloud metadata 169.254.169.254
+    const mockMetaLookup = async () => [{ address: "169.254.169.254", family: 4 }];
+    await assert.rejects(
+      () => validateFetchDns("cloud-meta.example.com", mockMetaLookup),
+      (err: unknown) => {
+        assert(err instanceof FetchSecurityError);
+        assert.equal(err.code, "WEB_FETCH_BLOCKED");
+        return true;
+      },
+    );
+
+    // 4. Mock DNS resolving to ::1 or fe80::
+    const mockIpv6Lookup = async () => [{ address: "::1", family: 6 }];
+    await assert.rejects(
+      () => validateFetchDns("ipv6-loop.example.com", mockIpv6Lookup),
+      (err: unknown) => {
+        assert(err instanceof FetchSecurityError);
+        assert.equal(err.code, "WEB_FETCH_BLOCKED");
+        return true;
+      },
+    );
+
+    // 5. Mock DNS resolving to legitimate public IP (93.184.216.34)
+    const mockPublicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+    await validateFetchDns("example.com", mockPublicLookup);
   });
 });

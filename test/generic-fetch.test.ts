@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { fetchGenericWebPage, GenericFetchError, MAX_FETCH_BYTES } from "../src/host/generic-fetch.ts";
 
 describe("generic-fetch: Defuddle & linkedom extraction", () => {
-  it("extracts clean markdown and metadata from standard HTML", async () => {
+  it("extracts clean markdown and metadata from standard HTML with strictly local parsing", async () => {
     const html = `
       <!DOCTYPE html>
       <html>
@@ -42,7 +42,12 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
       });
     };
 
-    const res = await fetchGenericWebPage("https://example.com/guide", undefined, mockFetch as any);
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+
+    const res = await fetchGenericWebPage("https://example.com/guide", {
+      customFetchWithProxy: mockFetch as any,
+      customDnsLookup: mockDnsLookup,
+    });
 
     assert.equal(res.statusCode, 200);
     assert.equal(res.backend, "builtin-http");
@@ -53,15 +58,20 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
   });
 
   it("handles plain text, markdown, json, and xml with raw-text extraction", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+
     // 1. JSON
-    const jsonPayload = JSON.stringify({ name: "dsh-web-tools", version: "0.3.2" }, null, 2);
+    const jsonPayload = JSON.stringify({ name: "dsh-web-tools", version: "0.3.3" }, null, 2);
     const mockJsonFetch = async (): Promise<Response> => {
       return new Response(jsonPayload, {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     };
-    const jsonRes = await fetchGenericWebPage("https://api.example.com/info.json", undefined, mockJsonFetch as any);
+    const jsonRes = await fetchGenericWebPage("https://api.example.com/info.json", {
+      customFetchWithProxy: mockJsonFetch as any,
+      customDnsLookup: mockDnsLookup,
+    });
     assert.equal(jsonRes.extraction, "raw-text");
     assert.equal(jsonRes.content, jsonPayload);
 
@@ -73,12 +83,16 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
         headers: { "Content-Type": "text/markdown; charset=utf-8" },
       });
     };
-    const mdRes = await fetchGenericWebPage("https://example.com/CHANGELOG.md", undefined, mockMdFetch as any);
+    const mdRes = await fetchGenericWebPage("https://example.com/CHANGELOG.md", {
+      customFetchWithProxy: mockMdFetch as any,
+      customDnsLookup: mockDnsLookup,
+    });
     assert.equal(mdRes.extraction, "raw-text");
     assert.equal(mdRes.content, mdPayload);
   });
 
   it("rejects unsupported binary and media Content-Types", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     const mockPdfFetch = async (): Promise<Response> => {
       return new Response("%PDF-1.4...", {
         status: 200,
@@ -87,7 +101,11 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     };
 
     await assert.rejects(
-      () => fetchGenericWebPage("https://example.com/doc.pdf", undefined, mockPdfFetch as any),
+      () =>
+        fetchGenericWebPage("https://example.com/doc.pdf", {
+          customFetchWithProxy: mockPdfFetch as any,
+          customDnsLookup: mockDnsLookup,
+        }),
       (err: unknown) => {
         assert(err instanceof GenericFetchError);
         assert.equal(err.code, "WEB_UNSUPPORTED_CONTENT_TYPE");
@@ -96,8 +114,9 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     );
   });
 
-  it("follows safe redirects and validates target URL", async () => {
+  it("follows safe redirects and validates target URL & DNS on every hop", async () => {
     let callCount = 0;
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     const mockRedirectFetch = async (url: string | URL): Promise<Response> => {
       callCount++;
       const urlStr = String(url);
@@ -113,13 +132,17 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
       });
     };
 
-    const res = await fetchGenericWebPage("https://example.com/short", undefined, mockRedirectFetch as any);
+    const res = await fetchGenericWebPage("https://example.com/short", {
+      customFetchWithProxy: mockRedirectFetch as any,
+      customDnsLookup: mockDnsLookup,
+    });
     assert.equal(callCount, 2);
     assert.equal(res.finalUrl, "https://example.com/articles/final-target");
     assert(res.content.includes("Success"));
   });
 
   it("blocks SSRF attempts across redirect (e.g. public -> 127.0.0.1)", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     const mockSsrfRedirectFetch = async (url: string | URL): Promise<Response> => {
       return new Response(null, {
         status: 302,
@@ -128,7 +151,11 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     };
 
     await assert.rejects(
-      () => fetchGenericWebPage("https://example.com/ssrf-trap", undefined, mockSsrfRedirectFetch as any),
+      () =>
+        fetchGenericWebPage("https://example.com/ssrf-trap", {
+          customFetchWithProxy: mockSsrfRedirectFetch as any,
+          customDnsLookup: mockDnsLookup,
+        }),
       (err: unknown) => {
         assert(err instanceof GenericFetchError);
         assert.equal(err.code, "WEB_FETCH_BLOCKED");
@@ -139,6 +166,7 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
 
   it("blocks redirect loops exceeding maximum hops", async () => {
     let hop = 0;
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     const mockLoopFetch = async (): Promise<Response> => {
       hop++;
       return new Response(null, {
@@ -148,7 +176,11 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     };
 
     await assert.rejects(
-      () => fetchGenericWebPage("https://example.com/loop", undefined, mockLoopFetch as any),
+      () =>
+        fetchGenericWebPage("https://example.com/loop", {
+          customFetchWithProxy: mockLoopFetch as any,
+          customDnsLookup: mockDnsLookup,
+        }),
       (err: unknown) => {
         assert(err instanceof GenericFetchError);
         assert.equal(err.code, "WEB_FETCH_BLOCKED");
@@ -159,6 +191,7 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
   });
 
   it("classifies HTTP 404/500 errors properly", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     const mock404Fetch = async (): Promise<Response> => {
       return new Response("Not Found", {
         status: 404,
@@ -168,7 +201,11 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     };
 
     await assert.rejects(
-      () => fetchGenericWebPage("https://example.com/non-existent", undefined, mock404Fetch as any),
+      () =>
+        fetchGenericWebPage("https://example.com/non-existent", {
+          customFetchWithProxy: mock404Fetch as any,
+          customDnsLookup: mockDnsLookup,
+        }),
       (err: unknown) => {
         assert(err instanceof GenericFetchError);
         assert.equal(err.code, "WEB_HTTP_ERROR");
@@ -178,7 +215,36 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     );
   });
 
+  it("enforces explicit attempt timeout budget and classifies WEB_TIMEOUT", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+    const mockHangingFetch = async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      return new Promise((resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    };
+
+    await assert.rejects(
+      () =>
+        fetchGenericWebPage("https://example.com/hanging", {
+          timeoutMs: 30, // 30ms timeout
+          customFetchWithProxy: mockHangingFetch as any,
+          customDnsLookup: mockDnsLookup,
+        }),
+      (err: unknown) => {
+        assert(err instanceof GenericFetchError);
+        assert.equal(err.code, "WEB_TIMEOUT");
+        assert(err.message.includes("timed out"));
+        return true;
+      },
+    );
+  });
+
   it("enforces bounded stream size and flags truncated when exceeding limit", async () => {
+    const mockDnsLookup = async () => [{ address: "93.184.216.34", family: 4 }];
     // Generate a payload exceeding 5MB
     const chunkSize = 1024 * 1024; // 1MB
     const stream = new ReadableStream({
@@ -197,7 +263,10 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
       });
     };
 
-    const res = await fetchGenericWebPage("https://example.com/huge.txt", undefined, mockLargeFetch as any);
+    const res = await fetchGenericWebPage("https://example.com/huge.txt", {
+      customFetchWithProxy: mockLargeFetch as any,
+      customDnsLookup: mockDnsLookup,
+    });
     assert.equal(res.truncated, true);
     assert.equal(res.content.length, MAX_FETCH_BYTES);
   });

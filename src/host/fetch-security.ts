@@ -2,19 +2,22 @@
  * dsh-web-tools — SSRF & URL security validation.
  *
  * Validates public web fetch URLs against SSRF (Server-Side Request Forgery)
- * risks before network access and across manual HTTP redirects.
+ * and DNS rebinding risks before network access and across manual HTTP redirects.
  *
  * Defends against:
  *  - non-HTTP protocols (file:, ftp:, gopher:, ws:, data:, javascript:, etc.)
+ *  - userinfo credentials in URLs (e.g. https://user:pass@example.com)
  *  - loopback addresses (localhost, 127.0.0.0/8, ::1, 0.0.0.0, etc.)
  *  - link-local & cloud metadata (169.254.0.0/16, fe80::/10)
  *  - RFC1918 private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
  *  - unique local IPv6 (fc00::/7)
  *  - special suffixes (*.local, *.internal, *.lan, *.localhost)
+ *  - DNS resolution / rebinding to private IPs (resolves A/AAAA records before connection)
  *
  * @module
  */
 import { isIP } from "node:net";
+import dns from "node:dns/promises";
 
 export class FetchSecurityError extends Error {
   readonly code: "WEB_INVALID_URL" | "WEB_FETCH_BLOCKED";
@@ -29,7 +32,7 @@ export class FetchSecurityError extends Error {
 /**
  * Check if an IPv4 address falls within private, loopback, or link-local ranges.
  */
-function isPrivateOrRestrictedIpv4(ip: string): boolean {
+export function isPrivateOrRestrictedIpv4(ip: string): boolean {
   const parts = ip.split(".").map((p) => Number.parseInt(p, 10));
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) {
     return true; // invalid parsed shape -> block
@@ -71,7 +74,7 @@ function isPrivateOrRestrictedIpv4(ip: string): boolean {
 /**
  * Check if an IPv6 address falls within private, loopback, or link-local ranges.
  */
-function isPrivateOrRestrictedIpv6(ip: string): boolean {
+export function isPrivateOrRestrictedIpv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
   // Loopback (::1) or unspecified (::)
   if (normalized === "::1" || normalized === "::" || normalized === "0:0:0:0:0:0:0:1" || normalized === "0:0:0:0:0:0:0:0") {
@@ -111,7 +114,17 @@ function isPrivateOrRestrictedIpv6(ip: string): boolean {
 }
 
 /**
- * Validates a target URL before fetching to ensure it is a safe public HTTP/HTTPS URL.
+ * Check if a raw IP address (v4 or v6) is private or restricted.
+ */
+export function isPrivateOrRestrictedIp(ip: string): boolean {
+  const v = isIP(ip);
+  if (v === 4) return isPrivateOrRestrictedIpv4(ip);
+  if (v === 6) return isPrivateOrRestrictedIpv6(ip);
+  return true; // Unknown or invalid IP -> block
+}
+
+/**
+ * Validates a target URL structure before fetching to ensure it is a safe public HTTP/HTTPS URL.
  * Throws FetchSecurityError if invalid or blocked.
  */
 export function validateFetchUrl(rawUrl: string): URL {
@@ -131,6 +144,14 @@ export function validateFetchUrl(rawUrl: string): URL {
     throw new FetchSecurityError(
       "WEB_INVALID_URL",
       `Unsupported protocol "${parsed.protocol}". Only http: and https: are allowed.`,
+    );
+  }
+
+  // Userinfo check: reject user:pass@host credentials embedded in URLs
+  if (parsed.username || parsed.password) {
+    throw new FetchSecurityError(
+      "WEB_INVALID_URL",
+      `Embedded userinfo (username/password) in URL is forbidden for security reasons.`,
     );
   }
 
@@ -162,7 +183,7 @@ export function validateFetchUrl(rawUrl: string): URL {
     );
   }
 
-  // Numeric IP address validation
+  // Literal IP address validation
   const ipVersion = isIP(hostname);
   if (ipVersion === 4) {
     if (isPrivateOrRestrictedIpv4(hostname)) {
@@ -181,4 +202,52 @@ export function validateFetchUrl(rawUrl: string): URL {
   }
 
   return parsed;
+}
+
+/** Injectable DNS lookup function signature. */
+export type DnsLookupFn = (hostname: string, options: { all: true }) => Promise<Array<{ address: string; family: number }>>;
+
+/**
+ * Resolves the hostname via DNS and verifies that all resolved A and AAAA addresses
+ * point to public IP spaces. Prevents DNS rebinding and private IP domain spoofing.
+ */
+export async function validateFetchDns(
+  hostname: string,
+  lookupFn: DnsLookupFn = (h, opts) => dns.lookup(h, opts),
+): Promise<void> {
+  let cleanHost = hostname.toLowerCase();
+  if (cleanHost.startsWith("[") && cleanHost.endsWith("]")) {
+    cleanHost = cleanHost.slice(1, -1);
+  }
+
+  // If already a literal IP, validateFetchUrl already inspected it
+  if (isIP(cleanHost) !== 0) {
+    if (isPrivateOrRestrictedIp(cleanHost)) {
+      throw new FetchSecurityError(
+        "WEB_FETCH_BLOCKED",
+        `Access to private/restricted IP "${cleanHost}" is blocked for security reasons.`,
+      );
+    }
+    return;
+  }
+
+  try {
+    const records = await lookupFn(cleanHost, { all: true });
+    if (!records || records.length === 0) {
+      throw new FetchSecurityError("WEB_INVALID_URL", `DNS resolution failed for hostname "${cleanHost}": no addresses found`);
+    }
+
+    for (const record of records) {
+      if (isPrivateOrRestrictedIp(record.address)) {
+        throw new FetchSecurityError(
+          "WEB_FETCH_BLOCKED",
+          `DNS resolution for hostname "${cleanHost}" resolved to private/restricted IP "${record.address}", which is blocked for security reasons.`,
+        );
+      }
+    }
+  } catch (err: unknown) {
+    if (err instanceof FetchSecurityError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new FetchSecurityError("WEB_INVALID_URL", `DNS lookup failed for hostname "${cleanHost}": ${msg}`);
+  }
 }
