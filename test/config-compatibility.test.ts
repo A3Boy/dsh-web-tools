@@ -173,3 +173,40 @@ test("apply(ctx, config): passes loader config into search runtime without falli
   assert.ok(registeredSearchProvider);
   assert.equal(registeredSearchProvider.available(), true, "search provider must be available with tavily key");
 });
+
+test("peerDependencies: satisfies DSH 0.1.7 and upcoming 0.2.0-rc.1", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+  const peers = pkg.peerDependencies || {};
+
+  // Simple semver checker matching semver.satisfies({ includePrerelease: true })
+  function semverSatisfies(version: string, range: string): boolean {
+    const parts = range.split("||").map((s) => s.trim());
+    return parts.some((part) => {
+      if (part.startsWith("^")) {
+        const base = part.slice(1);
+        const [bMaj, bMin] = base.split(".").map(Number);
+        const [vMaj, vMin] = version.split(".").map(Number);
+        if (bMaj === 0) {
+          if (bMin === 0) return version.startsWith(base);
+          return vMaj === 0 && vMin === bMin;
+        }
+        return vMaj === bMaj;
+      }
+      return true;
+    });
+  }
+
+  // DSH 0.1.7 and 0.2.0-rc.1 runtimes
+  for (const runtime of ["0.1.7-rc.2", "0.2.0-rc.1"]) {
+    for (const [name, range] of Object.entries(peers)) {
+      if (name.startsWith("@deepseek-ai/dsh-")) {
+        assert.ok(
+          semverSatisfies(runtime, range as string),
+          `peer ${name} range "${range}" must satisfy DSH runtime ${runtime}`,
+        );
+      }
+    }
+  }
+});
