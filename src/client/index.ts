@@ -22,8 +22,12 @@ import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
 import { adoptWebToolsStyles } from "./ui/styles.ts";
+import { patchPrimitivesIcons } from "./compat-icons.ts";
+import * as primitives from "@deepseek-ai/dsh-client-ui-primitives";
 import * as React from "react";
 import { useSyncExternalStore } from "react";
+
+patchPrimitivesIcons(primitives as any);
 
 export { zhDict, enDict };
 

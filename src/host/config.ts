@@ -82,6 +82,25 @@ export const Config: z<WebToolsSettings> = z.object({
   braveQuotaCache: z.dict(z.any()),
   searchRoutingPolicy: z.union([z.const("ordered"), z.const("round-robin"), z.const("random")]),
 });
+// Mark volatile for DSH 0.1.7+ SettingsForms and config editor
+(Config as any).meta = { ...(Config as any).meta, volatile: true };
+
+function unwrapConfig(val: unknown): unknown {
+  if (val && typeof (val as any).get === "function") {
+    return unwrapConfig((val as any).get());
+  }
+  if (Array.isArray(val)) {
+    return val.map(unwrapConfig);
+  }
+  if (val !== null && typeof val === "object") {
+    const res: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val)) {
+      res[k] = unwrapConfig(v);
+    }
+    return res;
+  }
+  return val;
+}
 
 /** A settings-scope handle: current value + write path. */
 export interface ConfigHandle {
@@ -104,27 +123,60 @@ export interface ConfigHandle {
  * through settings/mutate (that proxy's whitelist excludes third-party
  * namespaces).
  */
-export function installConfig(ctx: WebToolsContext): ConfigHandle {
-  let current = () => DEFAULT_SETTINGS;
-  let scope: { update: (patch: object) => Promise<void> } | undefined;
+export function installConfig(ctx: WebToolsContext, initialConfig?: unknown): ConfigHandle {
+  const unwrapped = (unwrapConfig(initialConfig) as Partial<WebToolsSettings>) ?? {};
+  const configured: WebToolsSettings = {
+    ...DEFAULT_SETTINGS,
+    ...unwrapped,
+  };
+
+  let current = () => configured;
+  let scope: { update: (patch: object) => Promise<void>; get?: () => unknown } | undefined;
+  let service: any;
+  let mounted = false;
   const mountedCbs: Array<() => void> = [];
 
-  ctx.inject(["settings"], (sctx) => {
-    const registered = sctx.settings.register(SETTINGS_NS, Config, {
-      base: DEFAULT_SETTINGS,
-    });
-    scope = registered;
-    current = () => registered.get() as WebToolsSettings;
-    // Settings are readable only from here on; run deferred boot work now.
+  ctx.inject(["settings"], (sctx: any) => {
+    service = sctx.settings;
+    if (typeof service?.register === "function") {
+      // DSH pre-0.1.7: Settings service had register()
+      const registered = service.register(SETTINGS_NS, Config, {
+        base: configured,
+      });
+      scope = registered;
+      current = () => registered.get() as WebToolsSettings;
+    } else {
+      // DSH 0.1.7+: SettingsForms has no register(); initial config came from loader.
+      // Register presentation policy to prevent an empty generic page from auto-generating.
+      if (typeof service?.configure === "function") {
+        try {
+          ctx.effect?.(() => service.configure({ auto: false }, (ctx as any).fiber));
+        } catch {}
+      }
+    }
+    mounted = true;
     for (const cb of mountedCbs.splice(0)) cb();
   });
 
   return {
     read: () => current(),
     write: async (patch) => {
-      if (!scope) throw new Error("dsh-web-tools settings namespace is not mounted");
-      await scope.update(patch);
+      if (!scope && !service) {
+        throw new Error("dsh-web-tools settings namespace is not mounted");
+      }
+      Object.assign(configured, patch);
+      if (scope) {
+        await scope.update(patch);
+      } else if (typeof service?.update === "function") {
+        await service.update(SETTINGS_NS, patch);
+      }
     },
-    onMounted: (cb) => mountedCbs.push(cb),
+    onMounted: (cb) => {
+      if (mounted) {
+        cb();
+      } else {
+        mountedCbs.push(cb);
+      }
+    },
   };
 }

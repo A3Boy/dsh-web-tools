@@ -33,5 +33,5 @@ export declare function toRoutedFetchResponse(url: string, outcome: SourceFetchO
     };
     truncated: boolean;
 };
-export declare function apply(ctx: WebToolsContext): void;
+export declare function apply(ctx: WebToolsContext, config?: unknown): void;
 export { PROVIDER_ID };

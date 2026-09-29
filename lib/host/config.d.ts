@@ -76,4 +76,4 @@ export interface ConfigHandle {
  * through settings/mutate (that proxy's whitelist excludes third-party
  * namespaces).
  */
-export declare function installConfig(ctx: WebToolsContext): ConfigHandle;
+export declare function installConfig(ctx: WebToolsContext, initialConfig?: unknown): ConfigHandle;

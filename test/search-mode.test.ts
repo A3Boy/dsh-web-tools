@@ -8,6 +8,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   SearchModeRuntime,
   createSearchModeMessages,
@@ -162,7 +164,7 @@ test("required message is a plugin snapshot section carrying REQUIRED_SEARCH_TEX
   assert.ok(Array.isArray(input.content));
   assert.equal(input.content[0].type, "text");
   assert.equal(input.content[0].text, REQUIRED_SEARCH_TEXT);
-  assert.equal(input.source.kind, "plugin");
+  assert.equal(input.source.kind, "plugin:dsh-web-tools");
   assert.equal(input.source.plugin, "dsh-web-tools");
   assert.equal(input.source.form, "snapshot");
   assert.equal(input.source.sections[0].name, "web-search-mode");
@@ -188,10 +190,43 @@ test("correction message is a one-shot plugin notice (not a snapshot)", () => {
   assert.equal(calls.length, 1);
   const input = calls[0];
   assert.equal(input.content[0].text, REQUIRED_SEARCH_CORRECTION_TEXT);
-  assert.equal(input.source.kind, "plugin");
+  assert.equal(input.source.kind, "plugin:dsh-web-tools");
   assert.equal(input.source.plugin, "dsh-web-tools");
   assert.equal(input.source.form, "notice");
   assert.equal(input.source.summary, "Web Search required");
+});
+
+test("search mode messages are admitted by session format v4 codec", async () => {
+  const codecCandidates = [
+    process.env.DSH_TOOL_WEB_NM && `${process.env.DSH_TOOL_WEB_NM}/dsh-session-format-v3-to-v4/lib/index.js`,
+    "D:/Develop/nvm/v22.22.1/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-session-format-v3-to-v4/lib/index.js",
+  ].filter(Boolean) as string[];
+
+  let codec: any = null;
+  for (const p of codecCandidates) {
+    if (existsSync(p)) {
+      const mod = await import(pathToFileURL(p).href);
+      codec = mod.releasedV4SessionFormatCodec;
+      break;
+    }
+  }
+
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+  const req = messages.required();
+  const corr = messages.correction();
+
+  assert.equal((calls[0].source as any).kind, "plugin:dsh-web-tools");
+  assert.equal((calls[1].source as any).kind, "plugin:dsh-web-tools");
+
+  if (codec) {
+    assert.doesNotThrow(() => {
+      codec.encodeEvent({ type: "user/message", seq: 1, time: Date.now(), data: req });
+    });
+    assert.doesNotThrow(() => {
+      codec.encodeEvent({ type: "user/message", seq: 2, time: Date.now(), data: corr });
+    });
+  }
 });
 
 // ---- one-shot pre-step message policy --------------------------------------

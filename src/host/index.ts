@@ -187,9 +187,9 @@ async function writeCredential(ctx: WebToolsContext, ref: string, value: string)
   await credentials.set(ref, value);
 }
 
-export function apply(ctx: WebToolsContext) {
+export function apply(ctx: WebToolsContext, config?: unknown) {
   const stats = new Stats();
-  const configHandle = installConfig(ctx);
+  const configHandle = installConfig(ctx, config);
   const readConfig = () => configHandle.read();
 
   // ---- ctx.web search + fetch providers ----------------------------------

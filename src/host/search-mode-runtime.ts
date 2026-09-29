@@ -189,7 +189,7 @@ export function createSearchModeMessages(
     createUserMessage({
       content: [{ type: "text", text }],
       source: {
-        kind: "plugin",
+        kind: "plugin:dsh-web-tools",
         plugin: "dsh-web-tools",
         form: "snapshot",
         sections: [{ name: section, text }],
@@ -201,7 +201,7 @@ export function createSearchModeMessages(
       createUserMessage({
         content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],
         source: {
-          kind: "plugin",
+          kind: "plugin:dsh-web-tools",
           plugin: "dsh-web-tools",
           form: "notice",
           summary: "Web Search required",
