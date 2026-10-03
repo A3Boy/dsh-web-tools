@@ -24,6 +24,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
 import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
+import { applyRoutingResult, createReadSequencer } from "./routing-state.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
@@ -427,7 +428,7 @@ export function WebToolsSection(props: SectionProps) {
   const [timeoutDraftSec, setTimeoutDraftSec] = useState<string>("");
   const dragProvider = useRef<string | null>(null);
   const [overProvider, setOverProvider] = useState<string | null>(null);
-  const loadToken = useRef(0);
+  const readSeq = useRef(createReadSequencer());
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -457,14 +458,20 @@ export function WebToolsSection(props: SectionProps) {
   };
 
   const load = async () => {
-    const token = ++loadToken.current;
+    const seq = readSeq.current.begin();
     try {
       const cfg = await api.configGet();
-      if (token !== loadToken.current) return;
+      if (!mounted.current) return;
+      // Apply unless a NEWER read has already landed. Discarding merely because
+      // a newer read STARTED silently loses the update and leaves the card
+      // stale until it is reopened.
+      if (!readSeq.current.accept(seq)) return;
       setConfig(cfg);
       setError("");
     } catch (e) {
-      if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
+      if (mounted.current && readSeq.current.accept(seq)) {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     }
 
     await loadPlatformStatus();
@@ -524,7 +531,6 @@ export function WebToolsSection(props: SectionProps) {
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibilityChange);
       }
-      loadToken.current += 1;
       mounted.current = false;
     };
   }, []);
@@ -605,7 +611,16 @@ export function WebToolsSection(props: SectionProps) {
   const providerOf = (name: string) => config.providers.find((p) => p.name === name);
   const saveOrder = (ordered: string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
     const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
-    void api.routingSet(policy, next).then(() => load()).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    // The write response already carries the authoritative new order, so paint
+    // it directly. Waiting for a follow-up config read-back made the edit
+    // appear to do nothing until the settings page was reopened.
+    void api
+      .routingSet(policy, next)
+      .then((result) => {
+        setConfig((prev) => applyRoutingResult(prev, result));
+        setError("");
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 
   // Rendering order: providers are listed in the routing order (default +
