@@ -25,6 +25,7 @@ import {
 import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
 import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
 import { applyRoutingResult, createReadSequencer } from "./routing-state.ts";
+import { CURRENT_VERSION } from "../shared/version.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
@@ -1031,6 +1032,17 @@ export function WebToolsSection(props: SectionProps) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("testSearchTitle")}</span>
               <TestSearchBlock t={t} config={config} onError={(msg) => setError(msg)} />
+            </div>
+
+            {/* Bundle identity. The web shell serves client bundles as
+                immutable, cache-busted by a revision derived from the file's
+                mtime/size, so a page can keep running an older bundle. Showing
+                the version compiled into THIS bundle makes that visible. */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
+              <span style={{ fontSize: 13, color: text.primary }}>
+                {t("clientBundleLabel")}: <code style={{ fontFamily: "ui-monospace, monospace" }}>v{CURRENT_VERSION}</code>
+              </span>
+              <span style={{ fontSize: 12, color: text.tertiary }}>{t("clientBundleHint")}</span>
             </div>
           </div>
         )}
