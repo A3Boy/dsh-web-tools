@@ -170,10 +170,26 @@ function ProviderRow(props: {
     </div>
   );
 
+  // In edit mode the chain control IS the affordance. Showing the
+  // "not in search order" label next to the "add to search order" button is
+  // redundant, reads as a second (dead) control, and — because it is a rigid
+  // 220px block — used to push the real button out of the card's clipped area.
+  // Genuine anomalies (auth/rate-limit/unreachable) keep their label.
+  const showStatusText = status !== "ready" && !(editMode === true && status === "not-in-order");
+
   const trailing = (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
-      {status !== "ready" ? (
-        <div style={{ width: 220, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+      {editMode === true ? (
+        showStatusText ? (
+          <div style={{ minWidth: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+            {dotState !== "none" && <StateDot state={dotState} size={8} />}
+            <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {statusText}
+            </span>
+          </div>
+        ) : null
+      ) : status !== "ready" ? (
+        <div style={{ width: 220, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
           {dotState !== "none" && <StateDot state={dotState} size={8} />}
           <span style={{ color: statusColor, fontSize: 12, whiteSpace: "nowrap" }}>
             {statusText}
@@ -213,7 +229,7 @@ function ProviderRow(props: {
         </button>
       )}
       {editMode && !inOrder && (
-        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onAdd?.(); }} style={{ padding: "0 8px", height: 24 }}>
+        <Button size="sm" variant="outline" onClick={() => onAdd?.()} style={{ padding: "0 8px", height: 24, flex: "none" }}>
           {t("addToChain")}
         </Button>
       )}
@@ -250,6 +266,8 @@ function ProviderRow(props: {
       }}
     >
       <SettingsRow
+        className="wt-provider-row"
+        trailingClassName="wt-provider-meta"
         icon={brandIcon}
         title={titleWithBadge}
         subtitle={t(PROVIDER_CAPABILITY_KEY[p.name] ?? "capability.search")}
@@ -463,6 +481,11 @@ export function WebToolsSection(props: SectionProps) {
   };
 
   useEffect(() => {
+    // Re-arm on every mount: the cleanup below clears this flag, and React
+    // StrictMode double-invokes effects (mount → cleanup → mount), which would
+    // otherwise leave it permanently false and silently disable platform
+    // status + quota updates.
+    mounted.current = true;
     void load();
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
@@ -616,10 +639,15 @@ export function WebToolsSection(props: SectionProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720, padding: "4px 0 24px" }}>
-      {/* Narrow-width responsive rules: provider rows wrap to two lines. */}
+      {/* Narrow-width responsive rules: provider rows wrap to two lines.
+          The wrap is unconditional (it only engages when the row's own content
+          cannot fit) because a narrow settings PANE can occur inside a wide
+          viewport, where a viewport media query would never match — and the
+          group card clips overflow, which would hide the chain buttons. */}
       <style>{`
+        .wt-provider-row { flex-wrap: wrap; row-gap: 4px; }
+        .wt-provider-meta { flex: 0 1 auto; min-width: 0; }
         @media (max-width: 640px) {
-          .wt-provider-row { flex-wrap: wrap; row-gap: 4px; }
           .wt-provider-meta { flex-basis: 100%; order: 10; padding-left: 22px; }
         }
       `}</style>

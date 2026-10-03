@@ -15,4 +15,8 @@ export declare function SettingsRow(props: {
     isLast?: boolean;
     insetDivider?: boolean;
     disabled?: boolean;
+    /** Extra classes for the row element (e.g. responsive-wrap hooks). */
+    className?: string;
+    /** Extra classes for the trailing slot, where action controls live. */
+    trailingClassName?: string;
 }): import("react").JSX.Element;

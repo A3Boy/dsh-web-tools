@@ -292,6 +292,14 @@ a.dswt-settings-row:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Shrinkable: a rigid trailing slot overflows a narrow card, and the card's
+     overflow:hidden then CLIPS the action buttons out of view (unreachable
+     click targets). The flexible child (status/meta text) truncates instead. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* Controls keep their intrinsic size so they never collapse or clip away. */
+.dswt-row-trailing > button {
   flex: none;
 }
 .dswt-row-chevron {

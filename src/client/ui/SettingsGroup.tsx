@@ -45,9 +45,13 @@ export function SettingsRow(props: {
   isLast?: boolean;
   insetDivider?: boolean;
   disabled?: boolean;
+  /** Extra classes for the row element (e.g. responsive-wrap hooks). */
+  className?: string;
+  /** Extra classes for the trailing slot, where action controls live. */
+  trailingClassName?: string;
 }) {
   adoptWebToolsStyles();
-  const { icon, title, subtitle, trailing, chevron, onClick, disabled } = props;
+  const { icon, title, subtitle, trailing, chevron, onClick, disabled, className, trailingClassName } = props;
   const isClickable = !!onClick && !disabled;
 
   const inner = (
@@ -68,7 +72,7 @@ export function SettingsRow(props: {
         )}
       </div>
       {trailing && (
-        <div className="dswt-row-trailing">
+        <div className={trailingClassName ? `dswt-row-trailing ${trailingClassName}` : "dswt-row-trailing"}>
           {trailing}
         </div>
       )}
@@ -82,13 +86,13 @@ export function SettingsRow(props: {
 
   if (isClickable) {
     return (
-      <button type="button" className="dswt-settings-row clickable" onClick={onClick} disabled={disabled}>
+      <button type="button" className={className ? `dswt-settings-row clickable ${className}` : "dswt-settings-row clickable"} onClick={onClick} disabled={disabled}>
         {inner}
       </button>
     );
   }
   return (
-    <div className="dswt-settings-row" aria-disabled={disabled === true}>
+    <div className={className ? `dswt-settings-row ${className}` : "dswt-settings-row"} aria-disabled={disabled === true}>
       {inner}
     </div>
   );
