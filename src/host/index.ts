@@ -20,6 +20,7 @@ import type { VersionCheckView } from "../shared/api-types.ts";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
+import { createQuotaPersistScheduler } from "./quota-persist.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
@@ -191,6 +192,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   const stats = new Stats();
   const configHandle = installConfig(ctx, config);
   const readConfig = () => configHandle.read();
+
+  /** Coalesced writer for Brave's header-derived, display-only quota cache. */
+  const braveQuotaPersist = createQuotaPersistScheduler((cache) => {
+    void configHandle.write({ braveQuotaCache: cache }).catch(() => {});
+  });
 
   // ---- ctx.web search + fetch providers ----------------------------------
   const resolveRuntimeConfig = () => {
@@ -461,15 +467,20 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // the synchronous apply() body readConfig() would only return defaults.
   configHandle.onMounted(() => {
     const braveCache = readConfig().braveQuotaCache ?? {};
+    braveQuotaPersist.seed(braveCache);
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
     }
   });
-  setBraveQuotaPersist((apiKey, snapshot) => {
-    void configHandle
-      .write({ braveQuotaCache: { ...readConfig().braveQuotaCache, [apiKey]: snapshot } })
-      .catch(() => {});
-  });
+  // Coalesced: a settings write costs ~2.5s on DSH 0.1.7 (profile patch +
+  // Loader reconciliation under hmr.runExclusive), and Brave reports quota in
+  // search headers, so writing through per search would run that path for a
+  // value the card only displays.
+  setBraveQuotaPersist((apiKey, snapshot) => braveQuotaPersist.record(apiKey, snapshot));
+  ctx.effect(
+    () => () => braveQuotaPersist.dispose(),
+    "dsh-web-tools: brave quota persistence",
+  );
 
   // ---- Search Mode (per-session "required web search" turn policy) ---------
   // Host-owned state riding the provider seam: `available()` means the search
