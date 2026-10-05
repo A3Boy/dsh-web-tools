@@ -24,7 +24,7 @@ import { buildTavilySearchBody } from "./providers/tavily.ts";
 import { buildYouSearchBody } from "./providers/you.ts";
 import { buildBraveLlmContextBody } from "./providers/brave.ts";
 import { buildExaSearchBody } from "./providers/exa.ts";
-import { buildSearxngUrl } from "./providers/searxng.ts";
+import { buildSearxngUrl, buildSearxngAuth } from "./providers/searxng.ts";
 import { createSearchProvider } from "./registry.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
@@ -441,6 +441,26 @@ test("buildSearxngUrl maps code topic but omits unsupported week time_range", ()
   assert.equal(url.searchParams.get("categories"), "it");
   assert.equal(url.searchParams.get("time_range"), null);
   assert.equal(url.searchParams.get("format"), "json");
+});
+
+test("buildSearxngAuth sends user:password as HTTP Basic, never as a query key", () => {
+  const basic = buildSearxngAuth("mcp:WoFn1IMp4kFyrCE8T1OkErQksr9JYQxM");
+  assert.deepEqual(basic, { headers: { authorization: `Basic ${Buffer.from("mcp:WoFn1IMp4kFyrCE8T1OkErQksr9JYQxM").toString("base64")}` } });
+
+  // A colon in the first position is not a `user:password` pair — pass it through as a key.
+  assert.deepEqual(buildSearxngAuth(":odd"), { headers: {}, queryKey: ":odd" });
+
+  // Keyless instances stay keyless.
+  assert.deepEqual(buildSearxngAuth(undefined), { headers: {} });
+  assert.deepEqual(buildSearxngAuth(""), { headers: {} });
+});
+
+test("buildSearxngUrl keeps a plain key in the query and drops a Basic credential from it", () => {
+  const plain = buildSearxngUrl("http://127.0.0.1:8080", "q", "plainkey");
+  assert.equal(plain.searchParams.get("api_key"), "plainkey");
+
+  const basic = buildSearxngUrl("http://127.0.0.1:8080", "q", "mcp:pw");
+  assert.equal(basic.searchParams.get("api_key"), null);
 });
 
 test("createSearchProvider: keyless self-hosted SearXNG executes without configured API key", async () => {

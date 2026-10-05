@@ -19,6 +19,21 @@ export declare const SEARXNG_META: {
     readonly defaultBaseUrl: "http://127.0.0.1:8080";
 };
 /**
+ * A SearXNG credential written `user:password` means HTTP Basic — the form
+ * that reverse proxies guarding a self-hosted instance require, and the one
+ * the retired dsh-search-failover backend accepted. Anything else is passed
+ * on as the `api_key` query parameter.
+ *
+ * Basic is NOT optional here: `api_key` in the query string cannot satisfy a
+ * proxy, and `fetch()` refuses a URL carrying userinfo
+ * ("Request cannot be constructed from a URL that includes credentials"), so
+ * there is no config-only workaround.
+ */
+export declare function buildSearxngAuth(apiKey?: string): {
+    headers: Record<string, string>;
+    queryKey?: string;
+};
+/**
  * Build SearXNG URL parameters based on query, options, and SearchHints.
  * Maps:
  *  - topic=code → categories=it
