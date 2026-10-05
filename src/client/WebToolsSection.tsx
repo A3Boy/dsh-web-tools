@@ -436,6 +436,10 @@ export function WebToolsSection(props: SectionProps) {
   configRef.current = config;
   /** Monotonic id of the newest routing edit, so only the last intent settles the view. */
   const orderWriteSeq = useRef(0);
+  /** Newest routing intent not yet confirmed by the Host (see saveOrder). */
+  const pendingOrder = useRef<import("./routing-state.ts").RoutingWriteResult | null>(null);
+  /** Whether a routing write is currently in flight. */
+  const orderWriteInFlight = useRef(false);
   /** True while a routing edit is being persisted in the background. */
   const [savingOrder, setSavingOrder] = useState(false);
 
@@ -474,7 +478,9 @@ export function WebToolsSection(props: SectionProps) {
       // a newer read STARTED silently loses the update and leaves the card
       // stale until it is reopened.
       if (!readSeq.current.accept(seq)) return;
-      setConfig(cfg);
+      // Keep an un-confirmed routing edit on top: the write takes seconds, and
+      // a read landing inside that window would otherwise repaint the old order.
+      setConfig(pendingOrder.current ? applyRoutingResult(cfg, pendingOrder.current) : cfg);
       setError("");
     } catch (e) {
       if (mounted.current && readSeq.current.accept(seq)) {
@@ -633,34 +639,59 @@ export function WebToolsSection(props: SectionProps) {
    *
    * The DSH settings write edits the profile patch and recomposes the profile,
    * which measures in SECONDS (routing/set ~2.4-3.9s against config/get
-   * ~11-57ms). Painting only after it returns makes the control feel
-   * unresponsive, so the new order is applied locally at once and the write
-   * runs behind it; a failure rolls the view back and surfaces the error.
+   * ~11-57ms). Two consequences shape this:
+   *
+   *  - painting only after the response makes the control feel dead, so the new
+   *    order is applied locally at once and the write runs behind it, and
+   *  - a read completing inside that multi-second window would otherwise
+   *    repaint the OLD order and visibly undo the edit, so the un-confirmed
+   *    intent is held in `pendingOrder` and re-applied over every read until the
+   *    write settles.
+   *
+   * Writes are drained one at a time; a newer edit replaces the pending intent
+   * instead of racing a second multi-second recomposition.
    */
   const saveOrder = (ordered: readonly string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
     const fields = routingFields(ordered, policy);
-    const seq = ++orderWriteSeq.current;
-    const rollbackTo = configRef.current;
+    ++orderWriteSeq.current;
+    pendingOrder.current = fields;
 
     setConfig((prev) => applyRoutingResult(prev, fields));
     setError("");
     setSavingOrder(true);
+    drainOrderWrites();
+  };
+
+  /** Send the pending routing intent, then drain again if another arrived. */
+  const drainOrderWrites = () => {
+    if (orderWriteInFlight.current) return; // the in-flight settle drains next
+    const fields = pendingOrder.current;
+    if (!fields) {
+      setSavingOrder(false);
+      return;
+    }
+    const seq = orderWriteSeq.current;
+    orderWriteInFlight.current = true;
 
     void api
       .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder])
       .then((result) => {
-        // A newer edit owns the view now; its own write will settle it.
-        if (seq !== orderWriteSeq.current) return;
+        if (seq !== orderWriteSeq.current) return; // a newer intent owns the view
+        pendingOrder.current = null;
         setConfig((prev) => applyRoutingResult(prev, result));
         setError("");
       })
       .catch((e) => {
-        if (seq !== orderWriteSeq.current) return;
-        setConfig(rollbackTo);
         setError(e instanceof Error ? e.message : String(e));
+        if (seq !== orderWriteSeq.current) return;
+        // Roll the optimistic order back to what the Host actually holds.
+        pendingOrder.current = null;
+        void load();
       })
       .finally(() => {
-        if (seq === orderWriteSeq.current) setSavingOrder(false);
+        orderWriteInFlight.current = false;
+        if (pendingOrder.current) drainOrderWrites();
+        else setSavingOrder(false);
       });
   };
 

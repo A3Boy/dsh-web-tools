@@ -95,6 +95,34 @@ test("routingFields round-trips the order it is given (no reordering)", () => {
   assert.deepEqual([fields.defaultProvider, ...fields.fallbackOrder], ordered);
 });
 
+test("an un-confirmed intent survives a read that lands inside the write window", () => {
+  // The write takes seconds. Sequence: user adds "brave" (optimistic), then a
+  // config read returns the STILL-OLD persisted order. Without re-applying the
+  // pending intent the row would visibly snap back, which reads as "the click
+  // did not work".
+  const intent = routingFields(["exa", "tavily", "parallel", "brave"], "ordered");
+
+  const optimistic = applyRoutingResult(view(), intent) as any;
+  assert.deepEqual(optimistic.fallbackOrder, ["tavily", "parallel", "brave"]);
+
+  const staleRead = view(); // Host has not committed yet
+  assert.deepEqual((staleRead as any).fallbackOrder, ["tavily", "parallel"]);
+
+  const merged = applyRoutingResult(staleRead, intent) as any;
+  assert.deepEqual(
+    merged.fallbackOrder,
+    ["tavily", "parallel", "brave"],
+    "the pending intent must stay on top of a stale read",
+  );
+
+  // Once the write confirms, the same merge is a no-op rather than a revert.
+  const confirmed = applyRoutingResult(
+    view({ fallbackOrder: ["tavily", "parallel", "brave"] }),
+    intent,
+  ) as any;
+  assert.deepEqual(confirmed.fallbackOrder, ["tavily", "parallel", "brave"]);
+});
+
 test("shouldApplyRead drops only reads a newer read already superseded", () => {
   assert.equal(shouldApplyRead(1, 0), true, "first read applies");
   assert.equal(shouldApplyRead(1, 1), true, "the applied read is idempotent");
