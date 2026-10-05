@@ -4,8 +4,10 @@
  * Regression guard for the "routing edit applies server-side but the page does
  * not repaint until reopened" defect:
  *
- *  - a routing write's own response is authoritative and must paint the new
- *    order immediately (no read-back race), and
+ *  - a routing write paints the new order optimistically, because the DSH
+ *    settings write (profile patch edit + recomposition) measures in seconds,
+ *    so waiting for its response makes the control feel unresponsive,
+ *  - the write's own response is authoritative and settles the view, and
  *  - a completed settings read must be discarded only when a NEWER read has
  *    already been applied, never merely because a newer read started.
  */
@@ -14,6 +16,7 @@ import assert from "node:assert/strict";
 import {
   applyRoutingResult,
   createReadSequencer,
+  routingFields,
   shouldApplyRead,
 } from "../src/client/routing-state.ts";
 
@@ -63,6 +66,33 @@ test("applyRoutingResult keeps unrelated fields and tolerates a null view", () =
     defaultProvider: "exa",
     fallbackOrder: [],
   }), null, "a still-loading view stays null");
+});
+
+test("routingFields projects an intent into the fields the view paints from", () => {
+  const fields = routingFields(["exa", "tavily", "brave"], "ordered");
+  assert.equal(fields.defaultProvider, "exa");
+  assert.deepEqual(fields.fallbackOrder, ["tavily", "brave"]);
+  assert.equal(fields.policy, "ordered");
+  assert.equal(fields.saved, true);
+
+  // The optimistic view can be painted before any request is in flight, so the
+  // control feels instant while the (slow) write runs behind it.
+  const painted = applyRoutingResult(view(), fields) as any;
+  assert.equal(painted.defaultProvider, "exa");
+  assert.deepEqual(painted.fallbackOrder, ["tavily", "brave"]);
+});
+
+test("routingFields drops duplicates keeping first occurrence", () => {
+  const fields = routingFields(["a", "b", "a", "c", "b"], "random");
+  assert.equal(fields.defaultProvider, "a");
+  assert.deepEqual(fields.fallbackOrder, ["b", "c"]);
+  assert.equal(fields.policy, "random");
+});
+
+test("routingFields round-trips the order it is given (no reordering)", () => {
+  const ordered = ["parallel", "exa", "searxng"];
+  const fields = routingFields(ordered, "ordered");
+  assert.deepEqual([fields.defaultProvider, ...fields.fallbackOrder], ordered);
 });
 
 test("shouldApplyRead drops only reads a newer read already superseded", () => {

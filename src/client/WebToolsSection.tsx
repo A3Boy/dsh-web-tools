@@ -24,7 +24,7 @@ import {
 } from "@deepseek-ai/dsh-client-ui-primitives";
 import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
 import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
-import { applyRoutingResult, createReadSequencer } from "./routing-state.ts";
+import { applyRoutingResult, createReadSequencer, routingFields } from "./routing-state.ts";
 import { CURRENT_VERSION } from "../shared/version.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
@@ -431,6 +431,13 @@ export function WebToolsSection(props: SectionProps) {
   const [overProvider, setOverProvider] = useState<string | null>(null);
   const readSeq = useRef(createReadSequencer());
   const mounted = useRef(true);
+  /** Mirror of the latest rendered config, for handlers that must not read a stale closure. */
+  const configRef = useRef<ConfigView | null>(null);
+  configRef.current = config;
+  /** Monotonic id of the newest routing edit, so only the last intent settles the view. */
+  const orderWriteSeq = useRef(0);
+  /** True while a routing edit is being persisted in the background. */
+  const [savingOrder, setSavingOrder] = useState(false);
 
   useEffect(() => {
     if (config?.providerAttemptTimeoutMs !== undefined) {
@@ -610,18 +617,51 @@ export function WebToolsSection(props: SectionProps) {
     ...config.fallbackOrder.filter((n) => n !== config.defaultProvider),
   ];
   const providerOf = (name: string) => config.providers.find((p) => p.name === name);
-  const saveOrder = (ordered: string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
-    const next = ordered.filter((n, i) => ordered.indexOf(n) === i);
-    // The write response already carries the authoritative new order, so paint
-    // it directly. Waiting for a follow-up config read-back made the edit
-    // appear to do nothing until the settings page was reopened.
+
+  /**
+   * Latest routing order read from the live config, not this render's closure,
+   * so rapid successive edits compose instead of overwriting each other.
+   */
+  const liveOrder = (): string[] => {
+    const c = configRef.current;
+    if (!c) return [];
+    return [c.defaultProvider, ...c.fallbackOrder.filter((n) => n !== c.defaultProvider)];
+  };
+
+  /**
+   * Persist a routing edit.
+   *
+   * The DSH settings write edits the profile patch and recomposes the profile,
+   * which measures in SECONDS (routing/set ~2.4-3.9s against config/get
+   * ~11-57ms). Painting only after it returns makes the control feel
+   * unresponsive, so the new order is applied locally at once and the write
+   * runs behind it; a failure rolls the view back and surfaces the error.
+   */
+  const saveOrder = (ordered: readonly string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
+    const fields = routingFields(ordered, policy);
+    const seq = ++orderWriteSeq.current;
+    const rollbackTo = configRef.current;
+
+    setConfig((prev) => applyRoutingResult(prev, fields));
+    setError("");
+    setSavingOrder(true);
+
     void api
-      .routingSet(policy, next)
+      .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder])
       .then((result) => {
+        // A newer edit owns the view now; its own write will settle it.
+        if (seq !== orderWriteSeq.current) return;
         setConfig((prev) => applyRoutingResult(prev, result));
         setError("");
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => {
+        if (seq !== orderWriteSeq.current) return;
+        setConfig(rollbackTo);
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (seq === orderWriteSeq.current) setSavingOrder(false);
+      });
   };
 
   // Rendering order: providers are listed in the routing order (default +
@@ -761,9 +801,14 @@ export function WebToolsSection(props: SectionProps) {
               </span>
             }
             trailing={
-              <Button size="sm" variant={editingOrder ? "primary" : "outline"} icon={!editingOrder ? <IconEditOutline16 size={13} /> : undefined} onClick={() => setEditingOrder(!editingOrder)}>
-                {editingOrder ? t("done") : t("editOrder")}
-              </Button>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                {/* The order repaints instantly; this only reports that the
+                    (slow) profile write behind it is still in flight. */}
+                {savingOrder && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
+                <Button size="sm" variant={editingOrder ? "primary" : "outline"} icon={!editingOrder ? <IconEditOutline16 size={13} /> : undefined} onClick={() => setEditingOrder(!editingOrder)}>
+                  {editingOrder ? t("done") : t("editOrder")}
+                </Button>
+              </div>
             }
             isLast
           />
@@ -783,7 +828,7 @@ export function WebToolsSection(props: SectionProps) {
                   { value: "random", label: t("routingPolicy.random") },
                 ]}
                 value={config.searchRoutingPolicy ?? "ordered"}
-                onChange={(v) => saveOrder(orderedProviders, v as SearchRoutingPolicy)}
+                onChange={(v) => saveOrder(liveOrder(), v as SearchRoutingPolicy)}
               />
               <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
                 {t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}
@@ -943,8 +988,8 @@ export function WebToolsSection(props: SectionProps) {
                   setOverProvider(null);
                   if (!fromName || fromName === p.name) return;
 
-                  // Compute next order
-                  const currentOrderList = [...orderedProviders];
+                  // Compute next order from the LIVE order so rapid edits compose
+                  const currentOrderList = [...liveOrder()];
                   const fromIdx = currentOrderList.indexOf(fromName);
                   const toIdx = currentOrderList.indexOf(p.name);
 
@@ -962,11 +1007,12 @@ export function WebToolsSection(props: SectionProps) {
                   setOverProvider(null);
                 }}
                 onRemove={() => {
-                  const next = orderedProviders.filter((n) => n !== p.name);
+                  const next = liveOrder().filter((n) => n !== p.name);
                   if (next.length > 0) saveOrder(next);
                 }}
                 onAdd={() => {
-                  if (!orderedProviders.includes(p.name)) saveOrder([...orderedProviders, p.name]);
+                  const current = liveOrder();
+                  if (!current.includes(p.name)) saveOrder([...current, p.name]);
                 }}
                 onClick={() => setDetailFor(p.name)}
               />

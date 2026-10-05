@@ -41,6 +41,29 @@ export function applyRoutingResult(
 }
 
 /**
+ * Project a local ordering intent into the routing fields a write carries.
+ *
+ * Used to paint the new order the instant the user acts: the DSH settings write
+ * edits the profile patch and recomposes, which measures in SECONDS, so waiting
+ * for the response makes the control feel dead.
+ * @param ordered - The intended order; duplicates are dropped, keeping first.
+ * @param policy - The routing policy to persist alongside it.
+ * @returns The routing fields, shaped like the write response.
+ */
+export function routingFields(
+  ordered: readonly string[],
+  policy: SearchRoutingPolicy,
+): RoutingWriteResult {
+  const next = ordered.filter((name, index) => ordered.indexOf(name) === index);
+  return {
+    saved: true,
+    policy,
+    defaultProvider: next[0],
+    fallbackOrder: next.slice(1),
+  };
+}
+
+/**
  * Whether a completed read identified by `seq` may still be applied.
  * @param seq - Sequence number the read received when it started.
  * @param appliedSeq - Sequence number of the newest read already applied.
