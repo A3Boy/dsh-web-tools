@@ -1,0 +1,10 @@
+export declare const IconChevronDownOutline14: import("./compat-icons.ts").IconComponent;
+export declare const IconChevronRightOutline14: import("./compat-icons.ts").IconComponent;
+export declare const IconGlobeOutline14: import("./compat-icons.ts").IconComponent;
+export declare const IconCloseOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconEditOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconPlusOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconRefreshOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconSearchOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconSettingsOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconTrashOutline16: import("./compat-icons.ts").IconComponent;

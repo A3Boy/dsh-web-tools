@@ -21,7 +21,7 @@
  * @module
  */
 import { useEffect, useRef, useState } from "react";
-import { IconGlobeOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconGlobeOutline14 } from "./icons.ts";
 import { api, type SearchMode } from "./api.ts";
 import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 

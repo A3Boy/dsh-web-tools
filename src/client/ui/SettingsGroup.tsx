@@ -8,7 +8,7 @@
  * @module
  */
 import { adoptWebToolsStyles } from "./styles.ts";
-import { IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconChevronRightOutline14 } from "../icons.ts";
 
 export function SettingsGroup(props: {
   title?: React.ReactNode;

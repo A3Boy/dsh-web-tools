@@ -7,7 +7,7 @@
 import { text, surface, state as stateColor } from "../theme.ts";
 import { type QuotaView } from "../api.ts";
 import { quotaFraction, quotaTier, type TFunc } from "../logic.ts";
-import { IconRefreshOutline16, IconChevronRightOutline14 } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconRefreshOutline16, IconChevronRightOutline14 } from "../icons.ts";
 import { useState } from "react";
 import { dashboardOf, ExternalLinkIcon } from "../provider-ui-meta.tsx";
 import { adoptWebToolsStyles } from "./styles.ts";

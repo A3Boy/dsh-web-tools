@@ -7,7 +7,14 @@
  * @module
  */
 import { useState, useRef, type CSSProperties } from "react";
-import { Button, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16, IconCloseOutline16, IconSettingsOutline16, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
+import {
+  IconChevronRightOutline14,
+  IconPlusOutline16,
+  IconTrashOutline16,
+  IconCloseOutline16,
+  IconSettingsOutline16,
+} from "./icons.ts";
 import { api, type ProviderView, type QuotaView, type TestProviderView } from "./api.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";

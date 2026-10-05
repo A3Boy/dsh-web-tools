@@ -30,18 +30,31 @@ const NODE_BUILTINS = new Set([
   ...builtinModules.map(id => `node:${id}`),
 ])
 
-/** Module specifiers the web shell shares into the frozen module table (the official PLATFORM_MODULES list, plus the runtime/client exemption). */
+/**
+ * Module specifiers the web shell seeds into its module table. This is the
+ * ACTUAL seed key set, taken from the served shell bundle's
+ * `staticModules` (`dsh-web-frontend/dist/assets/index-*.js`), which the loader
+ * installs verbatim as `new Map(Object.entries(options.staticModules))`.
+ *
+ * The previous list was inaccurate in both directions: it allowed four
+ * specifiers that are not table keys (`cordis` — the key is
+ * `@deepseek-ai/cordis` — plus dsh-client-web-react, dsh-client-schema-form and
+ * dsh-client-runtime/client, three packages that are not even published), and
+ * it omitted two real keys (dsh-client-store, dsh-client-ui-dockkit). An
+ * allowed-but-absent specifier compiles into a bare `require(...)` that throws
+ * the loader's "missed the module table" error at load, while an omitted-but-real
+ * key is rejected here at build time — so the list is only useful when it matches.
+ */
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   'react-dom',
   'react-dom/client',
-  'cordis',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-schema-form',
-  '@deepseek-ai/dsh-client-runtime/client',
+  '@deepseek-ai/dsh-client-ui-dockkit',
 ]
 
 /** Wire/type layers a client bundle may inline (mirror of the official INLINE_SAFE list). */
@@ -110,36 +123,7 @@ export default [
       entryFileNames: 'client.js',
       banner: `window.__ModuleLoader__.load({ id: "dsh-web-tools", factory: (require) => {`,
       footer: `return module.exports; } });`,
-      intro: `var module = { exports: {} }; var exports = module.exports;
-// Patch icon exports on @deepseek-ai/dsh-client-ui-primitives for DSH 0.1.7+ compatibility
-try {
-  var __prims = require("@deepseek-ai/dsh-client-ui-primitives");
-  var __react = require("react");
-  var __icons = [
-    ["IconChevronDownOutline14", "IconChevronDownOutlineRegular", 14],
-    ["IconChevronRightOutline14", "IconChevronRightOutlineRegular", 14],
-    ["IconGlobeOutline14", "IconGlobeOutlineRegular", 14],
-    ["IconCloseOutline16", "IconCloseOutlineRegular", 16],
-    ["IconEditOutline16", "IconEditOutlineRegular", 16],
-    ["IconPlusOutline16", "IconPlusOutlineRegular", 16],
-    ["IconRefreshOutline16", "IconRefreshOutlineRegular", 16],
-    ["IconSearchOutline16", "IconSearchOutlineRegular", 16],
-    ["IconSettingsOutline16", "IconSettingsOutlineRegular", 16],
-    ["IconTrashOutline16", "IconTrashOutlineRegular", 16]
-  ];
-  for (var __i = 0; __i < __icons.length; __i++) {
-    var __old = __icons[__i][0];
-    var __new = __icons[__i][1];
-    var __sz = __icons[__i][2];
-    if (__prims && __prims[__old] === void 0 && __prims[__new] !== void 0) {
-      (function(Art, sz) {
-        __prims[__old] = function(props) {
-          return __react.createElement(Art, Object.assign({ size: sz }, props));
-        };
-      })(__prims[__new], __sz);
-    }
-  }
-} catch (_) {}`,
+      intro: `var module = { exports: {} }; var exports = module.exports;`,
       // The CJS wrapper factory's `require` only resolves module-table entries
       // (react, cordis, ...); it cannot load relative chunk URLs in the
       // browser. Disable code splitting so the artifact is one script.

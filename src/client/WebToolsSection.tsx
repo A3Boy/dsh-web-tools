@@ -16,12 +16,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
-  IconSearchOutline16,
-  IconEditOutline16,
-  IconSettingsOutline16,
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
+import {
+  IconSearchOutline16,
+  IconEditOutline16,
+  IconSettingsOutline16,
+} from "./icons.ts";
 import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
 import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
 import { applyRoutingResult, createReadSequencer, routingFields } from "./routing-state.ts";

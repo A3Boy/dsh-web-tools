@@ -174,39 +174,64 @@ test("apply(ctx, config): passes loader config into search runtime without falli
   assert.equal(registeredSearchProvider.available(), true, "search provider must be available with tavily key");
 });
 
-test("peerDependencies: satisfies DSH 0.1.7 and upcoming 0.2.0-rc.1", async () => {
+/**
+ * DSH gates plugin activation on `peerDependencies` by calling
+ * `semver.satisfies(runtimeVersion, range, { includePrerelease: true })` for
+ * every `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` name (dsh-app-boot). Use the
+ * REAL semver as the oracle rather than a hand-rolled approximation: a wrong
+ * range silently blocks installation/activation, which is exactly how the
+ * 0.2.0 line was refused by a `^0.1.0-rc.6`-only range.
+ */
+const DSH_RUNTIME_LINES = [
+  "0.1.5-rc.3", // oldest line exercised here
+  "0.1.7-rc.2", // the running host when the 0.1.7 breakages were reported
+  "0.2.0-rc.1", // first 0.2 line published
+  "0.2.0-rc.2", // current `latest` and `next`
+  "0.2.1-alpha.1", // current `alpha`; admitted by the range's semantics, not a support claim
+];
+
+test("every DSH peer range admits every published runtime line", async () => {
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
+  const semver = (await import("semver")).default;
   const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
-  const peers = pkg.peerDependencies || {};
+  const peers = (pkg.peerDependencies ?? {}) as Record<string, string>;
 
-  // Simple semver checker matching semver.satisfies({ includePrerelease: true })
-  function semverSatisfies(version: string, range: string): boolean {
-    const parts = range.split("||").map((s) => s.trim());
-    return parts.some((part) => {
-      if (part.startsWith("^")) {
-        const base = part.slice(1);
-        const [bMaj, bMin] = base.split(".").map(Number);
-        const [vMaj, vMin] = version.split(".").map(Number);
-        if (bMaj === 0) {
-          if (bMin === 0) return version.startsWith(base);
-          return vMaj === 0 && vMin === bMin;
-        }
-        return vMaj === bMaj;
-      }
-      return true;
-    });
+  const gated = Object.entries(peers).filter(
+    ([name]) => name === "@deepseek-ai/dsh" || name.startsWith("@deepseek-ai/dsh-"),
+  );
+  assert.ok(gated.length > 0, "the plugin must declare at least one gated DSH peer");
+
+  for (const runtime of DSH_RUNTIME_LINES) {
+    for (const [name, range] of gated) {
+      assert.ok(
+        semver.satisfies(runtime, range, { includePrerelease: true }),
+        `peer ${name} range "${range}" must satisfy DSH runtime ${runtime}`,
+      );
+    }
   }
+});
 
-  // DSH 0.1.7 and 0.2.0-rc.1 runtimes
-  for (const runtime of ["0.1.7-rc.2", "0.2.0-rc.1"]) {
-    for (const [name, range] of Object.entries(peers)) {
-      if (name.startsWith("@deepseek-ai/dsh-")) {
-        assert.ok(
-          semverSatisfies(runtime, range as string),
-          `peer ${name} range "${range}" must satisfy DSH runtime ${runtime}`,
-        );
-      }
+test("the 0.1-only range that previously blocked 0.2.x is no longer in use", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const semver = (await import("semver")).default;
+  const peers = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"))
+    .peerDependencies as Record<string, string>;
+
+  // Guards the regression itself: a bare ^0.1.0-rc.6 range refuses every 0.2.x
+  // prerelease, so the plugin would be denied installation/activation there.
+  assert.equal(
+    semver.satisfies("0.2.0-rc.2", "^0.1.0-rc.6", { includePrerelease: true }),
+    false,
+    "precondition: a 0.1-only range must refuse 0.2.x (this is the bug being guarded)",
+  );
+  for (const [name, range] of Object.entries(peers)) {
+    if (name.startsWith("@deepseek-ai/dsh-")) {
+      assert.ok(
+        semver.satisfies("0.2.0-rc.2", range, { includePrerelease: true }),
+        `peer ${name} must keep admitting the 0.2 line (range: "${range}")`,
+      );
     }
   }
 });

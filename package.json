@@ -35,9 +35,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-api-remotes"
       ]
     }
@@ -53,7 +51,6 @@
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6 || ^0.2.0-0",
     "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6 || ^0.2.0-0",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-0",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6 || ^0.2.0-0",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-0",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6 || ^0.2.0-0",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-0",
@@ -76,6 +73,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "~18.3.31",
     "@types/ws": "^8.5.14",
+    "semver": "^7.8.5",
     "tsdown": "^0.22.14",
     "typescript": "^5.9.3"
   }

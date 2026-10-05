@@ -8,7 +8,8 @@
  * @module
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Button, IconChevronRightOutline14, IconChevronDownOutline14, Menu, type MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, Menu, type MenuItem } from "@deepseek-ai/dsh-client-ui-primitives";
+import { IconChevronRightOutline14, IconChevronDownOutline14 } from "../icons.ts";
 import { api } from "../api.ts";
 import { text, surface, state as stateColor } from "../theme.ts";
 import { Switch } from "../WebToolsSection.tsx";
