@@ -60,7 +60,10 @@ export const DEFAULT_SETTINGS = {
   // carry structure (protocol, auth, mapping) the flat maps cannot express.
   customProviders: [] as CustomProviderConfig[],
   /** Operator-granted outbound destinations for internal gateways / private IPs. */
-  outboundAuthorizations: [] as OutboundAuthorization[],
+  outboundAuthorizations: [
+    { host: "127.0.0.1", port: 8080, allowPrivate: true, allowHttp: true, note: "SearXNG default instance" },
+    { host: "localhost", port: 8080, allowPrivate: true, allowHttp: true, note: "SearXNG default instance" },
+  ] as OutboundAuthorization[],
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */

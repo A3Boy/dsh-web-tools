@@ -17,25 +17,8 @@ export declare function isTransportError(value: unknown): value is TransportErro
  *  - `public` — a user-typed address; must be a public host on https.
  */
 export type DestinationTrust = "official" | "authorized" | "public";
-/** One operator-granted outbound target. */
-export interface OutboundAuthorization {
-    /** Hostname, IP literal, or `.suffix` for a domain. */
-    host: string;
-    /** Exact port, or undefined for any port. */
-    port?: number;
-    /** Allow plain http (default: https only). */
-    allowHttp?: boolean;
-    /** Allow private/loopback/link-local resolved addresses. */
-    allowPrivate?: boolean;
-    /**
-     * Allow proxied egress for this target. Through a proxy the final DNS and
-     * connection happen at the proxy, so a local preflight cannot substantiate
-     * the destination — proxied access therefore REQUIRES this explicit grant.
-     */
-    allowProxy?: boolean;
-    /** Human note shown in diagnostics. */
-    note?: string;
-}
+export type { OutboundAuthorization } from "../shared/custom-provider-types.ts";
+import type { OutboundAuthorization } from "../shared/custom-provider-types.ts";
 /** Operator policy for outbound provider requests. */
 export interface OutboundPolicy {
     /** Granted targets. */
@@ -174,6 +157,7 @@ export declare function createPinnedDispatcher(options: {
     connect: ConnectFn;
     signal: AbortSignal;
 }): Promise<unknown>;
+export declare function isLoopbackHost(hostname: string): boolean;
 /**
  * Whether a URL targets the loopback host. Loopback targets are always dialed
  * directly (never through a proxy): there is no DNS rebinding concern and a

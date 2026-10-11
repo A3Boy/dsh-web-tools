@@ -62,6 +62,22 @@ export interface CustomAuthConfig {
   headerName?: string;
 }
 
+/** One operator-granted outbound target for intranet gateways and private/HTTP endpoints. */
+export interface OutboundAuthorization {
+  /** Hostname, IP literal, or `.suffix` for a domain. */
+  host: string;
+  /** Exact port, or undefined for any port. */
+  port?: number;
+  /** Allow plain http (default: https only). */
+  allowHttp?: boolean;
+  /** Allow private/loopback/link-local resolved addresses. */
+  allowPrivate?: boolean;
+  /** Allow proxied egress for this target. */
+  allowProxy?: boolean;
+  /** Human note shown in diagnostics. */
+  note?: string;
+}
+
 /** Request-side mapping (generic-json and searxng-json overrides). */
 export interface CustomRequestConfig {
   /** Field/parameter carrying the query text. */

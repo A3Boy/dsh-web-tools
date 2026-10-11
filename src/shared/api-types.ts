@@ -7,6 +7,7 @@
  */
 
 import type { ProviderOptionView } from "./provider-options.ts";
+import type { OutboundAuthorization } from "./custom-provider-types.ts";
 
 /** Search routing policy — how the host picks which provider to try first. */
 export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
@@ -77,6 +78,8 @@ export interface ConfigView {
   };
   /** Search routing policy (ordered/round-robin/random). */
   searchRoutingPolicy?: SearchRoutingPolicy;
+  /** Operator-granted outbound destinations for internal gateways / private IPs. */
+  outboundAuthorizations?: OutboundAuthorization[];
 }
 
 /** One quota snapshot for the card (display only). */

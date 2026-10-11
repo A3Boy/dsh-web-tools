@@ -34,6 +34,8 @@ import {
   type CustomSourceTestView,
 } from "../shared/custom-provider-types.ts";
 import { sanitizeBaseUrlOverrides } from "./config.ts";
+import { isPrivateOrRestrictedIp } from "./fetch-security.ts";
+import type { OutboundAuthorization } from "./provider-transport.ts";
 
 import type { BrowserPlatform } from "./browser/types.ts";
 import type { SpecializedSourceRegistry } from "./sources/registry.ts";
@@ -419,6 +421,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
     platformEnabled,
     providers,
+    outboundAuthorizations: (cfg.outboundAuthorizations as OutboundAuthorization[]) ?? [],
   };
 }
 
@@ -439,6 +442,7 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
     patch.platformEnabled = p.platformEnabled;
     deps.sourceRegistry.setPlatformEnabled(p.platformEnabled as Record<string, boolean>);
   }
+  if (Array.isArray(p.outboundAuthorizations)) patch.outboundAuthorizations = p.outboundAuthorizations;
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
@@ -755,7 +759,32 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
 
   // Persist first, then write credentials. Creating the credential before the
   // config is durable would leave an orphan secret behind on failure.
-  await deps.writeConfig({ customProviders: [...list, config] });
+  const cfg = deps.readConfig();
+  const currentAuths = Array.isArray(cfg.outboundAuthorizations) ? [...(cfg.outboundAuthorizations as OutboundAuthorization[])] : [];
+  const endpointUrl = new URL(config.endpoint.baseUrl);
+  const endpointPort = endpointUrl.port
+    ? Number(endpointUrl.port)
+    : (endpointUrl.protocol === "https:" ? 443 : 80);
+  const isPrivateOrLoopback = isPrivateOrRestrictedIp(endpointUrl.hostname) || isLoopbackHost(endpointUrl.hostname);
+  const isHttp = endpointUrl.protocol === "http:";
+
+  let updatedAuths = currentAuths;
+  if (isPrivateOrLoopback || isHttp) {
+    if (!currentAuths.some((a) => a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() && (a.port === undefined || a.port === endpointPort))) {
+      updatedAuths = [
+        ...currentAuths,
+        {
+          host: endpointUrl.hostname,
+          port: endpointPort,
+          allowPrivate: isPrivateOrLoopback,
+          allowHttp: isHttp,
+          note: `Auto-authorized for custom source: ${config.name}`,
+        },
+      ];
+    }
+  }
+
+  await deps.writeConfig({ customProviders: [...list, config], outboundAuthorizations: updatedAuths });
 
   let credentialConfigured = false;
   const refs = credentialRefsOf(id, config.auth.mode);
@@ -764,7 +793,7 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
   } catch (err) {
     // Compensation: the config write succeeded but the credential did not, so
     // roll the source back rather than leaving a half-configured entry.
-    await deps.writeConfig({ customProviders: list }).catch(() => {});
+    await deps.writeConfig({ customProviders: list, outboundAuthorizations: currentAuths }).catch(() => {});
     await deps.revokeSourceCredentials?.(id).catch(() => {});
     deps.forgetSource?.(id);
     throw err instanceof Error ? new RouteError("config", err.message, 400) : err;
@@ -907,7 +936,29 @@ async function handleSourceDelete(deps: RouteDeps, payload: unknown) {
     const providerEnabled = { ...((cfg.providerEnabled as Record<string, boolean>) ?? {}) };
     delete providerEnabled[config.id];
 
-    await deps.writeConfig({ customProviders: nextList, fallbackOrder, defaultProvider, providerEnabled });
+    let updatedAuths = Array.isArray(cfg.outboundAuthorizations) ? (cfg.outboundAuthorizations as OutboundAuthorization[]) : [];
+    try {
+      const endpointUrl = new URL(config.endpoint.baseUrl);
+      const endpointPort = endpointUrl.port
+        ? Number(endpointUrl.port)
+        : (endpointUrl.protocol === "https:" ? 443 : 80);
+      const otherUsesEndpoint = nextList.some((other) => {
+        try {
+          const u = new URL(other.endpoint.baseUrl);
+          const p = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80);
+          return u.hostname.toLowerCase() === endpointUrl.hostname.toLowerCase() && p === endpointPort;
+        } catch { return false; }
+      });
+      if (!otherUsesEndpoint) {
+        updatedAuths = updatedAuths.filter((a) =>
+          !(a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() &&
+            (a.port === undefined || a.port === endpointPort) &&
+            a.note?.startsWith("Auto-authorized for custom source:"))
+        );
+      }
+    } catch {}
+
+    await deps.writeConfig({ customProviders: nextList, fallbackOrder, defaultProvider, providerEnabled, outboundAuthorizations: updatedAuths });
     deps.forgetSource?.(config.id);
   }
 

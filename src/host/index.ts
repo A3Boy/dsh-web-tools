@@ -29,7 +29,8 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem } from "./fe
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
-import { transact, setGlobalOutboundAuthorizations } from "./provider-transport.ts";
+import { transact, setGlobalOutboundAuthorizations, isLoopbackHost, type OutboundAuthorization } from "./provider-transport.ts";
+import { isPrivateOrRestrictedIp } from "./fetch-security.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
   buildProviderSnapshot,
@@ -679,9 +680,21 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       };
 
       const cfg = readConfig();
+      const endpointUrl = new URL(config.endpoint.baseUrl);
+      const endpointPort = endpointUrl.port
+        ? Number(endpointUrl.port)
+        : (endpointUrl.protocol === "https:" ? 443 : 80);
+      const isPrivateOrLoopback = isPrivateOrRestrictedIp(endpointUrl.hostname) || isLoopbackHost(endpointUrl.hostname);
+      const draftCandidateAuth: OutboundAuthorization = {
+        host: endpointUrl.hostname,
+        port: endpointPort,
+        allowPrivate: isPrivateOrLoopback,
+        allowHttp: endpointUrl.protocol === "http:",
+      };
       const authorizations = [
         ...OUTBOUND_AUTHORIZATIONS,
         ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+        draftCandidateAuth,
       ];
       const { policy, trust } = policyForCustomSource(config, authorizations);
       const adapter = createCustomAdapter(config, {

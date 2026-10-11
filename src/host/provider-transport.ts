@@ -80,25 +80,8 @@ export function isTransportError(value: unknown): value is TransportError {
  */
 export type DestinationTrust = "official" | "authorized" | "public";
 
-/** One operator-granted outbound target. */
-export interface OutboundAuthorization {
-  /** Hostname, IP literal, or `.suffix` for a domain. */
-  host: string;
-  /** Exact port, or undefined for any port. */
-  port?: number;
-  /** Allow plain http (default: https only). */
-  allowHttp?: boolean;
-  /** Allow private/loopback/link-local resolved addresses. */
-  allowPrivate?: boolean;
-  /**
-   * Allow proxied egress for this target. Through a proxy the final DNS and
-   * connection happen at the proxy, so a local preflight cannot substantiate
-   * the destination — proxied access therefore REQUIRES this explicit grant.
-   */
-  allowProxy?: boolean;
-  /** Human note shown in diagnostics. */
-  note?: string;
-}
+export type { OutboundAuthorization } from "../shared/custom-provider-types.ts";
+import type { OutboundAuthorization } from "../shared/custom-provider-types.ts";
 
 /** Operator policy for outbound provider requests. */
 export interface OutboundPolicy {
@@ -761,7 +744,7 @@ function isDestinationBlocked(message: string): boolean {
   return /unapproved authority|not authorized|private, loopback, or link-local|blocked/i.test(message);
 }
 
-function isLoopbackHost(hostname: string): boolean {
+export function isLoopbackHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
   if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
