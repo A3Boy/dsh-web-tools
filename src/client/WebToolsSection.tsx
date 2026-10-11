@@ -24,6 +24,7 @@ import {
   IconEditOutline16,
   IconSettingsOutline16,
   IconPlusOutline16,
+  IconGlobeOutline14,
 } from "./icons.ts";
 import {
   api,
@@ -184,8 +185,8 @@ function ProviderRow(props: {
       {PROVIDER_BRAND[p.name] ? (
         <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
       ) : (
-        <div style={{ width: 22, height: 22, borderRadius: 5, background: surface.layer2, border: `1px solid ${surface.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, flex: "none" }}>
-          🌐
+        <div style={{ width: 22, height: 22, borderRadius: 5, background: surface.layer2, border: `1px solid ${surface.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+          <IconGlobeOutline14 size={14} />
         </div>
       )}
     </div>

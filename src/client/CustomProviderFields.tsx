@@ -394,7 +394,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                 gap: 4,
               }}
             >
-              💡 {t("detectedSearxngHint")}
+              {t("detectedSearxngHint")}
             </button>
           )}
         </div>

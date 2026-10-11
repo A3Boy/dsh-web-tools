@@ -12,7 +12,7 @@
  */
 import { useState, useEffect } from "react";
 import { Modal, Button, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
-import { IconCloseOutline16, IconTrashOutline16 } from "./icons.ts";
+import { IconCloseOutline16, IconTrashOutline16, IconSearchOutline16 } from "./icons.ts";
 import { text, surface, state as stateColor } from "./theme.ts";
 import { CustomProviderFields } from "./CustomProviderFields.tsx";
 import { api, type ProviderView, type CustomSourceTestView, type CustomProviderDraft } from "./api.ts";
@@ -270,8 +270,8 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
         {/* Header */}
         <div className="dswt-provider-header" style={{ marginBottom: 16 }}>
           <div className="dswt-provider-identity">
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: surface.layer2, border: `1px solid ${surface.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-              🔍
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: surface.layer2, border: `1px solid ${surface.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <IconSearchOutline16 size={16} />
             </div>
             <div className="dswt-provider-title-stack">
               <h2 className="dswt-provider-name">
@@ -361,13 +361,13 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
               {!testResult.ok && testResult.error && (
                 <div style={{ marginTop: 4, color: text.secondary, fontSize: 11, lineHeight: 1.4 }}>
                   {testResult.error.code === "network" || testResult.error.code === "timeout" ? (
-                    <div>💡 {t("errorActionHintConnect")}</div>
+                    <div>{t("errorActionHintConnect")}</div>
                   ) : testResult.error.code === "auth" ? (
-                    <div>💡 {t("errorActionHintAuth")}</div>
+                    <div>{t("errorActionHintAuth")}</div>
                   ) : testResult.error.code === "invalid-response" ? (
-                    <div>💡 {t("errorActionHintProtocol")}</div>
+                    <div>{t("errorActionHintProtocol")}</div>
                   ) : testResult.error.code === "mapping-error" ? (
-                    <div>💡 {t("errorActionHintMapping")}</div>
+                    <div>{t("errorActionHintMapping")}</div>
                   ) : null}
                 </div>
               )}
