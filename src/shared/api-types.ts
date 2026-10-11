@@ -7,6 +7,7 @@
  */
 
 import type { ProviderOptionView } from "./provider-options.ts";
+import type { OutboundAuthorization } from "./custom-provider-types.ts";
 
 /** Search routing policy — how the host picks which provider to try first. */
 export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
@@ -21,6 +22,29 @@ export interface ProviderView {
   baseUrl?: string;
   /** True only when the operator explicitly configured a base URL (adapter defaults don't count). */
   baseUrlConfigured?: boolean;
+  /** Official base URL, for the "restore default" affordance. */
+  defaultBaseUrl?: string;
+  /**
+   * Which host the credential will actually be sent to. True when the operator
+   * pointed this provider at a host that is NOT the official endpoint, which
+   * means an existing API key now leaves for a different service.
+   */
+  baseUrlForeign?: boolean;
+  /** True when this row is an operator-defined custom source (Issue #9). */
+  custom?: boolean;
+  /** Wire protocol, custom sources only. */
+  protocol?: string;
+  /** Optimistic-concurrency revision, custom sources only. */
+  revision?: number;
+  /** Auth mode, custom sources only (`none` needs no credential). */
+  authMode?: string;
+  /** Full configuration for custom sources, preserving non-default mapping fields in the editor. */
+  customConfig?: {
+    endpoint: import("./custom-provider-types.ts").CustomEndpointConfig;
+    auth?: import("./custom-provider-types.ts").CustomAuthConfig;
+    request?: import("./custom-provider-types.ts").CustomRequestConfig;
+    response?: import("./custom-provider-types.ts").CustomResponseConfig;
+  };
   credRef: string;
   keyConfigured: boolean;
   keyWritable: boolean;
@@ -54,6 +78,8 @@ export interface ConfigView {
   };
   /** Search routing policy (ordered/round-robin/random). */
   searchRoutingPolicy?: SearchRoutingPolicy;
+  /** Operator-granted outbound destinations for internal gateways / private IPs. */
+  outboundAuthorizations?: OutboundAuthorization[];
 }
 
 /** One quota snapshot for the card (display only). */

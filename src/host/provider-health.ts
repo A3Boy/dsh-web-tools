@@ -39,6 +39,14 @@ export interface ProviderHealthStore {
   cooldownUntil(provider: string): number | undefined;
   /** Read-only snapshot for diagnostics / UI. */
   snapshot(): Record<string, ProviderHealthEntry>;
+  /**
+   * Clear ONE provider's cooldown.
+   *
+   * Used when a single source's endpoint or credential changes: its old
+   * cooldown is meaningless, but every OTHER source's cooldown is still valid
+   * and must not be discarded.
+   */
+  deleteCooldown(provider: string): void;
   /** Clear all cooldowns (used on credential/config change). */
   clear(): void;
 }
@@ -78,6 +86,10 @@ export function createProviderHealthStore(clock: ProviderHealthClock = { now: ()
         if (entry.retryAfterUntil > now) out[name] = entry;
       }
       return out;
+    },
+
+    deleteCooldown(provider) {
+      entries.delete(provider);
     },
 
     clear() {

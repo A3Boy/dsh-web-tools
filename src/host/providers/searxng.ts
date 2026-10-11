@@ -9,6 +9,7 @@
  */
 import { providerError, resolveContext, type ProviderAdapter, type SearchOutcome } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { joinUrl } from "../endpoints.ts";
 import type { SearchHints } from "../search-hints.ts";
 
 export const SEARXNG_META = {
@@ -58,8 +59,9 @@ export function buildSearxngUrl(
   apiKey?: string,
   hints?: Readonly<SearchHints>,
 ): URL {
-  const instance = instanceUrl.replace(/\/$/, "");
-  const url = new URL(`${instance}/search`);
+  // Prefix-preserving join: a reverse proxy mounted at /searxng must keep that
+  // prefix (a root-relative "/search" would drop it).
+  const url = new URL(joinUrl(instanceUrl, "search"));
   const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
 
   url.searchParams.set("q", cleanQ);
