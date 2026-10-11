@@ -27,6 +27,8 @@ import { execFileSync } from "node:child_process";
 import {
   assertEndpointUrl,
   preflightDns,
+  createPinnedDispatcher,
+  defaultConnect,
   OUTBOUND_AUTHORIZATIONS,
   type OutboundPolicy,
 } from "./provider-transport.ts";
@@ -178,7 +180,7 @@ export async function fetchWithProxy(url: string | URL, init?: RequestInit): Pro
   // Security guard for provider requests:
   // 1. A request carrying credentials must NEVER follow redirects (redirect: "error"),
   //    preventing credentials from being leaked to an unexpected 3xx destination.
-  const modifiedInit = { ...(init ?? {}) };
+  const modifiedInit: RequestInit & { dispatcher?: unknown } = { ...(init ?? {}) };
   const rawHeaders = modifiedInit.headers;
   let hasAuth = false;
   if (rawHeaders) {
@@ -197,31 +199,56 @@ export async function fetchWithProxy(url: string | URL, init?: RequestInit): Pro
     modifiedInit.redirect = "error";
   }
 
-  // 2. Preflight DNS and reject private/loopback/cloud-metadata targets unless authorized
+  // 2. Preflight DNS and reject private/loopback/cloud-metadata targets unless authorized.
+  // When connecting directly (no proxy), pin the socket to the preflighted IP using
+  // createPinnedDispatcher, eliminating DNS rebinding TOCTOU vulnerabilities.
+  let pinnedDispatcher: any = undefined;
   if (!isOfficial) {
     const policy: OutboundPolicy = {
       authorizations: OUTBOUND_AUTHORIZATIONS,
     };
-    await preflightDns(host, "public", policy, {
+    const preflight = await preflightDns(host, "public", policy, {
       lookupAll: async (h) => {
         const dns = await import("node:dns/promises");
         const res = await dns.lookup(h, { all: true });
         return res as Array<{ address: string; family: number }>;
       },
     });
+
+    const isBypass = shouldBypassProxy(url);
+    const proxy = isBypass ? undefined : (proxyFromEnv() ?? proxyFromSystem());
+    if (proxy === undefined) {
+      const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+      pinnedDispatcher = await createPinnedDispatcher({
+        address: preflight.addresses[0].address,
+        port,
+        servername: parsed.hostname,
+        useTls: parsed.protocol === "https:",
+        connectTimeoutMs: 10_000,
+        connect: defaultConnect,
+        signal: (modifiedInit.signal as AbortSignal) ?? new AbortController().signal,
+      });
+      modifiedInit.dispatcher = pinnedDispatcher;
+    }
   }
 
-  if (shouldBypassProxy(url)) return fetch(url, modifiedInit);
-  const proxy = proxyFromEnv() ?? proxyFromSystem();
-  if (proxy === undefined) return fetch(url, modifiedInit);
-  const Ctor = await getProxyAgentCtor();
-  if (Ctor === null) return fetch(url, modifiedInit); // undici missing → plain fetch
-  let agent = agentCache.get(proxy);
-  if (!agent) {
-    agent = new Ctor(proxy);
-    agentCache.set(proxy, agent);
+  try {
+    if (shouldBypassProxy(url)) return await fetch(url, modifiedInit);
+    const proxy = proxyFromEnv() ?? proxyFromSystem();
+    if (proxy === undefined) return await fetch(url, modifiedInit);
+    const Ctor = await getProxyAgentCtor();
+    if (Ctor === null) return await fetch(url, modifiedInit); // undici missing → plain fetch
+    let agent = agentCache.get(proxy);
+    if (!agent) {
+      agent = new Ctor(proxy);
+      agentCache.set(proxy, agent);
+    }
+    const { dispatcher, ...rest } = modifiedInit as RequestInit & { dispatcher?: unknown };
+    void dispatcher; // ignore any caller-supplied dispatcher (we own the proxy)
+    return await fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
+  } finally {
+    if (pinnedDispatcher && typeof pinnedDispatcher.destroy === "function") {
+      try { await pinnedDispatcher.destroy(); } catch {}
+    }
   }
-  const { dispatcher, ...rest } = modifiedInit as RequestInit & { dispatcher?: unknown };
-  void dispatcher; // ignore any caller-supplied dispatcher (we own the proxy)
-  return fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
 }

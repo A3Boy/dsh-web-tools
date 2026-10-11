@@ -116,6 +116,7 @@ export interface ProtocolDefaults {
   searchPath: string;
   queryField: string;
   limitField?: string;
+  staticParams?: Record<string, string | number | boolean>;
   response: CustomResponseConfig;
 }
 
@@ -133,6 +134,7 @@ export const PROTOCOL_DEFAULTS: Record<CustomProtocol, ProtocolDefaults> = {
     encoding: "query",
     searchPath: "/search",
     queryField: "q",
+    staticParams: { format: "json" },
     response: { itemsPath: "results", urlPath: "url", titlePath: "title", snippetPath: "content", publishedAtPath: "publishedDate", answerPath: "answer" },
   },
   "generic-json": {

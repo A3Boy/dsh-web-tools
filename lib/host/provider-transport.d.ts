@@ -48,6 +48,8 @@ export interface OutboundPolicy {
 export declare const DEFAULT_MAX_RESPONSE_BYTES: number;
 /** Operator-granted outbound destinations (shared registry). */
 export declare const OUTBOUND_AUTHORIZATIONS: OutboundAuthorization[];
+/** Update global outbound authorizations from live settings. */
+export declare function setGlobalOutboundAuthorizations(auths: readonly OutboundAuthorization[]): void;
 /** Match a host against one authorization entry. */
 export declare function hostMatchesAuthorization(host: string, entry: OutboundAuthorization): boolean;
 /** The authorization covering this host:port, if any. */
@@ -156,3 +158,13 @@ export declare function preflightDns(hostname: string, trust: DestinationTrust, 
  * @throws {TransportError} on any policy, DNS, network, or size violation.
  */
 export declare function transact(request: TransportRequest, overrides?: Partial<TransportDeps>): Promise<TransportResponse>;
+/** Build an undici dispatcher whose connections are pinned to one address. */
+export declare function createPinnedDispatcher(options: {
+    address: string;
+    port: number;
+    servername: string;
+    useTls: boolean;
+    connectTimeoutMs: number;
+    connect: ConnectFn;
+    signal: AbortSignal;
+}): Promise<unknown>;

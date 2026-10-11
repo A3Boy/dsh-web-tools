@@ -139,8 +139,17 @@ function mergeParams(
   const limitField = config.request?.limitField ?? defaults?.limitField;
   const out: Record<string, string> = {};
 
+  // Default protocol static parameters
+  for (const [key, value] of Object.entries(defaults?.staticParams ?? {})) {
+    out[key] = String(value);
+  }
+  // User-configured static parameters
   for (const [key, value] of Object.entries(config.request?.staticParams ?? {})) {
     out[key] = String(value);
+  }
+  // Standard SearXNG requires format=json to respond with JSON instead of HTML
+  if (config.protocol === "searxng-json") {
+    out.format = "json";
   }
   out[queryField] = query;
   if (limitField && typeof maxResults === "number" && Number.isFinite(maxResults) && maxResults > 0) {
@@ -167,23 +176,28 @@ export async function buildCustomRequest(
   deps: Pick<CustomAdapterDeps, "credentials" | "refs">,
   query: string,
   maxResults: number | undefined,
+  apiKey?: string,
 ): Promise<BuiltRequest> {
   const headers: Record<string, string> = { accept: "application/json" };
   const params = mergeParams(config, query, maxResults);
   const base = joinUrl(config.endpoint.baseUrl, config.endpoint.searchPath);
 
   // ---- auth -------------------------------------------------------------
+  // If apiKey was selected by the runtime key pool, use it directly (supports multi-key rotation).
+  // If omitted or empty (e.g. testing), resolve from the stored credentials ref.
+  const selectedKey = apiKey && apiKey.trim().length > 0 && !apiKey.startsWith("basic:") ? apiKey.trim() : undefined;
+
   switch (config.auth.mode) {
     case "none":
       break;
     case "bearer": {
-      const token = (await deps.credentials.read(deps.refs.key ?? "")).trim();
+      const token = selectedKey ?? (await deps.credentials.read(deps.refs.key ?? "")).trim();
       if (!token) throw providerError("config", `${config.name}: API key is not configured`);
       headers.authorization = `Bearer ${token}`;
       break;
     }
     case "api-key-header": {
-      const token = (await deps.credentials.read(deps.refs.key ?? "")).trim();
+      const token = selectedKey ?? (await deps.credentials.read(deps.refs.key ?? "")).trim();
       if (!token) throw providerError("config", `${config.name}: API key is not configured`);
       headers[(config.auth.headerName ?? "x-api-key").toLowerCase()] = token;
       break;
@@ -346,12 +360,11 @@ export function createCustomAdapter(config: CustomProviderConfig, deps: CustomAd
     async search(query, maxResults, apiKey, baseUrl, contextOrSignal): Promise<SearchOutcome> {
       const { signal, hints } = resolveContext(contextOrSignal);
       const effectiveQuery = hints?.cleanQuery ? hints.cleanQuery : query;
-      void apiKey; // custom sources resolve their own credentials by ref
       void baseUrl;
 
       let built: BuiltRequest;
       try {
-        built = await buildCustomRequest(config, deps, effectiveQuery, maxResults);
+        built = await buildCustomRequest(config, deps, effectiveQuery, maxResults, apiKey);
       } catch (err) {
         if (err && typeof err === "object" && "code" in err) throw err;
         throw providerError("config", `${label}: ${err instanceof Error ? err.message : String(err)}`);

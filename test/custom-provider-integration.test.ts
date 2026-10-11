@@ -229,3 +229,107 @@ test("Integration: Basic Auth custom source transmits base64 over real HTTP sock
     server.close();
   }
 });
+
+test("Integration: multi-key pool sends individually selected Key, not full comma-separated string", async () => {
+  let receivedAuth = "";
+
+  const server = http.createServer((req, res) => {
+    receivedAuth = req.headers["authorization"] ?? "";
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      results: [{ url: "https://example.com/doc", title: "Doc" }],
+    }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as any).port;
+
+  try {
+    const config: CustomProviderConfig = {
+      schemaVersion: 1,
+      id: "custom_multikey",
+      name: "MultiKey Provider",
+      enabled: true,
+      protocol: "tavily-compatible",
+      endpoint: {
+        baseUrl: `http://localhost:${port}`,
+        searchPath: "/search",
+        method: "POST",
+        encoding: "json",
+      },
+      auth: { mode: "bearer" },
+      revision: 1,
+    };
+
+    const adapter = createCustomAdapter(config, {
+      transport: (req) => transact(req),
+      // Credentials store holds a comma-joined multi-key string
+      credentials: { read: async () => "key_alpha,key_beta,key_gamma" },
+      refs: { key: "KEY_REF" },
+      policy: {
+        authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+        allowPublicHttp: true,
+      },
+      trust: "authorized",
+    });
+
+    // When called with the specific selected key from the pool ("key_beta"):
+    const outcome = await adapter.search("query", 5, "key_beta", undefined);
+    assert.equal(outcome.sources.length, 1);
+    // MUST send the selected key, NOT "Bearer key_alpha,key_beta,key_gamma"!
+    assert.equal(receivedAuth, "Bearer key_beta");
+  } finally {
+    server.close();
+  }
+});
+
+test("Integration: SearXNG JSON protocol automatically appends format=json to real request", async () => {
+  let requestedUrl = "";
+
+  const server = http.createServer((req, res) => {
+    requestedUrl = req.url ?? "";
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      results: [{ url: "https://example.com/searxng", title: "SearXNG Result" }],
+    }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as any).port;
+
+  try {
+    const config: CustomProviderConfig = {
+      schemaVersion: 1,
+      id: "custom_searxng_format",
+      name: "SearXNG Format Test",
+      enabled: true,
+      protocol: "searxng-json",
+      endpoint: {
+        baseUrl: `http://localhost:${port}`,
+        searchPath: "/search",
+        method: "GET",
+        encoding: "query",
+      },
+      auth: { mode: "none" },
+      revision: 1,
+    };
+
+    const adapter = createCustomAdapter(config, {
+      transport: (req) => transact(req),
+      credentials: { read: async () => "" },
+      refs: {},
+      policy: {
+        authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+        allowPublicHttp: true,
+      },
+      trust: "authorized",
+    });
+
+    await adapter.search("hello world", 5, "", undefined);
+    const parsed = new URL(`http://localhost:${port}${requestedUrl}`);
+    assert.equal(parsed.searchParams.get("format"), "json", "SearXNG request must include format=json");
+    assert.equal(parsed.searchParams.get("q"), "hello world");
+  } finally {
+    server.close();
+  }
+});

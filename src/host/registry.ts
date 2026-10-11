@@ -200,6 +200,8 @@ export function createSearchProvider(
       );
       return chain.some((name) => {
         if (cfg.enabledProviders[name] === false) return false;
+        const entry = snapshot?.get(name);
+        if (entry?.config && entry.config.enabled === false) return false;
         return adapterFor(name, snapshot) !== undefined;
       });
     },
@@ -228,8 +230,12 @@ export function createSearchProvider(
 
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
-        const adapter = adapterFor(providerName, snapshot);
         const entryInfo: CatalogEntry | undefined = snapshot?.get(providerName);
+        if (entryInfo?.config && entryInfo.config.enabled === false) {
+          attempts.push({ provider: providerName, outcome: "skipped-disabled" });
+          continue;
+        }
+        const adapter = adapterFor(providerName, snapshot);
         if (!adapter) {
           attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
           continue;
@@ -395,7 +401,9 @@ export function createFetchProvider(
       // 1. Attempt native fetch from configured, enabled, fetch-capable providers
       for (const providerName of chain) {
         if (cfg.enabledProviders[providerName] === false) continue;
-        const adapter = (snapshot?.get(providerName)?.adapter as ProviderAdapterLike | undefined) ?? adapterRegistry[providerName];
+        const nativeEntry = snapshot?.get(providerName);
+        if (nativeEntry?.config && nativeEntry.config.enabled === false) continue;
+        const adapter = (nativeEntry?.adapter as ProviderAdapterLike | undefined) ?? adapterRegistry[providerName];
         // Custom sources are search-only (fetchCapable=false), so they are
         // skipped here by construction and page fetching keeps using the
         // built-in generic fetcher below.

@@ -117,6 +117,12 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 /** Operator-granted outbound destinations (shared registry). */
 export const OUTBOUND_AUTHORIZATIONS: OutboundAuthorization[] = [];
 
+/** Update global outbound authorizations from live settings. */
+export function setGlobalOutboundAuthorizations(auths: readonly OutboundAuthorization[]): void {
+  OUTBOUND_AUTHORIZATIONS.length = 0;
+  OUTBOUND_AUTHORIZATIONS.push(...auths);
+}
+
 /** Match a host against one authorization entry. */
 export function hostMatchesAuthorization(host: string, entry: OutboundAuthorization): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "");
@@ -576,7 +582,7 @@ async function readBounded(
 }
 
 /** Build an undici dispatcher whose connections are pinned to one address. */
-async function createPinnedDispatcher(options: {
+export async function createPinnedDispatcher(options: {
   address: string;
   port: number;
   servername: string;

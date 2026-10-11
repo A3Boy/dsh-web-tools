@@ -29,7 +29,7 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem } from "./fe
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
-import { transact } from "./provider-transport.ts";
+import { transact, setGlobalOutboundAuthorizations } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
   buildProviderSnapshot,
@@ -532,7 +532,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // Seeding MUST wait for the settings namespace (ctx.inject is async) — in
   // the synchronous apply() body readConfig() would only return defaults.
   configHandle.onMounted(() => {
-    const braveCache = readConfig().braveQuotaCache ?? {};
+    const cfg = readConfig();
+    if (Array.isArray(cfg.outboundAuthorizations)) {
+      setGlobalOutboundAuthorizations(cfg.outboundAuthorizations);
+    }
+    const braveCache = cfg.braveQuotaCache ?? {};
     braveQuotaPersist.seed(braveCache);
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);

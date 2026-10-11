@@ -102,6 +102,7 @@ export interface ProtocolDefaults {
     searchPath: string;
     queryField: string;
     limitField?: string;
+    staticParams?: Record<string, string | number | boolean>;
     response: CustomResponseConfig;
 }
 export declare const PROTOCOL_DEFAULTS: Record<CustomProtocol, ProtocolDefaults>;

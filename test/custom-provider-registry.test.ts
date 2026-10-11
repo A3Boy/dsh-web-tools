@@ -260,3 +260,61 @@ test("Registry: Basic Auth custom source executes when credentials configured an
   const expectedAuth = `Basic ${Buffer.from("admin:s3cret;with,delims", "utf8").toString("base64")}`;
   assert.equal(dialedAuth, expectedAuth);
 });
+
+test("Registry: custom provider with enabled=false is skipped even if in default/fallback chain", async () => {
+  const disabledConfig = createMockConfig("custom_disabled", "Disabled Source", "none");
+  disabledConfig.enabled = false; // Disabled by operator
+
+  let dialed = false;
+  const mockTransport = async (): Promise<TransportResponse> => {
+    dialed = true;
+    return {
+      status: 200,
+      ok: true,
+      contentType: "application/json",
+      json: { results: [{ url: "https://example.com/item" }] },
+      text: "",
+      truncated: false,
+      headers: new Headers(),
+    };
+  };
+
+  const snapshot = buildProviderSnapshot({
+    providerBaseUrls: {},
+    customProviders: [disabledConfig],
+    credentials: { read: async () => "" },
+    transport: mockTransport,
+  });
+
+  const poolStore = createPoolStore(async () => "");
+  const healthStore = createProviderHealthStore();
+
+  const searchProvider = createSearchProvider(
+    () => ({
+      enabled: true,
+      defaultProvider: "custom_disabled", // Configured as default, but source itself is disabled!
+      providerAttemptTimeoutMs: 5000,
+      fallbackOrder: [],
+      searchRoutingPolicy: "ordered",
+      providerBaseUrls: {},
+      enabledProviders: {},
+    }),
+    async () => "",
+    { record: () => {} },
+    undefined,
+    poolStore,
+    healthStore,
+    () => snapshot,
+  );
+
+  // Available should be false because the only provider in chain is disabled
+  assert.equal(searchProvider.available(), false);
+
+  // Search should throw because no usable provider is available
+  await assert.rejects(
+    () => searchProvider.search({ query: "test" }),
+    /web search failed.*no usable provider/i,
+  );
+
+  assert.equal(dialed, false, "Disabled custom provider must NEVER be dialed");
+});

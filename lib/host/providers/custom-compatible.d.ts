@@ -53,7 +53,7 @@ export declare function basicAuthHeader(username: string, password: string): str
  * legacy exception in this codebase is the built-in SearXNG adapter's
  * `api_key` parameter, which predates this module and lives in its own file.
  */
-export declare function buildCustomRequest(config: CustomProviderConfig, deps: Pick<CustomAdapterDeps, "credentials" | "refs">, query: string, maxResults: number | undefined): Promise<BuiltRequest>;
+export declare function buildCustomRequest(config: CustomProviderConfig, deps: Pick<CustomAdapterDeps, "credentials" | "refs">, query: string, maxResults: number | undefined, apiKey?: string): Promise<BuiltRequest>;
 /** Outcome of mapping one response document. */
 export interface MappedResponse {
     content?: string;
