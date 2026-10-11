@@ -793,6 +793,8 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
         port: endpointPort,
         allowPrivate: isPrivateOrLoopback,
         allowHttp: isHttp,
+        allowProxy: !isPrivateOrLoopback,
+        sourceId: id,
         note: `Operator-confirmed: ${config.name}`,
       },
     ];
@@ -935,9 +937,37 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
         port: endpointPort,
         allowPrivate: isPrivateOrLoopback,
         allowHttp: isHttp,
+        allowProxy: !isPrivateOrLoopback,
+        sourceId: config.id,
         note: `Operator-confirmed: ${next.name}`,
       });
     }
+
+    // Clean up old endpoint authorization if no other source uses it
+    try {
+      const oldUrl = new URL(config.endpoint.baseUrl);
+      const oldPort = oldUrl.port ? Number(oldUrl.port) : (oldUrl.protocol === "https:" ? 443 : 80);
+      const otherUsesOldEndpoint = nextList.some((other) => {
+        if (other.id === config.id) return false;
+        try {
+          const u = new URL(other.endpoint.baseUrl);
+          const p = u.port ? Number(u.port) : (u.protocol === "https:" ? 443 : 80);
+          return u.hostname.toLowerCase() === oldUrl.hostname.toLowerCase() && p === oldPort;
+        } catch { return false; }
+      });
+      if (!otherUsesOldEndpoint) {
+        updatedAuths = updatedAuths.filter((a) =>
+          !(
+            a.host.toLowerCase() === oldUrl.hostname.toLowerCase() &&
+            (a.port === undefined || a.port === oldPort) &&
+            (a.sourceId === config.id ||
+              a.note?.includes(config.name) ||
+              a.note?.includes(config.id) ||
+              a.note?.startsWith("Auto-authorized for custom source:"))
+          ),
+        );
+      }
+    } catch {}
   }
 
   await deps.writeConfig({ customProviders: nextList, outboundAuthorizations: updatedAuths });
@@ -1001,9 +1031,14 @@ async function handleSourceDelete(deps: RouteDeps, payload: unknown) {
       });
       if (!otherUsesEndpoint) {
         updatedAuths = updatedAuths.filter((a) =>
-          !(a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() &&
+          !(
+            a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() &&
             (a.port === undefined || a.port === endpointPort) &&
-            a.note?.startsWith("Auto-authorized for custom source:"))
+            (a.sourceId === config.id ||
+              a.note?.includes(config.name) ||
+              a.note?.includes(config.id) ||
+              a.note?.startsWith("Auto-authorized for custom source:"))
+          ),
         );
       }
     } catch {}

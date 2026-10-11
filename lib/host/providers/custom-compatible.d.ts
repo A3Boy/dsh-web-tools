@@ -40,7 +40,7 @@ export interface BuiltRequest {
 }
 /** Basic-auth header value (password may contain `:`, `,`, `;` — no splitting). */
 export declare function basicAuthHeader(username: string, password: string): string;
-/** Safely interpolate {{query}}, {{maxResults}}, {{apiKey}} in a string template. */
+/** Safely interpolate {{query}}, {{maxResults}}, {{apiKey}} in a single pass (prevents recursive expansion). */
 export declare function interpolatePlaceholders(template: string, vars: {
     query: string;
     maxResults?: number;

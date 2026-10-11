@@ -116,8 +116,14 @@ test("Security: assertAddressAllowed blocks loopback, private, and metadata IPs"
     "fc00::1",
   ];
   const metadataAndLinkLocalIps = [
-    "169.254.169.254", // Cloud metadata
-    "fe80::1",         // Link-local
+    "169.254.169.254",       // Cloud metadata IPv4
+    "169.254.0.1",           // Link-local IPv4
+    "fe80::1",               // Link-local IPv6 (fe80::/10 lower bound)
+    "fe90::1",               // Link-local IPv6 (fe80::/10 mid)
+    "febf::ffff",            // Link-local IPv6 (fe80::/10 upper bound)
+    "::ffff:169.254.169.254", // IPv4-mapped IPv6 dotted-decimal
+    "::ffff:a9fe:a9fe",       // IPv4-mapped IPv6 hex format (169.254.169.254)
+    "fd00:ec2::254",         // IMDSv6
   ];
 
   for (const ip of [...normalPrivateIps, ...metadataAndLinkLocalIps]) {

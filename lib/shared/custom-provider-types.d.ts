@@ -64,6 +64,8 @@ export interface OutboundAuthorization {
     allowPrivate?: boolean;
     /** Allow proxied egress for this target. */
     allowProxy?: boolean;
+    /** Optional custom source ID that requested or owns this authorization. */
+    sourceId?: string;
     /** Human note shown in diagnostics. */
     note?: string;
 }

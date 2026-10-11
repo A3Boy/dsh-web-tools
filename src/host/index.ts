@@ -25,7 +25,7 @@ import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDispatcher } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
@@ -263,7 +263,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   const currentProxyUrl = () => proxyFromEnv() ?? proxyFromSystem();
 
   /** All outbound requests for custom sources go through the guarded transport. */
-  const secureTransport: TransportFn = (request) => transact(request, { proxyUrl: currentProxyUrl });
+  const secureTransport: TransportFn = (request) =>
+    transact(request, {
+      proxyUrl: currentProxyUrl,
+      proxyDispatcher: getProxyDispatcher,
+    });
 
   /** Credential refs for one source id, resolved against the live catalog. */
   const buildSnapshot = (): ProviderSnapshot => {
@@ -717,6 +721,8 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           port: endpointPort,
           allowPrivate: isPrivateOrLoopback,
           allowHttp: isHttp,
+          allowProxy: !isPrivateOrLoopback,
+          sourceId: input.sourceId,
           note: `Operator-confirmed: ${config.name}`,
         });
       }

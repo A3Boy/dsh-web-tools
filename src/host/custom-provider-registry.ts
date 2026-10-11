@@ -23,6 +23,7 @@ import type { ProviderAdapter } from "./providers/types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import {
   DEFAULT_MAX_RESPONSE_BYTES,
+  isLocalOrPrivateHost,
   OUTBOUND_AUTHORIZATIONS,
   type DestinationTrust,
   type OutboundAuthorization,
@@ -121,19 +122,26 @@ export function policyForCustomSource(
     .flatMap((table) => [table.search.host, ...Object.values(table.extra ?? {}).map((e) => e.host)])
     .map((h) => h.toLowerCase());
 
+  const isPrivateOrLocal = isLocalOrPrivateHost(host);
+
   if (authorization) {
     return {
-      policy: { authorizations: [...authorizations], allowProxy: false, maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES },
+      policy: {
+        authorizations: [...authorizations],
+        allowProxy: authorization.allowProxy ?? !isPrivateOrLocal,
+        maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES,
+      },
       trust: "authorized",
     };
   }
   if (officialHosts.includes(host)) {
     return { policy: { authorizations: [], allowProxy: true, maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES }, trust: "public" };
   }
-  // Unauthorized third-party/gateway target: still permitted when it is a
-  // public https host, but never through a proxy.
+  // Public non-official custom target: allowProxy is true so users with a configured proxy
+  // (e.g. Windows system proxy, HTTPS_PROXY) can reach public search APIs.
+  // Private/local targets default to allowProxy: false unless authorized with allowProxy: true.
   return {
-    policy: { authorizations: [], allowProxy: false, maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES },
+    policy: { authorizations: [], allowProxy: !isPrivateOrLocal, maxResponseBytes: DEFAULT_MAX_RESPONSE_BYTES },
     trust: "public",
   };
 }

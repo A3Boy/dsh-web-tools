@@ -145,6 +145,23 @@ export async function proxyStatus(): Promise<{ configured: boolean; degraded: bo
   return { configured: true, degraded: ctor === null };
 }
 
+/**
+ * Obtain an undici ProxyAgent dispatcher for the given proxy URL.
+ * Used by secure outbound transport when proxied egress is permitted.
+ */
+export async function getProxyDispatcher(proxyUrl: string): Promise<unknown> {
+  const Ctor = await getProxyAgentCtor();
+  if (Ctor === null) {
+    throw new TransportError("network", "undici ProxyAgent unavailable for authorized proxied egress");
+  }
+  let agent = agentCache.get(proxyUrl);
+  if (!agent) {
+    agent = new Ctor(proxyUrl);
+    agentCache.set(proxyUrl, agent);
+  }
+  return agent;
+}
+
 /** The first usable proxy from the standard env vars, or undefined. */
 export function proxyFromEnv(): string | undefined {
   for (const name of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) {

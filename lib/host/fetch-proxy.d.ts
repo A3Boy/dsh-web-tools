@@ -36,6 +36,11 @@ export declare function proxyStatus(): Promise<{
     configured: boolean;
     degraded: boolean;
 }>;
+/**
+ * Obtain an undici ProxyAgent dispatcher for the given proxy URL.
+ * Used by secure outbound transport when proxied egress is permitted.
+ */
+export declare function getProxyDispatcher(proxyUrl: string): Promise<unknown>;
 /** The first usable proxy from the standard env vars, or undefined. */
 export declare function proxyFromEnv(): string | undefined;
 /**

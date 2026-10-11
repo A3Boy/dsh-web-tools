@@ -440,3 +440,77 @@ test("Routes: sources/test supports candidate credentials and draft testing with
   assert.equal(capturedInput.credential.value, "candidate-key-123");
   assert.equal(capturedInput.query, "test query");
 });
+
+test("Routes: authorization lifecycle tracks sourceId, prunes old on update, and removes on delete", async () => {
+  const { server, getHandler } = mockServer();
+
+  let storedConfig: any = {
+    customProviders: [],
+    outboundAuthorizations: [],
+  };
+
+  const deps: RouteDeps = {
+    readConfig: () => storedConfig,
+    writeConfig: async (patch) => { storedConfig = { ...storedConfig, ...patch }; },
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+    revokeSourceCredentials: async () => ({ removed: [], failed: [] }),
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  // 1. Create custom source on http://192.168.1.100:8080 with confirmTarget: true
+  const createPayload = {
+    source: {
+      name: "Intranet Search",
+      protocol: "searxng-json",
+      endpoint: { baseUrl: "http://192.168.1.100:8080", searchPath: "/search", method: "GET", encoding: "query" },
+      auth: { mode: "none" },
+    },
+    confirmTarget: true,
+  };
+
+  const { req: req1, res: res1 } = fakeReqRes("POST", `${API_PREFIX}/sources/create`, createPayload);
+  await handler(req1, res1);
+
+  assert.equal(res1.statusCode, 200);
+  const createdId = JSON.parse(res1.body).value.id;
+  assert.ok(createdId);
+  assert.equal(storedConfig.outboundAuthorizations.length, 1);
+  assert.equal(storedConfig.outboundAuthorizations[0].host, "192.168.1.100");
+  assert.equal(storedConfig.outboundAuthorizations[0].port, 8080);
+  assert.equal(storedConfig.outboundAuthorizations[0].sourceId, createdId);
+
+  // 2. Update custom source to a new endpoint http://192.168.1.200:8080
+  const updatePayload = {
+    id: createdId,
+    revision: 1,
+    patch: {
+      endpoint: { baseUrl: "http://192.168.1.200:8080", searchPath: "/search", method: "GET", encoding: "query" },
+    },
+    confirmTarget: true,
+  };
+
+  const { req: req2, res: res2 } = fakeReqRes("POST", `${API_PREFIX}/sources/update`, updatePayload);
+  await handler(req2, res2);
+
+  assert.equal(res2.statusCode, 200);
+  // Old authorization for 192.168.1.100:8080 must be pruned, new one for 192.168.1.200:8080 must exist
+  assert.equal(storedConfig.outboundAuthorizations.length, 1);
+  assert.equal(storedConfig.outboundAuthorizations[0].host, "192.168.1.200");
+  assert.equal(storedConfig.outboundAuthorizations[0].port, 8080);
+  assert.equal(storedConfig.outboundAuthorizations[0].sourceId, createdId);
+
+  // 3. Delete the custom source -> authorization must be cleaned up
+  const { req: req3, res: res3 } = fakeReqRes("POST", `${API_PREFIX}/sources/delete`, { id: createdId });
+  await handler(req3, res3);
+
+  assert.equal(res3.statusCode, 200);
+  assert.equal(storedConfig.outboundAuthorizations.length, 0, "Deleting source must prune its confirmed authorization");
+});

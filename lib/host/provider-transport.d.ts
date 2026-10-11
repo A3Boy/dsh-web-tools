@@ -69,6 +69,21 @@ export interface ResolvedAddress {
 /** Injectable DNS resolver (tests never touch the network). */
 export type LookupAllFn = (hostname: string) => Promise<ResolvedAddress[]>;
 /**
+ * Unconditionally blocked destination check for cloud instance metadata and link-local addresses.
+ *
+ * Covers:
+ *  - 169.254.0.0/16 (IPv4 link-local & cloud metadata e.g. AWS/Azure/GCP 169.254.169.254)
+ *  - fe80::/10 (IPv6 link-local unicast: fe80:: through febf::, including fe80::1, fe90::1, etc.)
+ *  - IPv4-mapped IPv6 forms of 169.254.0.0/16:
+ *      * Dotted-decimal: ::ffff:169.254.x.x, 0:0:0:0:0:ffff:169.254.x.x
+ *      * Hexadecimal: ::ffff:a9fe:xxxx, 0:0:0:0:0:ffff:a9fe:xxxx (where 169.254 in hex is 0xa9fe)
+ *  - fd00:ec2::254 (IMDSv6)
+ *
+ * This check is absolute and invariant: even if the operator explicitly authorizes a private
+ * network with `allowPrivate: true`, these targets are NEVER permitted.
+ */
+export declare function isCloudMetadataOrLinkLocal(address: string): boolean;
+/**
  * Decide whether one resolved address may be connected to.
  *
  * `allowPrivate` is the single gate for loopback/RFC1918/link-local: it is true

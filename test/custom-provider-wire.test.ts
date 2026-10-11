@@ -20,6 +20,7 @@ import {
   buildCustomRequest,
   mapCustomResponse,
   createCustomAdapter,
+  interpolatePlaceholders,
 } from "../src/host/providers/custom-compatible.ts";
 import type { CustomProviderConfig } from "../src/shared/custom-provider-types.ts";
 import type { ProviderError } from "../src/host/providers/types.ts";
@@ -322,5 +323,34 @@ test("Wire: response mapping rejects missing or invalid containers", () => {
       assert(e.message.includes("none of the 2 item(s)"));
       return true;
     },
+  );
+});
+
+test("Wire: interpolatePlaceholders performs single-pass replacement preventing secret leak", () => {
+  // Query maliciously or coincidentally containing {{apiKey}}
+  const maliciousQuery = "Tell me about {{apiKey}} and how it works";
+  const template = '{"query": "{{query}}", "auth": "{{apiKey}}", "limit": {{maxResults}}}';
+  const secret = "SUPER_SECRET_KEY_123";
+
+  const interpolated = interpolatePlaceholders(template, {
+    query: maliciousQuery,
+    maxResults: 5,
+    apiKey: secret,
+  });
+
+  // The query field MUST retain literal {{apiKey}} without having the secret substituted into it
+  assert.ok(
+    interpolated.includes('"query": "Tell me about {{apiKey}} and how it works"'),
+    `Query must not leak secret via recursive placeholder expansion: ${interpolated}`,
+  );
+  // The auth field MUST have the secret substituted
+  assert.ok(
+    interpolated.includes('"auth": "SUPER_SECRET_KEY_123"'),
+    `Auth field must receive secret: ${interpolated}`,
+  );
+  // The limit field MUST be substituted
+  assert.ok(
+    interpolated.includes('"limit": 5'),
+    `Limit field must receive number: ${interpolated}`,
   );
 });

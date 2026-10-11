@@ -238,6 +238,74 @@ const defaultLookupAll: LookupAllFn = (hostname) =>
   });
 
 /**
+ * Unconditionally blocked destination check for cloud instance metadata and link-local addresses.
+ *
+ * Covers:
+ *  - 169.254.0.0/16 (IPv4 link-local & cloud metadata e.g. AWS/Azure/GCP 169.254.169.254)
+ *  - fe80::/10 (IPv6 link-local unicast: fe80:: through febf::, including fe80::1, fe90::1, etc.)
+ *  - IPv4-mapped IPv6 forms of 169.254.0.0/16:
+ *      * Dotted-decimal: ::ffff:169.254.x.x, 0:0:0:0:0:ffff:169.254.x.x
+ *      * Hexadecimal: ::ffff:a9fe:xxxx, 0:0:0:0:0:ffff:a9fe:xxxx (where 169.254 in hex is 0xa9fe)
+ *  - fd00:ec2::254 (IMDSv6)
+ *
+ * This check is absolute and invariant: even if the operator explicitly authorizes a private
+ * network with `allowPrivate: true`, these targets are NEVER permitted.
+ */
+export function isCloudMetadataOrLinkLocal(address: string): boolean {
+  const clean = address.toLowerCase().replace(/^\[|\]$/g, "");
+
+  // 1. IPv4-mapped IPv6: unmap to standard IPv4 or check hex words
+  if (clean.startsWith("::ffff:") || clean.startsWith("0:0:0:0:0:ffff:")) {
+    const tail = clean.split("ffff:").pop() ?? "";
+    if (tail.includes(".")) {
+      // Dotted-decimal, e.g. ::ffff:169.254.169.254
+      const parts = tail.split(".").map((p) => Number.parseInt(p, 10));
+      if (parts.length === 4 && parts[0] === 169 && parts[1] === 254) {
+        return true;
+      }
+    } else {
+      // Hex form, e.g. ::ffff:a9fe:a9fe or ::ffff:a9fe:1
+      const hexParts = tail.split(":");
+      if (hexParts.length >= 1) {
+        const firstHex = Number.parseInt(hexParts[0], 16);
+        // 169.254 in hex is 0xa9fe (169 = 0xa9, 254 = 0xfe)
+        if (firstHex === 0xa9fe) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 2. Direct IPv4 Link-Local & Cloud Metadata (169.254.0.0/16)
+  if (clean.startsWith("169.254.")) {
+    return true;
+  }
+  const v4Parts = clean.split(".").map((p) => Number.parseInt(p, 10));
+  if (v4Parts.length === 4 && v4Parts[0] === 169 && v4Parts[1] === 254) {
+    return true;
+  }
+
+  // 3. IPv6 Link-Local (fe80::/10: first 10 bits 1111 1110 10 -> 0xfe80..0xfebf)
+  const firstWord = clean.split(":")[0];
+  if (firstWord && firstWord.length <= 4) {
+    const val = Number.parseInt(firstWord, 16);
+    if (!Number.isNaN(val) && (val & 0xffc0) === 0xfe80) {
+      return true;
+    }
+  }
+  if (/^fe[89ab][0-9a-f](:|$)/i.test(clean)) {
+    return true;
+  }
+
+  // 4. Well-known IMDSv6 endpoint
+  if (clean === "fd00:ec2::254") {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Decide whether one resolved address may be connected to.
  *
  * `allowPrivate` is the single gate for loopback/RFC1918/link-local: it is true
@@ -247,11 +315,10 @@ const defaultLookupAll: LookupAllFn = (hostname) =>
  * @throws {TransportError} `destination-blocked` when it may not.
  */
 export function assertAddressAllowed(address: string, allowPrivate: boolean): void {
-  // Cloud metadata (169.254.169.254 or 169.254.0.0/16, fe80::/10) is UNCONDITIONALLY
+  // Cloud metadata and link-local (169.254.0.0/16, fe80::/10) are UNCONDITIONALLY
   // blocked. Even with explicit allowPrivate authorization, no search provider
   // is ever permitted to reach cloud instance metadata or link-local endpoints.
-  const lower = address.toLowerCase();
-  if (lower.startsWith("169.254.") || lower.startsWith("fe80:") || lower.startsWith("::ffff:169.254.")) {
+  if (isCloudMetadataOrLinkLocal(address)) {
     throw new TransportError(
       "destination-blocked",
       `Access to cloud metadata or link-local address ${address} is strictly forbidden`,
@@ -783,6 +850,7 @@ export function isLoopbackUrl(urlStr: string): boolean {
 export function isLocalOrPrivateHost(hostname: string): boolean {
   const clean = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (isLoopbackHost(clean)) return true;
+  if (isCloudMetadataOrLinkLocal(clean)) return true;
   const ipVer = isIP(clean);
   if (ipVer !== 0) {
     return isPrivateOrRestrictedIp(clean);

@@ -318,3 +318,37 @@ test("Registry: custom provider with enabled=false is skipped even if in default
 
   assert.equal(dialed, false, "Disabled custom provider must NEVER be dialed");
 });
+
+test("Registry: policyForCustomSource sets allowProxy correctly for public, private, and authorized targets", () => {
+  const publicConfig = createMockConfig("custom_pub", "Public Search");
+  const privateConfig: CustomProviderConfig = {
+    ...createMockConfig("custom_priv", "Private Search"),
+    endpoint: {
+      baseUrl: "http://192.168.1.50:8080",
+      searchPath: "/search",
+      method: "GET",
+      encoding: "query",
+    },
+  };
+
+  // 1. Public custom source -> allowProxy is true (so users behind corporate/system proxy can reach it)
+  const pubResult = policyForCustomSource(publicConfig, []);
+  assert.equal(pubResult.policy.allowProxy, true, "Public custom source must allow proxy egress");
+  assert.equal(pubResult.trust, "public");
+
+  // 2. Private intranet custom source without authorization -> allowProxy is false
+  const privResult = policyForCustomSource(privateConfig, []);
+  assert.equal(privResult.policy.allowProxy, false, "Private custom source without authorization must disallow proxy egress");
+
+  // 3. Private intranet custom source with explicit authorization specifying allowProxy
+  const authWithProxyResult = policyForCustomSource(privateConfig, [
+    { host: "192.168.1.50", port: 8080, allowPrivate: true, allowHttp: true, allowProxy: true },
+  ]);
+  assert.equal(authWithProxyResult.policy.allowProxy, true, "Authorized source must honor explicit allowProxy: true");
+  assert.equal(authWithProxyResult.trust, "authorized");
+
+  const authWithoutProxyResult = policyForCustomSource(privateConfig, [
+    { host: "192.168.1.50", port: 8080, allowPrivate: true, allowHttp: true, allowProxy: false },
+  ]);
+  assert.equal(authWithoutProxyResult.policy.allowProxy, false, "Authorized source must honor explicit allowProxy: false");
+});
