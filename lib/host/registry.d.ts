@@ -3,6 +3,7 @@ import { PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
 import { fetchGenericWebPage } from "./generic-fetch.ts";
+import type { ProviderSnapshot } from "./custom-provider-registry.ts";
 /** Stable provider id registered on ctx.web (the `web` row's searchProvider). */
 export declare const PROVIDER_ID = "dsh-web-tools";
 /** Structural mirror of the seam's WebSearchProvider contract. */
@@ -82,6 +83,7 @@ export type Pools = Record<string, PoolEntry[]>;
  */
 export declare function createPoolStore(resolveKeys: (providerName: string) => Promise<string>): {
     poolOf: (providerName: string) => Promise<PoolEntry[]>;
+    forget: (providerName: string) => void;
 };
 export type PoolStore = ReturnType<typeof createPoolStore>;
 /** Structural subset of a provider adapter the executor needs (injectable). */
@@ -111,14 +113,19 @@ export interface ProviderAdapterLike {
 }
 /** Build a WebToolsSearchProvider for `ctx.web.registerSearchProvider`.
  *  `adapterRegistry` is injectable for tests; production uses the global
- *  PROVIDERS map (passed by index.ts via the default). */
+ *  PROVIDERS map (passed by index.ts via the default).
+ *
+ *  `resolveSnapshot` is the Issue #9 seam: when supplied, EVERY request reads
+ *  one immutable catalog snapshot up front and takes adapters, credentials,
+ *  endpoint overrides and keyless-ness from it. A config edit mid-flight can
+ *  therefore never swap an adapter out from under the request. */
 export declare function createSearchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, stats: {
     record: (entry: {
         provider: string;
         outcome: string;
         latencyMs: number;
     }) => void;
-}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore): WebSearchProviderLike;
+}, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, resolveSnapshot?: () => ProviderSnapshot): WebSearchProviderLike;
 /**
  * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`.
  * Routes fetch through configured native fetch providers (Tavily, Exa, Jina,
@@ -126,4 +133,4 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
  * back to the built-in generic HTTP fetcher (with SSRF guard + Defuddle Markdown
  * parsing) when native providers are unavailable, keyless, or fail.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage, resolveSnapshot?: () => ProviderSnapshot): WebFetchProviderLike;

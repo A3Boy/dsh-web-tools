@@ -1,9 +1,12 @@
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import type { YouProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
+/** Official fallbacks. Search is overridable; /contents and the billing
+ *  balance (a different host entirely) stay pinned. */
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOU_CONTENTS_URL = "https://ydc-index.io/v1/contents";
 const YOU_BALANCE_URL = "https://api.you.com/v1/billing/account_balance";
@@ -90,13 +93,14 @@ function throwYouError(res: Response): never {
 export const YouProvider: ProviderAdapter = {
   ...YOU_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     if (!apiKey) throw providerError("config", "You.com API key is not configured");
     const { signal, options, hints } = resolveContext<YouProviderOptions>(contextOrSignal);
 
     const body = buildYouSearchBody(query, maxResults, options, hints);
 
-    const res = await fetchWithProxy(YOU_SEARCH_URL, {
+    const searchUrl = endpointViewOf("you", { you: baseUrl })?.url ?? YOU_SEARCH_URL;
+    const res = await fetchWithProxy(searchUrl, {
       method: "POST",
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
       body: JSON.stringify(body),

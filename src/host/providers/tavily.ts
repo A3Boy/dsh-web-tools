@@ -15,9 +15,12 @@
  */
 import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
+/** Official fallback for search. `/extract` (web_fetch) deliberately stays
+ *  pinned: a Tavily-compatible gateway frequently implements only /search. */
 const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
@@ -147,12 +150,13 @@ async function throwTavilyError(res: Response): Promise<never> {
 export const TavilyProvider: ProviderAdapter = {
   ...TAVILY_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const { signal, options, hints } = resolveContext<TavilyProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Tavily API key is not configured");
     const requestBody = buildTavilySearchBody(query, maxResults, options, hints);
-    const res = await fetchWithProxy(TAVILY_SEARCH_URL, {
+    const searchUrl = endpointViewOf("tavily", { tavily: baseUrl })?.url ?? TAVILY_SEARCH_URL;
+    const res = await fetchWithProxy(searchUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",

@@ -11,9 +11,12 @@
  */
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { FirecrawlProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
+/** Official fallbacks. `/scrape` (web_fetch) stays pinned to the official host;
+ *  only `/search` honours the base-URL override. */
 const FIRECRAWL_BASE = "https://api.firecrawl.dev/v2";
 const FIRECRAWL_SEARCH_URL = `${FIRECRAWL_BASE}/search`;
 const FIRECRAWL_SCRAPE_URL = `${FIRECRAWL_BASE}/scrape`;
@@ -90,12 +93,15 @@ export const FIRECRAWL_META = {
 export const FirecrawlProvider: ProviderAdapter = {
   ...FIRECRAWL_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const { signal, hints } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Firecrawl API key is not configured");
     const count = typeof maxResults === "number" && maxResults > 0 ? maxResults : 10;
-    const res = await fetchWithProxy(FIRECRAWL_SEARCH_URL, {
+    // Firecrawl's own base carries a `/v2` prefix — exactly the shape that a
+    // naive `new URL("/search", base)` would destroy.
+    const searchUrl = endpointViewOf("firecrawl", { firecrawl: baseUrl })?.url ?? FIRECRAWL_SEARCH_URL;
+    const res = await fetchWithProxy(searchUrl, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(buildFirecrawlSearchBody(query, count, hints)),

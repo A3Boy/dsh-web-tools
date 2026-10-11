@@ -130,6 +130,31 @@ Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects
 
 ---
 
+## Custom Search Providers & Address Overrides (Issue #9)
+
+In addition to the 8 built-in search adapters and social platforms, dsh-web-tools natively supports **Custom Search Providers** and **Built-in Service Address Overrides**:
+
+* **Built-in Base URL Overrides**:
+  * All 8 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, SearXNG) support custom service addresses (e.g. corporate API gateways, reverse proxies).
+  * Preserves path prefixes (such as `/v2`), prompts for confirmation on foreign destinations to protect API keys, and supports instant restoration to official defaults.
+* **Custom Search Provider Management**:
+  * Add, edit, and delete custom providers directly in `Settings` → `Web Search`.
+  * **Three search protocols supported natively**:
+    * **Tavily Compatible**: Standard POST JSON format for proxies and compatible gateways.
+    * **SearXNG JSON**: GET/POST parameter formats with JSON output mapping.
+    * **Generic JSON**: Declarative dot-path mapping (`itemsPath`, `urlPath`, `titlePath`, `snippetPath`, `answerPath`, etc.) to connect arbitrary REST search APIs without writing code.
+* **Credential Isolation**:
+  * Supports Bearer Token, API Key Header, HTTP Basic (separate username/password storage), and Keyless modes.
+  * API secrets are managed securely by the DSH credentials service and never echoed back to browser configuration views.
+* **Draft Testing & Routing Integration**:
+  * Test search drafts directly before saving to verify latency and field mapping without contaminating runtime health or circuit breakers.
+  * Custom providers seamlessly participate in the fallback chain and routing policies (Ordered, Round-Robin, Random).
+* **Outbound Security & SSRF Defense**:
+  * Strict URL validation, DNS preflight, and socket pinning to prevent SSRF and DNS rebinding attacks.
+  * Privileged configuration plane protected by genuine TCP socket remote address verification.
+
+---
+
 ## Fallback & Resilience
 
 * **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.

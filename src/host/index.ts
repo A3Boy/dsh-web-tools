@@ -25,10 +25,27 @@ import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { fetchWithProxy, proxyStatus } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
+import { transact } from "./provider-transport.ts";
+import {
+  OUTBOUND_AUTHORIZATIONS,
+  buildProviderSnapshot,
+  policyForCustomSource,
+  type ProviderSnapshot,
+} from "./custom-provider-registry.ts";
+import { createCustomAdapter, type CredentialSource, type TransportFn } from "./providers/custom-compatible.ts";
+import {
+  allCredentialRefsOf,
+  credentialRefsOf,
+  loadCustomProviders,
+  validateDraft,
+  validateSourceId,
+  CustomProviderValidationError,
+} from "./custom-provider-schema.ts";
+import type { CustomProviderConfig, CustomSourceErrorCode, CustomSourceTestView, CustomProviderDraft } from "../shared/custom-provider-types.ts";
 
 import { SpecializedSourceRegistry } from "./sources/registry.ts";
 import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
@@ -213,10 +230,53 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     };
   };
   const resolveKeys = async (providerName: string) => {
+    // Custom sources own host-derived refs (and may use two refs for Basic).
+    // Resolve through the catalog so both kinds share one pool store, and a
+    // custom source's key can never collide with a built-in's.
+    const entry = buildSnapshot().get(providerName);
+    if (entry && !entry.builtIn) {
+      const refs = entry.refs;
+      if (refs.username !== undefined || refs.password !== undefined) {
+        // Basic auth is deliberately NOT pre-joined into "user:pass": the pool
+        // splits on `,`, `;` and whitespace, so a password containing any of
+        // those would be silently corrupted. The adapter reads the two refs.
+        return "";
+      }
+      if (refs.key === undefined) return "";
+      const cred = await readCredential(ctx, refs.key);
+      return cred.value ?? "";
+    }
     const ref = credRefOf(providerName);
     const cred = await readCredential(ctx, ref);
     return cred.value ?? "";
   };
+
+  // ---- Issue #9: credentials, secure transport, dynamic catalog -----------
+  /** Credential access by ref, for custom source adapters. */
+  const credentialSource: CredentialSource = {
+    read: async (ref) => (ref ? ((await readCredential(ctx, ref)).value ?? "") : ""),
+  };
+
+  /** The ambient proxy, if any (env var first, then the Windows system proxy). */
+  const currentProxyUrl = () => proxyFromEnv() ?? proxyFromSystem();
+
+  /** All outbound requests for custom sources go through the guarded transport. */
+  const secureTransport: TransportFn = (request) => transact(request, { proxyUrl: currentProxyUrl });
+
+  /** Credential refs for one source id, resolved against the live catalog. */
+  const buildSnapshot = (): ProviderSnapshot => {
+    const cfg = readConfig();
+    return buildProviderSnapshot({
+      providerBaseUrls: cfg.providerBaseUrls ?? {},
+      customProviders: loadCustomProviders(cfg.customProviders),
+      credentials: credentialSource,
+      transport: secureTransport,
+      authorizations: OUTBOUND_AUTHORIZATIONS,
+    });
+  };
+  const resolveSnapshot = () => buildSnapshot();
+  const sourceRefsOf = (sourceId: string): { key?: string; username?: string; password?: string } | undefined =>
+    buildSnapshot().get(sourceId)?.refs;
 
   // ONE shared pool store for search + fetch: they see the same key usage
   // and health, and rebuild only when a credential actually changes.
@@ -229,9 +289,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
-  }, undefined, poolStore, healthStore);
+  }, undefined, poolStore, healthStore, resolveSnapshot);
 
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
+  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
 
   sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
@@ -509,6 +569,130 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     },
   };
 
+  // ---- Issue #9: custom source lifecycle helpers --------------------------
+  /**
+   * Drop runtime state for ONE source.
+   *
+   * Scoped to a single source on purpose: clearing every cooldown on an edit
+   * would discard still-valid state for unrelated sources (an unrelated
+   * provider's active 429 backoff would be forgotten and re-hit immediately).
+   */
+  function forgetSource(sourceId: string) {
+    healthStore.deleteCooldown(sourceId);
+    poolStore.forget(sourceId);
+  }
+
+  /** Remove every credential ref a deleted source owned. */
+  async function revokeSourceCredentials(sourceId: string): Promise<{ removed: string[]; failed: string[] }> {
+    const removed: string[] = [];
+    const failed: string[] = [];
+    for (const ref of allCredentialRefsOf(sourceId)) {
+      try {
+        const cred = await readCredential(ctx, ref);
+        if (!cred.configured) continue;
+        await writeCredential(ctx, ref, "");
+        removed.push(ref);
+      } catch {
+        failed.push(ref);
+      }
+    }
+    return { removed, failed };
+  }
+
+  /**
+   * Run a bounded search through a custom source WITHOUT touching live state.
+   *
+   * Used by `sources/test` for both saved sources and unsaved drafts. It never
+   * consults or mutates the shared pool or health store, so a failed probe of a
+   * draft cannot mark a real provider's key unhealthy or start a cooldown.
+   */
+  async function testSource(input: { draft?: unknown; sourceId?: string; query: string }): Promise<CustomSourceTestView> {
+    const TEST_TIMEOUT_MS = 15_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("test timed out")), TEST_TIMEOUT_MS);
+    timer.unref?.();
+
+    try {
+      let config: CustomProviderConfig;
+      if (input.sourceId !== undefined) {
+        const sourceId = validateSourceId(input.sourceId);
+        const stored = loadCustomProviders(readConfig().customProviders).find((entry) => entry.id === sourceId);
+        if (!stored) return { ok: false, error: { code: "not-found", message: `Unknown custom source "${sourceId}"` } };
+        config = stored;
+      } else {
+        // A draft has no id yet; one is generated purely to derive credential
+        // refs, and is never persisted.
+        const draft: CustomProviderDraft = validateDraft(input.draft);
+        config = { schemaVersion: 1, id: `custom_${"0".repeat(16)}`, revision: 1, ...draft };
+      }
+
+      const refs = credentialRefsOf(config.id, config.auth.mode);
+      // A saved source reads its REAL refs; a draft may carry a candidate
+      // credential that is layered on top and never written to the store.
+      const credential: CredentialSource =
+        input.sourceId !== undefined
+          ? credentialSource
+          : {
+              read: async (ref) => {
+                const candidate = (input.draft as { credential?: unknown } | undefined)?.credential;
+                if (candidate && typeof candidate === "object" && refs.key === ref) {
+                  const values = (candidate as { values?: Record<string, string> }).values;
+                  if (values && typeof values[ref] === "string") return values[ref];
+                }
+                return credentialSource.read(ref);
+              },
+            };
+
+      const { policy, trust } = policyForCustomSource(config, OUTBOUND_AUTHORIZATIONS);
+      const adapter = createCustomAdapter(config, {
+        transport: secureTransport,
+        credentials: credential,
+        refs,
+        policy,
+        trust,
+      });
+
+      const started = Date.now();
+      try {
+        const outcome = await adapter.search(input.query, 3, "", undefined, { signal: controller.signal });
+        return {
+          ok: true,
+          status: "connected",
+          latencyMs: Date.now() - started,
+          resultCount: outcome.sources.length,
+          results: outcome.sources.slice(0, 3).map((s) => ({
+            title: s.title ?? s.url,
+            url: s.url,
+            ...(s.snippet ? { snippet: s.snippet } : {}),
+          })),
+        };
+      } catch (err) {
+        const classified = toProviderError(err);
+        return {
+          ok: false,
+          latencyMs: Date.now() - started,
+          error: {
+            code: mapProviderErrorToSourceCode(classified.code),
+            // The message is built by our own adapters from a label + status;
+            // upstream response bodies, headers and credentials are never
+            // included, so nothing sensitive can reach the browser here.
+            message: classified.message,
+          },
+        };
+      }
+    } catch (err) {
+      if (err instanceof CustomProviderValidationError) {
+        return { ok: false, error: { code: "config", message: err.message } };
+      }
+      return {
+        ok: false,
+        error: { code: "config", message: err instanceof Error ? err.message : String(err) },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // ---- fenced HTTP routes for the card ------------------------------------
   ctx.effect(
     () =>
@@ -526,9 +710,37 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,
         searchMode,
+        sourceRefs: sourceRefsOf,
+        testSource,
+        revokeSourceCredentials: (sourceId) => revokeSourceCredentials(sourceId),
+        forgetSource: (sourceId) => forgetSource(sourceId),
       }),
     "dsh-web-tools: /web-tools/api routes",
   );
+}
+
+/**
+ * Translate the executor's error vocabulary into the stable, UI-facing source
+ * codes the editor switches on. Kept as an explicit mapping so adding a new
+ * provider code forces a decision here instead of silently becoming "network".
+ */
+function mapProviderErrorToSourceCode(code: ProviderError["code"]): CustomSourceErrorCode {
+  switch (code) {
+    case "auth":
+      return "auth";
+    case "timeout":
+      return "timeout";
+    case "invalid-response":
+      return "invalid-response";
+    case "config":
+      return "config";
+    case "bad-request":
+      return "invalid-url";
+    case "aborted":
+      return "timeout";
+    default:
+      return "network";
+  }
 }
 
 function toProviderError(error: unknown): ProviderError {

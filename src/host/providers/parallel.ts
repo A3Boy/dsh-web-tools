@@ -26,6 +26,7 @@
  */
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { ParallelProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
@@ -53,12 +54,13 @@ export const PARALLEL_META = {
 export const ParallelProvider: ProviderAdapter = {
   ...PARALLEL_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Parallel API key is not configured");
     const { signal, options, hints } = resolveContext<ParallelProviderOptions>(contextOrSignal);
     const count = clampParallelCount(maxResults);
-    const res = await fetchWithProxy(PARALLEL_SEARCH_URL, {
+    const searchUrl = endpointViewOf("parallel", { parallel: baseUrl })?.url ?? PARALLEL_SEARCH_URL;
+    const res = await fetchWithProxy(searchUrl, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": token },
       body: JSON.stringify(buildParallelSearchBody(query, count, options, hints)),

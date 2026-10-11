@@ -17,8 +17,10 @@ export declare class WebToolsApiError extends Error {
 export declare function call<T>(method: string, payload?: unknown): Promise<T>;
 import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 import type { BrowserPlatform, PlatformStatusResponse } from "../shared/platform-types.ts";
+import type { CustomProviderDraft, CustomSourceTestView } from "../shared/custom-provider-types.ts";
 export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView, } from "../shared/api-types.ts";
 export type { BrowserPlatform, PlatformStatusResponse, } from "../shared/platform-types.ts";
+export type { CustomProviderConfig, CustomProviderDraft, CustomProtocol, AuthMode, CustomSourceTestView, CustomSourceErrorCode, } from "../shared/custom-provider-types.ts";
 export declare const api: {
     configGet: () => Promise<ConfigView>;
     configSave: (payload: Record<string, unknown>) => Promise<{
@@ -67,5 +69,37 @@ export declare const api: {
     }>;
     platformReset: (platform: BrowserPlatform) => Promise<{
         ok: boolean;
+    }>;
+    sourcesDescribe: () => Promise<{
+        builtIns: any[];
+        custom: any[];
+    }>;
+    sourceCreate: (source: CustomProviderDraft, credential?: unknown) => Promise<{
+        id: string;
+        saved: boolean;
+        revision: number;
+        credentialConfigured: boolean;
+    }>;
+    sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown) => Promise<{
+        id: string;
+        saved: boolean;
+        revision: number;
+    }>;
+    sourceDelete: (id: string) => Promise<{
+        deleted: boolean;
+        credentialsRemoved: string[];
+        credentialsPending: string[];
+    }>;
+    sourceTest: (payload: {
+        draft?: unknown;
+        sourceId?: string;
+        query?: string;
+    }) => Promise<CustomSourceTestView>;
+    sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) => Promise<{
+        provider: string;
+        baseUrl: string;
+        isOverridden: boolean;
+        foreignHost?: boolean;
+        saved: boolean;
     }>;
 };

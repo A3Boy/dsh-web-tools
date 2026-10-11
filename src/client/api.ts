@@ -64,6 +64,10 @@ import type {
   BrowserPlatform,
   PlatformStatusResponse,
 } from "../shared/platform-types.ts";
+import type {
+  CustomProviderDraft,
+  CustomSourceTestView,
+} from "../shared/custom-provider-types.ts";
 
 export type {
   ConfigView,
@@ -82,6 +86,14 @@ export type {
   BrowserPlatform,
   PlatformStatusResponse,
 } from "../shared/platform-types.ts";
+export type {
+  CustomProviderConfig,
+  CustomProviderDraft,
+  CustomProtocol,
+  AuthMode,
+  CustomSourceTestView,
+  CustomSourceErrorCode,
+} from "../shared/custom-provider-types.ts";
 
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
@@ -112,4 +124,19 @@ export const api = {
     call<{ ok: boolean }>("platform/stop", { platform }),
   platformReset: (platform: BrowserPlatform) =>
     call<{ ok: boolean }>("platform/reset", { platform }),
+  sourcesDescribe: () =>
+    call<{ builtIns: any[]; custom: any[] }>("sources/describe"),
+  sourceCreate: (source: CustomProviderDraft, credential?: unknown) =>
+    call<{ id: string; saved: boolean; revision: number; credentialConfigured: boolean }>("sources/create", { source, credential }),
+  sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown) =>
+    call<{ id: string; saved: boolean; revision: number }>("sources/update", { id, revision, patch, credential }),
+  sourceDelete: (id: string) =>
+    call<{ deleted: boolean; credentialsRemoved: string[]; credentialsPending: string[] }>("sources/delete", { id }),
+  sourceTest: (payload: { draft?: unknown; sourceId?: string; query?: string }) =>
+    call<CustomSourceTestView>("sources/test", payload),
+  sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) =>
+    call<{ provider: string; baseUrl: string; isOverridden: boolean; foreignHost?: boolean; saved: boolean }>(
+      "sources/endpoint-set",
+      { provider, baseUrl, confirmForeign },
+    ),
 };

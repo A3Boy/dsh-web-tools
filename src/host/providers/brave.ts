@@ -15,12 +15,12 @@
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { BraveProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
 const BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context";
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
-
 /**
  * Map SearchHints freshness preset to Brave's freshness parameter:
  * pd = past 24 hours, pw = past 7 days, pm = past 31 days, py = past 365 days
@@ -86,18 +86,25 @@ export const BRAVE_META = {
 export const BraveProvider: ProviderAdapter = {
   ...BRAVE_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Brave API key is not configured");
     const { signal, options, hints } = resolveContext<BraveProviderOptions>(contextOrSignal);
 
     const preferClassic = options?.endpointPreference === "web-search";
 
+    // Both Brave endpoints share one override: they are the same service
+    // (api.search.brave.com), so a gateway that fronts one fronts the other.
+    // The override is applied per-endpoint so each keeps its own official path
+    // when no override is set.
+    const llmContextUrl = endpointViewOf("brave", { brave: baseUrl }, "llmContext")?.url ?? BRAVE_LLM_CONTEXT_URL;
+    const webSearchUrl = endpointViewOf("brave", { brave: baseUrl }, "search")?.url ?? BRAVE_WEB_SEARCH_URL;
+
     // --- Preferred path: LLM Context endpoint (agent-optimized), skipped if user chose web-search ---
     if (!preferClassic) {
       try {
         const body = buildBraveLlmContextBody(query, maxResults, options, hints);
-        const res = await fetchWithProxy(BRAVE_LLM_CONTEXT_URL, {
+        const res = await fetchWithProxy(llmContextUrl, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -153,7 +160,7 @@ export const BraveProvider: ProviderAdapter = {
   }
 
     // --- Fallback path: classic Web Search endpoint ---
-    const url = new URL(BRAVE_WEB_SEARCH_URL);
+    const url = new URL(webSearchUrl);
     url.searchParams.set("q", query);
     url.searchParams.set("count", String(Math.min(Math.max(maxResults ?? 10, 20), 50))); // candidate pool ≥ 20
     const res = await fetchWithProxy(url, {

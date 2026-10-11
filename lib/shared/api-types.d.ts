@@ -18,6 +18,22 @@ export interface ProviderView {
     baseUrl?: string;
     /** True only when the operator explicitly configured a base URL (adapter defaults don't count). */
     baseUrlConfigured?: boolean;
+    /** Official base URL, for the "restore default" affordance. */
+    defaultBaseUrl?: string;
+    /**
+     * Which host the credential will actually be sent to. True when the operator
+     * pointed this provider at a host that is NOT the official endpoint, which
+     * means an existing API key now leaves for a different service.
+     */
+    baseUrlForeign?: boolean;
+    /** True when this row is an operator-defined custom source (Issue #9). */
+    custom?: boolean;
+    /** Wire protocol, custom sources only. */
+    protocol?: string;
+    /** Optimistic-concurrency revision, custom sources only. */
+    revision?: number;
+    /** Auth mode, custom sources only (`none` needs no credential). */
+    authMode?: string;
     credRef: string;
     keyConfigured: boolean;
     keyWritable: boolean;

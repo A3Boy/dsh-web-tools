@@ -23,13 +23,26 @@ import {
   IconSearchOutline16,
   IconEditOutline16,
   IconSettingsOutline16,
+  IconPlusOutline16,
 } from "./icons.ts";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
+import {
+  api,
+  WebToolsApiError,
+  type ConfigView,
+  type QuotaView,
+  type TestProviderView,
+  type TestSearchView,
+  type ProviderView,
+  type SearchRoutingPolicy,
+  type VersionCheckView,
+  type PlatformStatusResponse,
+} from "./api.ts";
 import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
 import { applyRoutingResult, createReadSequencer, routingFields } from "./routing-state.ts";
 import { CURRENT_VERSION } from "../shared/version.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
+import { CustomProviderEditor } from "./CustomProviderEditor.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
 import type { UiFace } from "./registration.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
@@ -168,8 +181,12 @@ function ProviderRow(props: {
           <GripIcon />
         </span>
       )}
-      {PROVIDER_BRAND[p.name] && (
+      {PROVIDER_BRAND[p.name] ? (
         <img src={PROVIDER_BRAND[p.name].icon} alt="" width={22} height={22} style={{ borderRadius: 5, flex: "none" }} />
+      ) : (
+        <div style={{ width: 22, height: 22, borderRadius: 5, background: surface.layer2, border: `1px solid ${surface.border}`, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, flex: "none" }}>
+          🌐
+        </div>
       )}
     </div>
   );
@@ -243,6 +260,21 @@ function ProviderRow(props: {
   const titleWithBadge = (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
       <span>{p.label}</span>
+      {p.custom && (
+        <span
+          style={{
+            fontSize: 10,
+            padding: "1px 5px",
+            borderRadius: 4,
+            background: surface.layer2,
+            border: `1px solid ${surface.border}`,
+            color: text.secondary,
+            lineHeight: "14px",
+          }}
+        >
+          {t("customProviderTag")}
+        </span>
+      )}
       {showPreferred && (
         <span
           style={{
@@ -274,7 +306,7 @@ function ProviderRow(props: {
         trailingClassName="wt-provider-meta"
         icon={brandIcon}
         title={titleWithBadge}
-        subtitle={t(PROVIDER_CAPABILITY_KEY[p.name] ?? "capability.search")}
+        subtitle={p.custom ? (p.description || t("customProviderTag")) : t(PROVIDER_CAPABILITY_KEY[p.name] ?? "capability.search")}
         trailing={trailing}
         chevron={!editMode}
         isLast={isLast}
@@ -425,6 +457,8 @@ export function WebToolsSection(props: SectionProps) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [detailFor, setDetailFor] = useState<string | null>(null);
+  const [customEditorOpen, setCustomEditorOpen] = useState(false);
+  const [customEditProvider, setCustomEditProvider] = useState<ProviderView | undefined>(undefined);
   const [editingOrder, setEditingOrder] = useState(false);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, TestProviderView>>({});
   const [busyProviders, setBusyProviders] = useState<Record<string, boolean>>({});
@@ -600,10 +634,24 @@ export function WebToolsSection(props: SectionProps) {
     const platformEnabled = { ...current, [name]: enabled };
     void save({ platformEnabled });
   };
-  const setBaseUrl = (name: string, baseUrl: string) => {
-    const providerBaseUrls: Record<string, string> = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
-    providerBaseUrls[name] = baseUrl;
-    void save({ providerBaseUrls });
+  const setBaseUrl = async (name: string, baseUrl: string) => {
+    try {
+      await api.sourceEndpointSet(name, baseUrl);
+      await load();
+    } catch (err: any) {
+      if (err instanceof WebToolsApiError && err.code === "conflict") {
+        if (window.confirm(err.message || t("confirmForeignOverride"))) {
+          try {
+            await api.sourceEndpointSet(name, baseUrl, true);
+            await load();
+          } catch (retryErr: any) {
+            setError(retryErr instanceof Error ? retryErr.message : String(retryErr));
+          }
+        }
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
   };
 
   const commitTimeoutSec = (secStr: string) => {
@@ -983,7 +1031,23 @@ export function WebToolsSection(props: SectionProps) {
 
       {/* Providers: unified group container */}
       <section>
-        <SettingsGroup title={t("providersLabel")} dividers="inset">
+        <SettingsGroup
+          title={t("providersLabel")}
+          action={
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<IconPlusOutline16 size={13} />}
+              onClick={() => {
+                setCustomEditProvider(undefined);
+                setCustomEditorOpen(true);
+              }}
+            >
+              {t("addCustomProvider")}
+            </Button>
+          }
+          dividers="inset"
+        >
           {renderedProviders.map((p, idx) => {
             const testResult = providerTestResults[p.name];
             const isDragging = editingOrder && dragProvider.current === p.name;
@@ -1047,7 +1111,13 @@ export function WebToolsSection(props: SectionProps) {
                   const current = liveOrder();
                   if (!current.includes(p.name)) saveOrder([...current, p.name]);
                 }}
-                onClick={() => setDetailFor(p.name)}
+                onClick={() => {
+                  if (p.custom) {
+                    setCustomEditProvider(p);
+                  } else {
+                    setDetailFor(p.name);
+                  }
+                }}
               />
             );
           })}
@@ -1148,6 +1218,31 @@ export function WebToolsSection(props: SectionProps) {
             setProviderTestResults((prev) => { const next = { ...prev }; delete next[detailProvider.name]; return next; });
             await load();
           }}
+        />
+      )}
+
+      {/* Custom provider add/edit dialog */}
+      {(customEditorOpen || customEditProvider) && (
+        <CustomProviderEditor
+          open
+          onClose={() => {
+            setCustomEditorOpen(false);
+            setCustomEditProvider(undefined);
+          }}
+          provider={customEditProvider}
+          onSaved={async (sourceId, addToOrder) => {
+            await load();
+            if (addToOrder) {
+              const currentOrder = liveOrder();
+              if (!currentOrder.includes(sourceId)) {
+                await saveOrder([...currentOrder, sourceId]);
+              }
+            }
+          }}
+          onDeleted={async () => {
+            await load();
+          }}
+          t={t}
         />
       )}
     </div>

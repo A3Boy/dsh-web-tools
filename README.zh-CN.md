@@ -130,6 +130,31 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 
 ---
 
+## 自定义搜索源与地址覆盖 (Issue #9)
+
+除了内置的 8 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
+
+* **内置源地址覆盖与恢复**：
+  * 全部 8 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、SearXNG）均支持自定义服务地址（例如公司内部 API 网关、代理镜像）。
+  * 保持完整的路径前缀（如 `/v2`），并在跨域名变更时进行凭证保护提示，支持随时一键恢复官方默认地址。
+* **自定义搜索源管理**：
+  * 在 `Settings` → `Web Search` 中支持快速添加、编辑与删除自定义搜索源。
+  * **三类主流搜索协议原生兼容**：
+    * **Tavily Compatible**：兼容标准 Tavily POST JSON 接口（用于内部代理、中转网关）。
+    * **SearXNG JSON**：支持 GET/POST 查询与 JSON 结果解析。
+    * **Generic JSON**：声明式字段映射（`itemsPath`、`urlPath`、`titlePath`、`snippetPath`、`answerPath` 等），无需编写代码即可接入任意 RESTful 搜索 API。
+* **凭证与配置隔离**：
+  * 支持 Bearer Token、自定义 API Key Header、HTTP Basic（账号密码独立存储）或无需认证模式。
+  * 凭证由 DSH 凭证服务统一安全管理，配置视图中永不回显真实密钥。
+* **草稿测试与搜索调度**：
+  * 支持在保存前对草稿即时发起「测试搜索」，验证连通性、延迟与结果解析，测试不会污染正式环境的健康状态与熔断计数。
+  * 保存后可一键加入当前搜索策略，与内置搜索源共同享受顺序/轮询/随机路由与自动 Fallback 容灾。
+* **出站安全与 SSRF 防护**：
+  * URL 合规检查、DNS Preflight 预检与地址绑定，默认拦截危险协议、本地私网与云厂商元数据地址。
+  * 本地配置管理接口基于底层 TCP Socket 真实对端校验，防止 Host 请求头伪造越权。
+
+---
+
 ## 调度策略与容灾机制
 
 * **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低 `inFlight` 的 Key，鉴权失败自动切换备用 Key。

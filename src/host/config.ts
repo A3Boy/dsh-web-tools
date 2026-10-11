@@ -12,6 +12,8 @@ import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
+import { loadCustomProviders } from "./custom-provider-schema.ts";
 
 /** Persistent search routing policy id (shared with the client card). */
 export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
@@ -51,6 +53,11 @@ export const DEFAULT_SETTINGS = {
   // search query. "ordered" = always from the first available; "round-robin"
   // and "random" rotate the start offset (see routing-policy.ts).
   searchRoutingPolicy: "ordered" as ToolSearchRoutingPolicy,
+  // Operator-defined search sources (Issue #9). Kept in their OWN array rather
+  // than merged into providerBaseUrls/providerEnabled: a merge would force a
+  // migration of every existing profile for no benefit, and custom sources
+  // carry structure (protocol, auth, mapping) the flat maps cannot express.
+  customProviders: [] as CustomProviderConfig[],
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -67,6 +74,8 @@ export interface WebToolsSettings {
   braveQuotaCache: Record<string, QuotaSnapshot>;
   /** Search routing policy (see shared api-types). */
   searchRoutingPolicy: ToolSearchRoutingPolicy;
+  /** Operator-defined custom search sources (Issue #9). */
+  customProviders: CustomProviderConfig[];
 }
 
 /** The schema object for settings registration (official z<T> annotation). */
@@ -81,6 +90,9 @@ export const Config: z<WebToolsSettings> = z.object({
   providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
   searchRoutingPolicy: z.union([z.const("ordered"), z.const("round-robin"), z.const("random")]),
+  // Validated structurally on load; a bad entry is dropped, never thrown, so a
+  // hand-edited profile cannot make the plugin fail to register.
+  customProviders: z.array(z.any()),
 });
 // Mark volatile for DSH 0.1.7+ SettingsForms and config editor
 (Config as any).meta = { ...(Config as any).meta, volatile: true };
@@ -118,6 +130,32 @@ export interface ConfigHandle {
 }
 
 /**
+ * Keep only usable base-URL overrides.
+ *
+ * A malformed override must never reach an adapter: an entry that is not an
+ * absolute http(s) URL is dropped (which restores the official endpoint) rather
+ * than being passed down and failing at request time.
+ */
+export function sanitizeBaseUrlOverrides(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (trimmed === "") continue; // an empty override means "restore default"
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      if (parsed.username || parsed.password) continue;
+      out[key] = parsed.href.replace(/\/+$/, "");
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
  * Register the settings namespace; returns a handle for reads (live) and
  * Host-side writes. The browser card writes through the fenced routes, never
  * through settings/mutate (that proxy's whitelist excludes third-party
@@ -128,6 +166,8 @@ export function installConfig(ctx: WebToolsContext, initialConfig?: unknown): Co
   const configured: WebToolsSettings = {
     ...DEFAULT_SETTINGS,
     ...unwrapped,
+    providerBaseUrls: sanitizeBaseUrlOverrides(unwrapped.providerBaseUrls),
+    customProviders: loadCustomProviders(unwrapped.customProviders),
   };
 
   let current = () => configured;
@@ -164,12 +204,31 @@ export function installConfig(ctx: WebToolsContext, initialConfig?: unknown): Co
       if (!scope && !service) {
         throw new Error("dsh-web-tools settings namespace is not mounted");
       }
-      Object.assign(configured, patch);
-      if (scope) {
-        await scope.update(patch);
-      } else if (typeof service?.update === "function") {
-        await service.update(SETTINGS_NS, patch);
+      // Persist FIRST, then publish.
+      //
+      // The previous order (`Object.assign` then await) published the new value
+      // to every live reader before the write was durable, and on DSH 0.1.7 a
+      // settings write costs ~2.5s (profile patch + Loader reconciliation). A
+      // failure or a slow write therefore left the runtime running on a value
+      // that had never been persisted — catastrophic for a multi-step
+      // custom-source create, where a later step would act on a phantom source.
+      //
+      // Applying only after a successful write keeps `read()` consistent with
+      // what is on disk: either the whole patch is live, or none of it is.
+      const normalized: Partial<WebToolsSettings> = { ...patch };
+      if (patch.providerBaseUrls !== undefined) {
+        normalized.providerBaseUrls = sanitizeBaseUrlOverrides(patch.providerBaseUrls);
       }
+      if (patch.customProviders !== undefined) {
+        normalized.customProviders = loadCustomProviders(patch.customProviders);
+      }
+
+      if (scope) {
+        await scope.update(normalized);
+      } else if (typeof service?.update === "function") {
+        await service.update(SETTINGS_NS, normalized);
+      }
+      Object.assign(configured, normalized);
     },
     onMounted: (cb) => {
       if (mounted) {

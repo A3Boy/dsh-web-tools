@@ -11,9 +11,14 @@
  */
 import { providerError, classifyHttpStatus, resolveContext, parseRetryAfter, type ProviderAdapter } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { ExaProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 
+/** Official fallback. The search endpoint is overridable via providerBaseUrls;
+ *  `/contents` (web_fetch) stays pinned to the official host on purpose — a
+ *  gateway that proxies /search may not proxy extraction, and reusing the
+ *  override there would send the credential to an unverified endpoint. */
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_URL = "https://api.exa.ai/contents";
 
@@ -150,13 +155,14 @@ export const EXA_META = {
 export const ExaProvider: ProviderAdapter = {
   ...EXA_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const { signal, options, hints } = resolveContext<ExaProviderOptions>(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Exa API key is not configured");
     const numResults = typeof maxResults === "number" && maxResults > 0 ? Math.min(maxResults, 25) : 10;
     const body = buildExaSearchBody(query, numResults, options, hints);
-    const res = await fetchWithProxy(EXA_SEARCH_URL, {
+    const searchUrl = endpointViewOf("exa", { exa: baseUrl })?.url ?? EXA_SEARCH_URL;
+    const res = await fetchWithProxy(searchUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
