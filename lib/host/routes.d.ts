@@ -59,6 +59,12 @@ export interface RouteDeps {
     testSource?: (input: {
         draft?: unknown;
         sourceId?: string;
+        credential?: {
+            mode?: "stored" | "candidate";
+            value?: string;
+            username?: string;
+            password?: string;
+        };
         query: string;
     }) => Promise<CustomSourceTestView>;
     /** Remove every credential ref owned by a deleted source. */

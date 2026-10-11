@@ -132,8 +132,17 @@ export const api = {
     call<{ id: string; saved: boolean; revision: number }>("sources/update", { id, revision, patch, credential }),
   sourceDelete: (id: string) =>
     call<{ deleted: boolean; credentialsRemoved: string[]; credentialsPending: string[] }>("sources/delete", { id }),
-  sourceTest: (payload: { draft?: unknown; sourceId?: string; query?: string }) =>
-    call<CustomSourceTestView>("sources/test", payload),
+  sourceTest: (payload: {
+    draft?: unknown;
+    sourceId?: string;
+    credential?: {
+      mode?: "stored" | "candidate";
+      value?: string;
+      username?: string;
+      password?: string;
+    };
+    query?: string;
+  }) => call<CustomSourceTestView>("sources/test", payload),
   sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) =>
     call<{ provider: string; baseUrl: string; isOverridden: boolean; foreignHost?: boolean; saved: boolean }>(
       "sources/endpoint-set",

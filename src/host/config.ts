@@ -13,6 +13,7 @@ import type { QuotaSnapshot } from "./quota.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { SearchRoutingPolicy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
+import type { OutboundAuthorization } from "./provider-transport.ts";
 import { loadCustomProviders } from "./custom-provider-schema.ts";
 
 /** Persistent search routing policy id (shared with the client card). */
@@ -58,6 +59,8 @@ export const DEFAULT_SETTINGS = {
   // migration of every existing profile for no benefit, and custom sources
   // carry structure (protocol, auth, mapping) the flat maps cannot express.
   customProviders: [] as CustomProviderConfig[],
+  /** Operator-granted outbound destinations for internal gateways / private IPs. */
+  outboundAuthorizations: [] as OutboundAuthorization[],
 };
 
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
@@ -76,6 +79,8 @@ export interface WebToolsSettings {
   searchRoutingPolicy: ToolSearchRoutingPolicy;
   /** Operator-defined custom search sources (Issue #9). */
   customProviders: CustomProviderConfig[];
+  /** Operator-granted outbound destinations for internal gateways / private IPs. */
+  outboundAuthorizations?: OutboundAuthorization[];
 }
 
 /** The schema object for settings registration (official z<T> annotation). */
@@ -93,6 +98,7 @@ export const Config: z<WebToolsSettings> = z.object({
   // Validated structurally on load; a bad entry is dropped, never thrown, so a
   // hand-edited profile cannot make the plugin fail to register.
   customProviders: z.array(z.any()),
+  outboundAuthorizations: z.array(z.any()),
 });
 // Mark volatile for DSH 0.1.7+ SettingsForms and config editor
 (Config as any).meta = { ...(Config as any).meta, volatile: true };
@@ -168,6 +174,7 @@ export function installConfig(ctx: WebToolsContext, initialConfig?: unknown): Co
     ...unwrapped,
     providerBaseUrls: sanitizeBaseUrlOverrides(unwrapped.providerBaseUrls),
     customProviders: loadCustomProviders(unwrapped.customProviders),
+    outboundAuthorizations: Array.isArray(unwrapped.outboundAuthorizations) ? unwrapped.outboundAuthorizations : [],
   };
 
   let current = () => configured;
@@ -221,6 +228,9 @@ export function installConfig(ctx: WebToolsContext, initialConfig?: unknown): Co
       }
       if (patch.customProviders !== undefined) {
         normalized.customProviders = loadCustomProviders(patch.customProviders);
+      }
+      if (patch.outboundAuthorizations !== undefined) {
+        normalized.outboundAuthorizations = Array.isArray(patch.outboundAuthorizations) ? patch.outboundAuthorizations : [];
       }
 
       if (scope) {

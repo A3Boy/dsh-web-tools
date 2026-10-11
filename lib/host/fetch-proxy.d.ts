@@ -29,7 +29,9 @@ export declare function proxyFromSystem(): string | undefined;
 export declare function shouldBypassProxy(url: string | URL): boolean;
 /**
  * Fetch a URL, honoring proxies (env vars, then Windows system proxy) unless
- * `NO_PROXY` matches. Signature matches the global fetch; callers pass the
- * same init.
+ * `NO_PROXY` matches.
+ *
+ * For non-official endpoints (operator overrides), applies outbound SSRF
+ * validation, DNS preflight, and prevents credential leakage across redirects.
  */
 export declare function fetchWithProxy(url: string | URL, init?: RequestInit): Promise<Response>;

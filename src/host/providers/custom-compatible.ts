@@ -134,16 +134,17 @@ function mergeParams(
   query: string,
   maxResults: number | undefined,
 ): Record<string, string> {
-  const request = config.request;
-  const queryField = request?.queryField ?? "q";
+  const defaults = PROTOCOL_DEFAULTS[config.protocol];
+  const queryField = config.request?.queryField ?? defaults?.queryField ?? "q";
+  const limitField = config.request?.limitField ?? defaults?.limitField;
   const out: Record<string, string> = {};
 
-  for (const [key, value] of Object.entries(request?.staticParams ?? {})) {
+  for (const [key, value] of Object.entries(config.request?.staticParams ?? {})) {
     out[key] = String(value);
   }
   out[queryField] = query;
-  if (request?.limitField && typeof maxResults === "number" && Number.isFinite(maxResults) && maxResults > 0) {
-    out[request.limitField] = String(Math.floor(maxResults));
+  if (limitField && typeof maxResults === "number" && Number.isFinite(maxResults) && maxResults > 0) {
+    out[limitField] = String(Math.floor(maxResults));
   }
   return out;
 }

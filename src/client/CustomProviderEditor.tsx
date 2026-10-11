@@ -33,25 +33,27 @@ function initialDraftFor(p?: ProviderView): CustomProviderDraft {
   if (p && p.custom) {
     const protocol = (p.protocol as CustomProtocol) ?? "tavily-compatible";
     const defaults = PROTOCOL_DEFAULTS[protocol];
+    const customCfg = p.customConfig;
     return {
       name: p.label,
       description: p.description,
       enabled: p.enabled,
       protocol,
       endpoint: {
-        baseUrl: p.baseUrl ?? "",
-        searchPath: defaults.searchPath,
-        method: defaults.method,
-        encoding: defaults.encoding,
+        baseUrl: customCfg?.endpoint?.baseUrl ?? p.baseUrl ?? "",
+        searchPath: customCfg?.endpoint?.searchPath ?? defaults.searchPath,
+        method: customCfg?.endpoint?.method ?? defaults.method,
+        encoding: customCfg?.endpoint?.encoding ?? defaults.encoding,
       },
       auth: {
         mode: (p.authMode as any) ?? "bearer",
+        ...(customCfg?.auth?.headerName ? { headerName: customCfg.auth.headerName } : {}),
       },
-      request: {
+      request: customCfg?.request ?? {
         queryField: defaults.queryField,
         limitField: defaults.limitField,
       },
-      response: {
+      response: customCfg?.response ?? {
         ...defaults.response,
       },
     };
@@ -126,20 +128,18 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
     setTesting(true);
     setError("");
     try {
-      const payload: { draft?: unknown; sourceId?: string; query: string } = {
+      const isCandidateKey = !!(credentialValue || basicPassword);
+      const payload = {
+        sourceId: isEditing ? provider.name : undefined,
+        draft,
+        credential: {
+          mode: isEditing && !isCandidateKey ? ("stored" as const) : ("candidate" as const),
+          value: credentialValue || undefined,
+          username: credentialValue || undefined,
+          password: basicPassword || undefined,
+        },
         query: testQuery || "OpenAI",
       };
-
-      if (isEditing && !credentialValue && !basicPassword) {
-        // Test existing saved provider with stored credential
-        payload.sourceId = provider.name;
-      } else {
-        // Test draft with candidate credential
-        payload.draft = {
-          ...draft,
-          ...(credentialValue ? { credential: { values: { candidate: credentialValue } } } : {}),
-        };
-      }
 
       const res = await api.sourceTest(payload);
       setTestResult(res);

@@ -22,6 +22,10 @@
 
 /** One endpoint of one provider. */
 export interface ProviderEndpoint {
+  /** Default base URL, e.g. "https://api.tavily.com" or "https://api.firecrawl.dev/v2" */
+  defaultBaseUrl: string;
+  /** Relative endpoint path, e.g. "/search" or "/res/v1/web/search" */
+  path: string;
   /** Absolute official URL, including any version prefix. */
   url: string;
   /** Host the official credential is safe to send to. */
@@ -38,44 +42,44 @@ export interface ProviderEndpoint {
 /** Official endpoints per built-in provider. */
 export const PROVIDER_ENDPOINTS: Record<string, { search: ProviderEndpoint; extra?: Record<string, ProviderEndpoint> }> = {
   tavily: {
-    search: { url: "https://api.tavily.com/search", host: "api.tavily.com", overridable: true },
+    search: { defaultBaseUrl: "https://api.tavily.com", path: "/search", url: "https://api.tavily.com/search", host: "api.tavily.com", overridable: true },
     extra: {
-      extract: { url: "https://api.tavily.com/extract", host: "api.tavily.com", overridable: false },
-      usage: { url: "https://api.tavily.com/usage", host: "api.tavily.com", overridable: false },
+      extract: { defaultBaseUrl: "https://api.tavily.com", path: "/extract", url: "https://api.tavily.com/extract", host: "api.tavily.com", overridable: false },
+      usage: { defaultBaseUrl: "https://api.tavily.com", path: "/usage", url: "https://api.tavily.com/usage", host: "api.tavily.com", overridable: false },
     },
   },
   exa: {
-    search: { url: "https://api.exa.ai/search", host: "api.exa.ai", overridable: true },
-    extra: { contents: { url: "https://api.exa.ai/contents", host: "api.exa.ai", overridable: false } },
+    search: { defaultBaseUrl: "https://api.exa.ai", path: "/search", url: "https://api.exa.ai/search", host: "api.exa.ai", overridable: true },
+    extra: { contents: { defaultBaseUrl: "https://api.exa.ai", path: "/contents", url: "https://api.exa.ai/contents", host: "api.exa.ai", overridable: false } },
   },
   firecrawl: {
-    search: { url: "https://api.firecrawl.dev/v2/search", host: "api.firecrawl.dev", overridable: true },
+    search: { defaultBaseUrl: "https://api.firecrawl.dev/v2", path: "/search", url: "https://api.firecrawl.dev/v2/search", host: "api.firecrawl.dev", overridable: true },
     extra: {
-      scrape: { url: "https://api.firecrawl.dev/v2/scrape", host: "api.firecrawl.dev", overridable: false },
-      creditUsage: { url: "https://api.firecrawl.dev/v2/team/credit-usage", host: "api.firecrawl.dev", overridable: false },
+      scrape: { defaultBaseUrl: "https://api.firecrawl.dev/v2", path: "/scrape", url: "https://api.firecrawl.dev/v2/scrape", host: "api.firecrawl.dev", overridable: false },
+      creditUsage: { defaultBaseUrl: "https://api.firecrawl.dev/v2", path: "/team/credit-usage", url: "https://api.firecrawl.dev/v2/team/credit-usage", host: "api.firecrawl.dev", overridable: false },
     },
   },
   parallel: {
-    search: { url: "https://api.parallel.ai/v1/search", host: "api.parallel.ai", overridable: true },
-    extra: { extract: { url: "https://api.parallel.ai/v1/extract", host: "api.parallel.ai", overridable: false } },
+    search: { defaultBaseUrl: "https://api.parallel.ai/v1", path: "/search", url: "https://api.parallel.ai/v1/search", host: "api.parallel.ai", overridable: true },
+    extra: { extract: { defaultBaseUrl: "https://api.parallel.ai/v1", path: "/extract", url: "https://api.parallel.ai/v1/extract", host: "api.parallel.ai", overridable: false } },
   },
   brave: {
-    search: { url: "https://api.search.brave.com/res/v1/web/search", host: "api.search.brave.com", overridable: true },
-    extra: { llmContext: { url: "https://api.search.brave.com/res/v1/llm/context", host: "api.search.brave.com", overridable: true } },
+    search: { defaultBaseUrl: "https://api.search.brave.com", path: "/res/v1/web/search", url: "https://api.search.brave.com/res/v1/web/search", host: "api.search.brave.com", overridable: true },
+    extra: { llmContext: { defaultBaseUrl: "https://api.search.brave.com", path: "/res/v1/llm/context", url: "https://api.search.brave.com/res/v1/llm/context", host: "api.search.brave.com", overridable: true } },
   },
   you: {
-    search: { url: "https://ydc-index.io/v1/search", host: "ydc-index.io", overridable: true },
+    search: { defaultBaseUrl: "https://ydc-index.io/v1", path: "/search", url: "https://ydc-index.io/v1/search", host: "ydc-index.io", overridable: true },
     extra: {
-      contents: { url: "https://ydc-index.io/v1/contents", host: "ydc-index.io", overridable: false },
-      balance: { url: "https://api.you.com/v1/billing/account_balance", host: "api.you.com", overridable: false },
+      contents: { defaultBaseUrl: "https://ydc-index.io/v1", path: "/contents", url: "https://ydc-index.io/v1/contents", host: "ydc-index.io", overridable: false },
+      balance: { defaultBaseUrl: "https://api.you.com/v1", path: "/billing/account_balance", url: "https://api.you.com/v1/billing/account_balance", host: "api.you.com", overridable: false },
     },
   },
   jina: {
-    search: { url: "https://s.jina.ai/", host: "s.jina.ai", overridable: true },
-    extra: { reader: { url: "https://r.jina.ai/", host: "r.jina.ai", overridable: false } },
+    search: { defaultBaseUrl: "https://s.jina.ai", path: "/", url: "https://s.jina.ai/", host: "s.jina.ai", overridable: true },
+    extra: { reader: { defaultBaseUrl: "https://r.jina.ai", path: "/", url: "https://r.jina.ai/", host: "r.jina.ai", overridable: false } },
   },
   searxng: {
-    search: { url: "http://127.0.0.1:8080/search", host: "127.0.0.1", overridable: true },
+    search: { defaultBaseUrl: "http://127.0.0.1:8080", path: "/search", url: "http://127.0.0.1:8080/search", host: "127.0.0.1", overridable: true },
   },
 };
 
@@ -107,11 +111,20 @@ export interface EndpointView {
 export function joinUrl(baseUrl: string, relative: string): string {
   const base = baseUrl.trim();
   if (!base) throw new Error("joinUrl: base URL is required");
-  if (!relative) return stripTrailingSlash(base);
+  if (!relative || relative === "/") return stripTrailingSlash(base);
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relative) || relative.startsWith("//")) {
     throw new Error(`joinUrl: relative path must not be an absolute URL ("${relative}")`);
   }
-  return `${stripTrailingSlash(base)}/${relative.replace(/^\/+/, "")}`;
+  const cleanRelative = relative.replace(/^\/+/, "");
+  const strippedBase = stripTrailingSlash(base);
+  try {
+    const parsedBase = new URL(strippedBase);
+    const basePath = parsedBase.pathname.replace(/\/+$/, "").replace(/^\/+/, "");
+    if (basePath === cleanRelative || basePath.endsWith("/" + cleanRelative)) {
+      return strippedBase;
+    }
+  } catch {}
+  return `${strippedBase}/${cleanRelative}`;
 }
 
 /** Remove trailing slashes (but never the whole string). */
@@ -176,29 +189,20 @@ export function endpointViewOf(
   const official = table?.extra?.[endpointKey] ?? table?.search;
   if (!official) return undefined;
 
-  const defaultBaseUrl = baseUrlOf(official.url);
+  const defaultBaseUrl = official.defaultBaseUrl;
   const rawOverride = overrides?.[providerName];
   const baseUrlOverride =
     typeof rawOverride === "string" && rawOverride.trim().length > 0 ? stripTrailingSlash(rawOverride) : null;
   // Reset means "delete the override" → the official URL returns verbatim, so
   // the exact official string (including any trailing slash) is preserved.
   const effectiveBaseUrl = baseUrlOverride ?? defaultBaseUrl;
-  const relative = relativePathOf(official.url, defaultBaseUrl);
   return {
     defaultBaseUrl,
     baseUrlOverride,
     effectiveBaseUrl,
     isOverridden: baseUrlOverride !== null,
-    url: baseUrlOverride ? joinUrl(baseUrlOverride, relative) : official.url,
+    url: baseUrlOverride ? joinUrl(baseUrlOverride, official.path) : official.url,
   };
-}
-
-/** The path of an official endpoint relative to its own base URL. */
-function relativePathOf(endpointUrl: string, baseUrl: string): string {
-  const full = new URL(endpointUrl);
-  const base = new URL(baseUrl);
-  const path = full.pathname.startsWith(base.pathname) ? full.pathname.slice(base.pathname.length) : full.pathname;
-  return path.replace(/^\/+/, "");
 }
 
 /**

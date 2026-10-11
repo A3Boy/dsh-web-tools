@@ -21,6 +21,10 @@
  */
 /** One endpoint of one provider. */
 export interface ProviderEndpoint {
+    /** Default base URL, e.g. "https://api.tavily.com" or "https://api.firecrawl.dev/v2" */
+    defaultBaseUrl: string;
+    /** Relative endpoint path, e.g. "/search" or "/res/v1/web/search" */
+    path: string;
     /** Absolute official URL, including any version prefix. */
     url: string;
     /** Host the official credential is safe to send to. */

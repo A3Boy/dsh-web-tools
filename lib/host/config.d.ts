@@ -13,6 +13,7 @@ import type { QuotaSnapshot } from "./quota.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { SearchRoutingPolicy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
+import type { OutboundAuthorization } from "./provider-transport.ts";
 /** Persistent search routing policy id (shared with the client card). */
 export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
 /** Settings namespace for this plugin. */
@@ -40,6 +41,8 @@ export declare const DEFAULT_SETTINGS: {
     braveQuotaCache: Record<string, QuotaSnapshot>;
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     customProviders: CustomProviderConfig[];
+    /** Operator-granted outbound destinations for internal gateways / private IPs. */
+    outboundAuthorizations: OutboundAuthorization[];
 };
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
@@ -57,6 +60,8 @@ export interface WebToolsSettings {
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     /** Operator-defined custom search sources (Issue #9). */
     customProviders: CustomProviderConfig[];
+    /** Operator-granted outbound destinations for internal gateways / private IPs. */
+    outboundAuthorizations?: OutboundAuthorization[];
 }
 /** The schema object for settings registration (official z<T> annotation). */
 export declare const Config: z<WebToolsSettings>;

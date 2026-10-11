@@ -197,12 +197,24 @@ test("Security: configPlaneTrust checks actual TCP socket peer, defeating Host h
   };
   assert.equal(configPlaneTrust(crossSiteReq), false);
 
-  // Case 5: Mismatched Origin header -> REJECTED
+  // Case 5: Mismatched Origin header (cross-domain or cross-port) -> REJECTED
   const evilOriginReq: any = {
     headers: { host: "127.0.0.1:3080", origin: "http://attacker.example.com" },
     socket: { remoteAddress: "127.0.0.1" },
   };
   assert.equal(configPlaneTrust(evilOriginReq), false);
+
+  const crossPortOriginReq: any = {
+    headers: { host: "127.0.0.1:3080", origin: "http://127.0.0.1:9999" },
+    socket: { remoteAddress: "127.0.0.1" },
+  };
+  assert.equal(configPlaneTrust(crossPortOriginReq), false, "Origin on differing port must be refused (P1-isSameOrigin)");
+
+  const matchingOriginReq: any = {
+    headers: { host: "127.0.0.1:3080", origin: "http://127.0.0.1:3080" },
+    socket: { remoteAddress: "127.0.0.1" },
+  };
+  assert.equal(configPlaneTrust(matchingOriginReq), "peer", "Matching origin scheme, host, and port must be accepted");
 
   // Case 6: In-process test without socket fallback to loopback Host -> ACCEPTED as "host"
   const inProcessReq: any = {
@@ -211,7 +223,7 @@ test("Security: configPlaneTrust checks actual TCP socket peer, defeating Host h
   assert.equal(configPlaneTrust(inProcessReq), "host");
 });
 
-test("Security: transact blocks plain HTTP endpoints unless explicitly authorized", async () => {
+test("Security: transact blocks plain HTTP endpoints unless explicitly authorized with allowHttp", async () => {
   const policy: OutboundPolicy = { authorizations: [], allowPublicHttp: false };
   const req = {
     url: "http://example.com/search",
@@ -231,4 +243,34 @@ test("Security: transact blocks plain HTTP endpoints unless explicitly authorize
       return true;
     },
   );
+
+  // When explicitly authorized with allowHttp, plain http is accepted
+  const authorizedPolicy: OutboundPolicy = {
+    authorizations: [{ host: "internal.gw", port: 8080, allowHttp: true, allowPrivate: true }],
+  };
+  const authReq = {
+    url: "http://internal.gw:8080/search",
+    method: "GET" as const,
+    headers: {},
+    label: "Authorized Internal HTTP",
+    trust: "authorized" as const,
+    policy: authorizedPolicy,
+  };
+
+  // Mock lookup returning private IP (allowed via allowPrivate) and mock connect
+  const mockLookup = async () => [{ address: "10.0.1.5", family: 4 }];
+  const mockConnect = () => {
+    const { EventEmitter } = require("node:events");
+    const emitter = new EventEmitter();
+    process.nextTick(() => emitter.emit("connect"));
+    return emitter;
+  };
+
+  // Should NOT throw "Plain http://" error or "destination-blocked"
+  const res = await transact(authReq, {
+    lookupAll: mockLookup,
+    connect: mockConnect as any,
+  }).catch((e) => e);
+  // It proceeds past scheme & host auth to network fetch/connect
+  assert.notEqual((res as Error)?.message, "Plain http:// endpoints are only allowed for loopback defaults or an explicitly authorized target");
 });

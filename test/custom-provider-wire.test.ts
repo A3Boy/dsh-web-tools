@@ -58,6 +58,11 @@ test("Wire: all 8 built-in providers resolve overrides and restore official defa
     assert.equal(overriddenView.effectiveBaseUrl, overrideBase);
     assert.ok(overriddenView.url.startsWith(overrideBase), `URL "${overriddenView.url}" must start with "${overrideBase}"`);
 
+    // Verify exact path preservation (regression guard for P0-2)
+    const expectedPath = PROVIDER_ENDPOINTS[name].search.path;
+    const expectedUrl = joinUrl(overrideBase, expectedPath);
+    assert.equal(overriddenView.url, expectedUrl, `Provider ${name} must append exact path "${expectedPath}"`);
+
     // 3. Reset state (empty string) -> restores official endpoint
     const resetView = endpointViewOf(name, { [name]: "" });
     assert.ok(resetView);

@@ -177,3 +177,86 @@ test("Registry: search executor integrates custom provider into fallback chain",
   assert.equal(outcome.sources[0].title, "Custom Hit");
   assert.equal(dialedUrl, "https://custom_fast.example.com/search");
 });
+
+test("Registry: Basic Auth custom source executes when credentials configured and skips when unconfigured", async () => {
+  const basicConfig: CustomProviderConfig = {
+    schemaVersion: 1,
+    id: "custom_basic_search",
+    name: "Basic Search",
+    enabled: true,
+    protocol: "searxng-json",
+    endpoint: {
+      baseUrl: "https://searxng.internal",
+      searchPath: "/search",
+      method: "GET",
+      encoding: "query",
+    },
+    auth: { mode: "basic" },
+    revision: 1,
+  };
+
+  let dialedAuth = "";
+  const mockTransport = async (req: TransportRequest): Promise<TransportResponse> => {
+    dialedAuth = req.headers["authorization"] ?? "";
+    return {
+      status: 200,
+      ok: true,
+      contentType: "application/json",
+      json: {
+        results: [{ url: "https://searxng.internal/item1", title: "SearXNG Hit" }],
+      },
+      text: "",
+      truncated: false,
+      headers: new Headers(),
+    };
+  };
+
+  const creds = new Map<string, string>([
+    ["WEB_TOOLS_CUSTOM_BASIC_SEARCH_USER", "admin"],
+    ["WEB_TOOLS_CUSTOM_BASIC_SEARCH_PASS", "s3cret;with,delims"],
+  ]);
+
+  const snapshot = buildProviderSnapshot({
+    providerBaseUrls: {},
+    customProviders: [basicConfig],
+    credentials: { read: async (ref) => creds.get(ref) ?? "" },
+    transport: mockTransport,
+  });
+
+  // Simulated resolveKeys mirroring host implementation
+  const resolveKeys = async (name: string) => {
+    const entry = snapshot.get(name);
+    if (entry && !entry.builtIn && (entry.refs.username || entry.refs.password)) {
+      const u = creds.get(entry.refs.username ?? "") ?? "";
+      return u ? `basic:${u}` : "";
+    }
+    return "";
+  };
+
+  const poolStore = createPoolStore(resolveKeys);
+  const healthStore = createProviderHealthStore();
+
+  const searchProvider = createSearchProvider(
+    () => ({
+      enabled: true,
+      defaultProvider: "custom_basic_search",
+      providerAttemptTimeoutMs: 5000,
+      fallbackOrder: [],
+      searchRoutingPolicy: "ordered",
+      providerBaseUrls: {},
+      enabledProviders: {},
+    }),
+    resolveKeys,
+    { record: () => {} },
+    undefined,
+    poolStore,
+    healthStore,
+    () => snapshot,
+  );
+
+  const outcome = await searchProvider.search({ query: "test query" });
+  assert.equal(outcome.sources.length, 1);
+  assert.equal(outcome.sources[0].title, "SearXNG Hit");
+  const expectedAuth = `Basic ${Buffer.from("admin:s3cret;with,delims", "utf8").toString("base64")}`;
+  assert.equal(dialedAuth, expectedAuth);
+});

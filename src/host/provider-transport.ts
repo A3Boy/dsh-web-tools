@@ -114,6 +114,9 @@ export const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
+/** Operator-granted outbound destinations (shared registry). */
+export const OUTBOUND_AUTHORIZATIONS: OutboundAuthorization[] = [];
+
 /** Match a host against one authorization entry. */
 export function hostMatchesAuthorization(host: string, entry: OutboundAuthorization): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "");
@@ -399,9 +402,13 @@ export async function transact(
   const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
   const maxBytes = policy.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
 
-  // ---- 1. scheme policy -------------------------------------------------
+  // ---- 1. scheme & host authorization -----------------------------------
+  const authorization = findAuthorization(parsed.hostname, port, policy);
   if (parsed.protocol === "http:") {
-    const allowed = request.trust === "official" ? isLoopbackHost(parsed.hostname) : policy.allowPublicHttp === true;
+    const isAuthorizedHttp = authorization?.allowHttp === true;
+    const allowed = request.trust === "official"
+      ? isLoopbackHost(parsed.hostname)
+      : (policy.allowPublicHttp === true || isAuthorizedHttp);
     if (!allowed) {
       throw new TransportError(
         "destination-blocked",
@@ -411,7 +418,6 @@ export async function transact(
   }
 
   // ---- 2. host authorization (before DNS) --------------------------------
-  const authorization = findAuthorization(parsed.hostname, port, policy);
   if (request.trust === "authorized" && !authorization) {
     throw new TransportError("destination-blocked", `Destination "${parsed.hostname}:${port}" is not authorized`);
   }
@@ -453,6 +459,7 @@ export async function transact(
     signal: signal.signal,
     ...(request.body !== undefined ? { body: request.body } : {}),
   };
+  let pinnedDispatcher: any = undefined;
   if (dispatcher !== undefined) {
     init.dispatcher = dispatcher;
   } else if (request.trust === "official") {
@@ -462,7 +469,7 @@ export async function transact(
     // size guards above still apply.
   } else {
     // Operator-typed destination: always pinned to a pre-validated address.
-    init.dispatcher = await createPinnedDispatcher({
+    pinnedDispatcher = await createPinnedDispatcher({
       address: pinned.address,
       port,
       servername: parsed.hostname,
@@ -471,6 +478,7 @@ export async function transact(
       connect: deps.connect,
       signal: signal.signal,
     });
+    init.dispatcher = pinnedDispatcher;
   }
 
   let response: Response;
@@ -478,6 +486,9 @@ export async function transact(
     response = await fetch(parsed.href, init as RequestInit);
   } catch (err) {
     signal.dispose();
+    if (pinnedDispatcher && typeof pinnedDispatcher.destroy === "function") {
+      try { await pinnedDispatcher.destroy(); } catch {}
+    }
     if (request.signal?.aborted) throw new TransportError("aborted", `${request.label} aborted by caller`);
     if (isTransportError(err)) throw err;
     const cause = describeCause(err);
@@ -508,6 +519,9 @@ export async function transact(
     return { status: response.status, ok: response.ok, contentType, json, text, truncated, headers: response.headers };
   } finally {
     signal.dispose();
+    if (pinnedDispatcher && typeof pinnedDispatcher.destroy === "function") {
+      try { await pinnedDispatcher.destroy(); } catch {}
+    }
   }
 }
 
@@ -572,7 +586,7 @@ async function createPinnedDispatcher(options: {
   signal: AbortSignal;
 }): Promise<unknown> {
   const undici = (await import("undici").catch(() => undefined)) as
-    | { Agent?: new (opts: unknown) => unknown }
+    | { Agent?: new (opts: unknown) => unknown; buildConnector?: (opts: unknown) => unknown }
     | undefined;
   if (!undici?.Agent) {
     // FAIL CLOSED. Without a dispatcher there is no way to bind the connection
@@ -585,20 +599,44 @@ async function createPinnedDispatcher(options: {
       "Secure transport unavailable: the undici Agent required to pin the connection to a validated address could not be loaded",
     );
   }
-  return new undici.Agent({
-    connect: (opts: { hostname?: string; port?: string | number; servername?: string }) => {
-      // undici passes the authority it is about to dial. It must be exactly the
-      // authority this transport approved, otherwise the client resolved (or
-      // was redirected to) something we never authorized.
-      const requestedPort = opts.port === undefined ? options.port : Number(opts.port);
-      const requestedHost = String(opts.hostname ?? options.servername);
-      if (requestedHost !== options.servername || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
-        throw new TransportError(
-          "destination-blocked",
-          `Connection attempt for unapproved authority ${requestedHost}:${String(requestedPort)}`,
-        );
-      }
-      return options.connect({
+
+  // Use Undici's buildConnector if default connector is active, ensuring full TLS,
+  // ALPN, and HTTP/1.1 socket lifecycle handling while pinning DNS to options.address.
+  let baseConnector: any;
+  if (options.connect === defaultConnect && typeof undici.buildConnector === "function") {
+    baseConnector = undici.buildConnector({
+      lookup: (_hostname: string, _opts: any, cb: (err: Error | null, addresses: Array<{ address: string; family: number }>) => void) => {
+        const family = options.address.includes(":") ? 6 : 4;
+        cb(null, [{ address: options.address, family }]);
+      },
+      timeout: options.connectTimeoutMs,
+    });
+  }
+
+  const connector = (opts: { hostname?: string; port?: string | number; servername?: string }, cb: (err: Error | null, socket: any) => void) => {
+    // undici passes the authority it is about to dial. It must be exactly the
+    // authority this transport approved, otherwise the client resolved (or
+    // was redirected to) something we never authorized.
+    const requestedPort = opts.port === undefined ? options.port : Number(opts.port);
+    const requestedHost = String(opts.hostname ?? options.servername);
+    if (requestedHost !== options.servername || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
+      const err = new TransportError(
+        "destination-blocked",
+        `Connection attempt for unapproved authority ${requestedHost}:${String(requestedPort)}`,
+      );
+      if (typeof cb === "function") cb(err, null);
+      else throw err;
+      return;
+    }
+
+    if (baseConnector) {
+      baseConnector(opts, cb);
+      return;
+    }
+
+    // Custom or mock connector path:
+    try {
+      const socket = options.connect({
         address: options.address,
         port: options.port,
         servername: options.servername,
@@ -606,7 +644,41 @@ async function createPinnedDispatcher(options: {
         timeoutMs: options.connectTimeoutMs,
         signal: options.signal,
       });
-    },
+
+      if (typeof cb === "function") {
+        if ("once" in socket) {
+          const onConnect = () => {
+            cleanup();
+            cb(null, socket);
+          };
+          const onError = (err: Error) => {
+            cleanup();
+            cb(err, null);
+          };
+          const cleanup = () => {
+            socket.removeListener("connect", onConnect);
+            socket.removeListener("secureConnect", onConnect);
+            socket.removeListener("error", onError);
+          };
+          socket.once("error", onError);
+          if (options.useTls) {
+            socket.once("secureConnect", onConnect);
+          } else {
+            socket.once("connect", onConnect);
+          }
+        } else {
+          cb(null, socket);
+        }
+      }
+      return socket;
+    } catch (err: any) {
+      if (typeof cb === "function") cb(err instanceof Error ? err : new Error(String(err)), null);
+      else throw err;
+    }
+  };
+
+  return new undici.Agent({
+    connect: connector,
   });
 }
 

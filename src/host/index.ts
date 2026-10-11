@@ -237,10 +237,12 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     if (entry && !entry.builtIn) {
       const refs = entry.refs;
       if (refs.username !== undefined || refs.password !== undefined) {
-        // Basic auth is deliberately NOT pre-joined into "user:pass": the pool
-        // splits on `,`, `;` and whitespace, so a password containing any of
-        // those would be silently corrupted. The adapter reads the two refs.
-        return "";
+        // Basic auth uses two separate credentials refs so passwords containing
+        // delimiters (comma, semicolon, space) are never corrupted by splitting.
+        // If username is configured, return an account identifier so the pool
+        // allocates a healthy dispatch slot rather than skipping the provider.
+        const user = (await readCredential(ctx, refs.username ?? "")).value ?? "";
+        return user ? `basic:${user}` : "";
       }
       if (refs.key === undefined) return "";
       const cred = await readCredential(ctx, refs.key);
@@ -266,12 +268,16 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   /** Credential refs for one source id, resolved against the live catalog. */
   const buildSnapshot = (): ProviderSnapshot => {
     const cfg = readConfig();
+    const authorizations = [
+      ...OUTBOUND_AUTHORIZATIONS,
+      ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+    ];
     return buildProviderSnapshot({
       providerBaseUrls: cfg.providerBaseUrls ?? {},
       customProviders: loadCustomProviders(cfg.customProviders),
       credentials: credentialSource,
       transport: secureTransport,
-      authorizations: OUTBOUND_AUTHORIZATIONS,
+      authorizations,
     });
   };
   const resolveSnapshot = () => buildSnapshot();
@@ -606,7 +612,17 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
    * consults or mutates the shared pool or health store, so a failed probe of a
    * draft cannot mark a real provider's key unhealthy or start a cooldown.
    */
-  async function testSource(input: { draft?: unknown; sourceId?: string; query: string }): Promise<CustomSourceTestView> {
+  async function testSource(input: {
+    draft?: unknown;
+    sourceId?: string;
+    credential?: {
+      mode?: "stored" | "candidate";
+      value?: string;
+      username?: string;
+      password?: string;
+    };
+    query: string;
+  }): Promise<CustomSourceTestView> {
     const TEST_TIMEOUT_MS = 15_000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("test timed out")), TEST_TIMEOUT_MS);
@@ -614,36 +630,48 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
     try {
       let config: CustomProviderConfig;
-      if (input.sourceId !== undefined) {
+      if (input.draft !== undefined && input.draft !== null) {
+        // If a draft is supplied, always test the current draft configuration.
+        // If an existing sourceId is also present, retain that sourceId.
+        const draft: CustomProviderDraft = validateDraft(input.draft);
+        const id = input.sourceId ?? `custom_${"0".repeat(16)}`;
+        config = { schemaVersion: 1, id, revision: 1, ...draft };
+      } else if (input.sourceId !== undefined) {
         const sourceId = validateSourceId(input.sourceId);
         const stored = loadCustomProviders(readConfig().customProviders).find((entry) => entry.id === sourceId);
         if (!stored) return { ok: false, error: { code: "not-found", message: `Unknown custom source "${sourceId}"` } };
         config = stored;
       } else {
-        // A draft has no id yet; one is generated purely to derive credential
-        // refs, and is never persisted.
-        const draft: CustomProviderDraft = validateDraft(input.draft);
-        config = { schemaVersion: 1, id: `custom_${"0".repeat(16)}`, revision: 1, ...draft };
+        return { ok: false, error: { code: "config", message: "draft or sourceId required" } };
       }
 
       const refs = credentialRefsOf(config.id, config.auth.mode);
-      // A saved source reads its REAL refs; a draft may carry a candidate
-      // credential that is layered on top and never written to the store.
-      const credential: CredentialSource =
-        input.sourceId !== undefined
-          ? credentialSource
-          : {
-              read: async (ref) => {
-                const candidate = (input.draft as { credential?: unknown } | undefined)?.credential;
-                if (candidate && typeof candidate === "object" && refs.key === ref) {
-                  const values = (candidate as { values?: Record<string, string> }).values;
-                  if (values && typeof values[ref] === "string") return values[ref];
-                }
-                return credentialSource.read(ref);
-              },
-            };
+      const credInput = input.credential;
 
-      const { policy, trust } = policyForCustomSource(config, OUTBOUND_AUTHORIZATIONS);
+      const credential: CredentialSource = {
+        read: async (ref) => {
+          if (credInput?.mode === "candidate") {
+            if (ref === refs.key && typeof credInput.value === "string") return credInput.value;
+            if (ref === refs.username && typeof credInput.username === "string") return credInput.username;
+            if (ref === refs.password && typeof credInput.password === "string") return credInput.password;
+          }
+          // Stored mode or fallback:
+          if (input.sourceId !== undefined) {
+            return credentialSource.read(ref);
+          }
+          if (ref === refs.key && typeof credInput?.value === "string") return credInput.value;
+          if (ref === refs.username && typeof credInput?.username === "string") return credInput.username;
+          if (ref === refs.password && typeof credInput?.password === "string") return credInput.password;
+          return "";
+        },
+      };
+
+      const cfg = readConfig();
+      const authorizations = [
+        ...OUTBOUND_AUTHORIZATIONS,
+        ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+      ];
+      const { policy, trust } = policyForCustomSource(config, authorizations);
       const adapter = createCustomAdapter(config, {
         transport: secureTransport,
         credentials: credential,

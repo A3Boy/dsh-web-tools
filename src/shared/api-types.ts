@@ -37,6 +37,13 @@ export interface ProviderView {
   revision?: number;
   /** Auth mode, custom sources only (`none` needs no credential). */
   authMode?: string;
+  /** Full configuration for custom sources, preserving non-default mapping fields in the editor. */
+  customConfig?: {
+    endpoint: import("./custom-provider-types.ts").CustomEndpointConfig;
+    auth?: import("./custom-provider-types.ts").CustomAuthConfig;
+    request?: import("./custom-provider-types.ts").CustomRequestConfig;
+    response?: import("./custom-provider-types.ts").CustomResponseConfig;
+  };
   credRef: string;
   keyConfigured: boolean;
   keyWritable: boolean;

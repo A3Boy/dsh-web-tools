@@ -23,21 +23,13 @@ import type { ProviderAdapter } from "./providers/types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import {
   DEFAULT_MAX_RESPONSE_BYTES,
+  OUTBOUND_AUTHORIZATIONS,
   type DestinationTrust,
   type OutboundAuthorization,
   type OutboundPolicy,
 } from "./provider-transport.ts";
 
-/**
- * Operator-granted outbound destinations.
- *
- * These are the ONLY way a private/loopback target becomes reachable for a
- * user-typed address — deliberately not a single `allowPrivateNetwork: true`
- * switch, which would disarm the guard for every host at once. An entry names
- * a specific host, optionally a port, and opts in to private addresses
- * explicitly.
- */
-export const OUTBOUND_AUTHORIZATIONS: OutboundAuthorization[] = [];
+export { OUTBOUND_AUTHORIZATIONS } from "./provider-transport.ts";
 
 /** A source entry inside one snapshot. */
 export interface CatalogEntry {

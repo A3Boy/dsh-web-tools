@@ -46,6 +46,8 @@ export interface OutboundPolicy {
     requestTimeoutMs?: number;
 }
 export declare const DEFAULT_MAX_RESPONSE_BYTES: number;
+/** Operator-granted outbound destinations (shared registry). */
+export declare const OUTBOUND_AUTHORIZATIONS: OutboundAuthorization[];
 /** Match a host against one authorization entry. */
 export declare function hostMatchesAuthorization(host: string, entry: OutboundAuthorization): boolean;
 /** The authorization covering this host:port, if any. */

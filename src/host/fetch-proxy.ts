@@ -24,6 +24,28 @@
  * @module
  */
 import { execFileSync } from "node:child_process";
+import {
+  assertEndpointUrl,
+  preflightDns,
+  OUTBOUND_AUTHORIZATIONS,
+  type OutboundPolicy,
+} from "./provider-transport.ts";
+
+/** Official API hosts that are trusted by definition. */
+const OFFICIAL_HOSTS = new Set([
+  "api.tavily.com",
+  "api.exa.ai",
+  "api.firecrawl.dev",
+  "api.parallel.ai",
+  "api.search.brave.com",
+  "ydc-index.io",
+  "api.you.com",
+  "s.jina.ai",
+  "r.jina.ai",
+  "127.0.0.1",
+  "localhost",
+  "api.github.com",
+]);
 
 /** Structural ProxyAgent type (we never import undici statically). */
 type ProxyAgentLike = new (proxy: string) => unknown;
@@ -142,23 +164,64 @@ export function shouldBypassProxy(url: string | URL): boolean {
 
 /**
  * Fetch a URL, honoring proxies (env vars, then Windows system proxy) unless
- * `NO_PROXY` matches. Signature matches the global fetch; callers pass the
- * same init.
+ * `NO_PROXY` matches.
+ *
+ * For non-official endpoints (operator overrides), applies outbound SSRF
+ * validation, DNS preflight, and prevents credential leakage across redirects.
  */
 export async function fetchWithProxy(url: string | URL, init?: RequestInit): Promise<Response> {
-  if (shouldBypassProxy(url)) return fetch(url, init);
+  const urlStr = typeof url === "string" ? url : url.href;
+  const parsed = assertEndpointUrl(urlStr);
+  const host = parsed.hostname.toLowerCase();
+  const isOfficial = OFFICIAL_HOSTS.has(host);
+
+  // Security guard for provider requests:
+  // 1. A request carrying credentials must NEVER follow redirects (redirect: "error"),
+  //    preventing credentials from being leaked to an unexpected 3xx destination.
+  const modifiedInit = { ...(init ?? {}) };
+  const rawHeaders = modifiedInit.headers;
+  let hasAuth = false;
+  if (rawHeaders) {
+    if (typeof (rawHeaders as Headers).get === "function") {
+      const h = rawHeaders as Headers;
+      hasAuth = !!(h.get("authorization") || h.get("x-api-key") || h.get("x-subscription-token"));
+    } else {
+      const h = rawHeaders as Record<string, string>;
+      hasAuth = Object.keys(h).some((k) => {
+        const lower = k.toLowerCase();
+        return lower === "authorization" || lower === "x-api-key" || lower === "x-subscription-token";
+      });
+    }
+  }
+  if (hasAuth && modifiedInit.redirect === undefined) {
+    modifiedInit.redirect = "error";
+  }
+
+  // 2. Preflight DNS and reject private/loopback/cloud-metadata targets unless authorized
+  if (!isOfficial) {
+    const policy: OutboundPolicy = {
+      authorizations: OUTBOUND_AUTHORIZATIONS,
+    };
+    await preflightDns(host, "public", policy, {
+      lookupAll: async (h) => {
+        const dns = await import("node:dns/promises");
+        const res = await dns.lookup(h, { all: true });
+        return res as Array<{ address: string; family: number }>;
+      },
+    });
+  }
+
+  if (shouldBypassProxy(url)) return fetch(url, modifiedInit);
   const proxy = proxyFromEnv() ?? proxyFromSystem();
-  if (proxy === undefined) return fetch(url, init);
+  if (proxy === undefined) return fetch(url, modifiedInit);
   const Ctor = await getProxyAgentCtor();
-  if (Ctor === null) return fetch(url, init); // undici missing → plain fetch
+  if (Ctor === null) return fetch(url, modifiedInit); // undici missing → plain fetch
   let agent = agentCache.get(proxy);
   if (!agent) {
     agent = new Ctor(proxy);
     agentCache.set(proxy, agent);
   }
-  const { dispatcher, ...rest } = (init ?? {}) as RequestInit & { dispatcher?: unknown };
+  const { dispatcher, ...rest } = modifiedInit as RequestInit & { dispatcher?: unknown };
   void dispatcher; // ignore any caller-supplied dispatcher (we own the proxy)
-  // undici's dispatcher is not part of the standard RequestInit type; cast
-  // through a structural type so ProxyAgent is accepted at runtime.
   return fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
 }

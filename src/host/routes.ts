@@ -13,7 +13,7 @@
 import type { WebToolsContext, WebToolsHttpRequest, WebToolsHttpResponse } from "./context-types.ts";
 import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
-import { credRefOf, getProvider, PROVIDER_LIST } from "./providers/index.ts";
+import { credRefOf, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
@@ -157,7 +157,17 @@ export interface RouteDeps {
   /** Credential refs owned by one source (built-in or custom). */
   sourceRefs?: (sourceId: string) => CustomCredentialRefs | undefined;
   /** Test a draft or a saved custom source WITHOUT touching live health state. */
-  testSource?: (input: { draft?: unknown; sourceId?: string; query: string }) => Promise<CustomSourceTestView>;
+  testSource?: (input: {
+    draft?: unknown;
+    sourceId?: string;
+    credential?: {
+      mode?: "stored" | "candidate";
+      value?: string;
+      username?: string;
+      password?: string;
+    };
+    query: string;
+  }) => Promise<CustomSourceTestView>;
   /** Remove every credential ref owned by a deleted source. */
   revokeSourceCredentials?: (sourceId: string) => Promise<{ removed: string[]; failed: string[] }>;
   /** Drop runtime state (health cooldown, key pool) for one source. */
@@ -278,16 +288,20 @@ export function configPlaneTrust(req: WebToolsHttpRequest): "peer" | "host" | fa
 }
 
 /**
- * Same-origin check: when an Origin header is present, its host must equal
- * the request Host. Absent Origin → allowed (typed navigation / non-browser).
+ * Same-origin check: when an Origin header is present, its scheme, host, and port
+ * must match the request Host authority (full origin check, preventing cross-port attacks).
+ * Absent Origin → allowed (typed navigation / non-browser / in-process).
  */
 function isSameOrigin(req: WebToolsHttpRequest): boolean {
   const origin = req.headers?.["origin"];
   if (typeof origin !== "string" || origin.length === 0) return true;
   try {
-    const originHost = new URL(origin).hostname.toLowerCase();
-    const requestHost = authorityHost(req.headers?.host);
-    return originHost === requestHost;
+    const originUrl = new URL(origin);
+    const hostHeader = typeof req.headers?.host === "string" ? req.headers.host.toLowerCase() : "";
+    if (!hostHeader) return false;
+    const requestUrl = new URL(`http://${hostHeader}`);
+    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") return false;
+    return originUrl.host.toLowerCase() === requestUrl.host.toLowerCase();
   } catch {
     return false;
   }
@@ -367,6 +381,12 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
       protocol: config.protocol,
       revision: config.revision,
       authMode: config.auth.mode,
+      customConfig: {
+        endpoint: config.endpoint,
+        auth: config.auth,
+        request: config.request,
+        response: config.response,
+      },
       credRef: primaryRef ?? "",
       keyConfigured: config.auth.mode === "none" ? true : cred.configured,
       keyWritable: true,
@@ -415,22 +435,27 @@ async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown };
   const policy = p.policy;
   if (policy !== "ordered" && policy !== "round-robin" && policy !== "random") {
-    throw new Error("invalid routing policy");
+    throw new RouteError("config", "invalid routing policy", 400);
   }
   if (!Array.isArray(p.orderedProviders) || p.orderedProviders.length === 0) {
-    throw new Error("orderedProviders required");
+    throw new RouteError("config", "orderedProviders required", 400);
   }
+  const customIds = new Set(readCustomProviders(deps).map((c) => c.id.toLowerCase()));
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const raw of p.orderedProviders) {
     const name = String(raw).trim().toLowerCase();
     if (name === "" || seen.has(name)) continue;
-    // Validate against the registry before persisting.
-    getProvider(name);
+    // Validate against built-ins or registered custom sources.
+    const isBuiltIn = PROVIDER_LIST.some((m) => m.name === name);
+    const isCustom = customIds.has(name);
+    if (!isBuiltIn && !isCustom) {
+      throw new RouteError("config", `unknown provider "${name}"`, 400);
+    }
     seen.add(name);
     ordered.push(name);
   }
-  if (ordered.length === 0) throw new Error("no valid providers");
+  if (ordered.length === 0) throw new RouteError("config", "no valid providers", 400);
 
   await deps.writeConfig({
     searchRoutingPolicy: policy,
@@ -440,11 +465,18 @@ async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
   return { saved: true, policy, defaultProvider: ordered[0], fallbackOrder: ordered.slice(1) };
 }
 
+function resolveProviderRef(deps: RouteDeps, provider: string): string {
+  const customRef = deps.sourceRefs?.(provider)?.key;
+  if (customRef) return customRef;
+  const isBuiltIn = PROVIDER_LIST.some((m) => m.name === provider);
+  if (!isBuiltIn) throw new RouteError("config", `unknown provider: ${provider}`, 400);
+  return credRefOf(provider);
+}
+
 async function handleCredentialSet(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as { provider?: string; value?: string };
-  if (!p.provider) throw new Error("missing provider");
-  getProvider(p.provider); // validate
-  const ref = credRefOf(p.provider);
+  if (!p.provider) throw new RouteError("config", "missing provider", 400);
+  const ref = resolveProviderRef(deps, p.provider);
   await deps.writeCredential(ref, p.value ?? "");
   const entries = buildPool(p.value ?? "");
   return { configured: entries.length > 0, poolSize: entries.length };
@@ -453,11 +485,10 @@ async function handleCredentialSet(deps: RouteDeps, payload: unknown) {
 /** Append ONE key to a provider's pool (storage stays a comma-joined string). */
 async function handleCredentialAddKey(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as { provider?: string; value?: string };
-  if (!p.provider) throw new Error("missing provider");
-  getProvider(p.provider); // validate
+  if (!p.provider) throw new RouteError("config", "missing provider", 400);
+  const ref = resolveProviderRef(deps, p.provider);
   const value = typeof p.value === "string" ? p.value.trim() : "";
-  if (value.length === 0) throw new Error("missing key value");
-  const ref = credRefOf(p.provider);
+  if (value.length === 0) throw new RouteError("config", "missing key value", 400);
   const cred = await deps.readCredential(ref);
   const entries = buildPool(cred.value ?? "");
   if (entries.some((e) => e.key === value)) throw new Error("key already configured");
@@ -470,10 +501,9 @@ async function handleCredentialAddKey(deps: RouteDeps, payload: unknown) {
 /** Remove ONE key from a provider's pool by its opaque key id. */
 async function handleCredentialRemoveKey(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as { provider?: string; keyId?: string };
-  if (!p.provider) throw new Error("missing provider");
-  getProvider(p.provider); // validate
-  if (typeof p.keyId !== "string" || p.keyId.length === 0) throw new Error("missing key id");
-  const ref = credRefOf(p.provider);
+  if (!p.provider) throw new RouteError("config", "missing provider", 400);
+  const ref = resolveProviderRef(deps, p.provider);
+  if (typeof p.keyId !== "string" || p.keyId.length === 0) throw new RouteError("config", "missing key id", 400);
   const cred = await deps.readCredential(ref);
   const entries = buildPool(cred.value ?? "");
   const match = entries.find((e) => keyIdOf(e.key) === p.keyId);
@@ -851,14 +881,30 @@ async function handleSourceDelete(deps: RouteDeps, payload: unknown) {
 
 /** `sources/test` — draft or saved, never touching live health state. */
 async function handleSourceTest(deps: RouteDeps, payload: unknown) {
-  const p = (payload ?? {}) as { draft?: unknown; sourceId?: unknown; query?: unknown };
+  const p = (payload ?? {}) as {
+    draft?: unknown;
+    sourceId?: unknown;
+    credential?: {
+      mode?: "stored" | "candidate";
+      value?: string;
+      username?: string;
+      password?: string;
+    };
+    query?: unknown;
+  };
   if (!deps.testSource) throw new RouteError("config", "source testing is unavailable", 503);
   const query = typeof p.query === "string" && p.query.trim() !== "" ? p.query.trim() : "OpenAI";
-  if (p.sourceId !== undefined) {
+  let validatedSourceId: string | undefined;
+  if (p.sourceId !== undefined && p.sourceId !== null && String(p.sourceId).trim() !== "") {
     const { config } = requireCustomProvider(deps, String(p.sourceId));
-    return deps.testSource({ sourceId: config.id, query });
+    validatedSourceId = config.id;
   }
-  return deps.testSource({ draft: p.draft, query });
+  return deps.testSource({
+    draft: p.draft,
+    sourceId: validatedSourceId,
+    credential: p.credential,
+    query,
+  });
 }
 
 /**

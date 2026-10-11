@@ -93,6 +93,12 @@ export declare const api: {
     sourceTest: (payload: {
         draft?: unknown;
         sourceId?: string;
+        credential?: {
+            mode?: "stored" | "candidate";
+            value?: string;
+            username?: string;
+            password?: string;
+        };
         query?: string;
     }) => Promise<CustomSourceTestView>;
     sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) => Promise<{

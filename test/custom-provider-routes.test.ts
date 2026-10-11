@@ -345,3 +345,98 @@ test("Routes: sources/endpoint-set validates URLs and manages foreign confirmati
   assert.equal(res4.statusCode, 200);
   assert.equal("exa" in storedConfig.providerBaseUrls, false);
 });
+
+test("Routes: routing/set accepts custom source IDs alongside built-in providers", async () => {
+  const { server, getHandler } = mockServer();
+
+  let storedConfig: any = {
+    searchRoutingPolicy: "ordered",
+    defaultProvider: "exa",
+    fallbackOrder: [],
+    customProviders: [
+      {
+        schemaVersion: 1,
+        id: "custom_mygateway",
+        name: "My Gateway",
+        enabled: true,
+        protocol: "tavily-compatible",
+        endpoint: { baseUrl: "https://gw.example.com", searchPath: "/search", method: "POST", encoding: "json" },
+        auth: { mode: "bearer" },
+        revision: 1,
+      },
+    ],
+  };
+
+  const deps: RouteDeps = {
+    readConfig: () => storedConfig,
+    writeConfig: async (patch) => { storedConfig = { ...storedConfig, ...patch }; },
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  const { req, res } = fakeReqRes("POST", `${API_PREFIX}/routing/set`, {
+    policy: "round-robin",
+    orderedProviders: ["custom_mygateway", "exa"],
+  });
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  const data = JSON.parse(res.body);
+  assert.equal(data.ok, true);
+  assert.equal(storedConfig.defaultProvider, "custom_mygateway");
+  assert.deepEqual(storedConfig.fallbackOrder, ["exa"]);
+  assert.equal(storedConfig.searchRoutingPolicy, "round-robin");
+});
+
+test("Routes: sources/test supports candidate credentials and draft testing without mutating runtime", async () => {
+  const { server, getHandler } = mockServer();
+
+  let capturedInput: any = null;
+  const deps: RouteDeps = {
+    readConfig: () => ({ customProviders: [] }),
+    writeConfig: async () => {},
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+    testSource: async (input) => {
+      capturedInput = input;
+      return { ok: true, status: "connected", resultCount: 2, latencyMs: 150 };
+    },
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  const testPayload = {
+    draft: {
+      name: "Draft Search",
+      protocol: "tavily-compatible",
+      endpoint: { baseUrl: "https://draft.example.com", searchPath: "/search", method: "POST", encoding: "json" },
+      auth: { mode: "bearer" },
+    },
+    credential: { mode: "candidate", value: "candidate-key-123" },
+    query: "test query",
+  };
+
+  const { req, res } = fakeReqRes("POST", `${API_PREFIX}/sources/test`, testPayload);
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  const data = JSON.parse(res.body);
+  assert.equal(data.ok, true);
+  assert.equal(data.value.resultCount, 2);
+  assert.equal(capturedInput.credential.value, "candidate-key-123");
+  assert.equal(capturedInput.query, "test query");
+});
