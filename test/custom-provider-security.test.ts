@@ -12,11 +12,14 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import {
   assertEndpointUrl,
   assertHeaderName,
   truncateUnicodeSafe,
   assertAddressAllowed,
+  isLoopbackUrl,
   preflightDns,
   transact,
   TransportError,
@@ -244,33 +247,74 @@ test("Security: transact blocks plain HTTP endpoints unless explicitly authorize
     },
   );
 
-  // When explicitly authorized with allowHttp, plain http is accepted
-  const authorizedPolicy: OutboundPolicy = {
-    authorizations: [{ host: "internal.gw", port: 8080, allowHttp: true, allowPrivate: true }],
-  };
-  const authReq = {
-    url: "http://internal.gw:8080/search",
-    method: "GET" as const,
-    headers: {},
-    label: "Authorized Internal HTTP",
-    trust: "authorized" as const,
-    policy: authorizedPolicy,
-  };
+  // When explicitly authorized with allowHttp, plain http is accepted: real
+  // loopback server, full end-to-end (proves the allowHttp grant works).
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, path: req.url }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = server.address().port;
+  try {
+    const authorizedPolicy: OutboundPolicy = {
+      authorizations: [{ host: "127.0.0.1", port, allowHttp: true, allowPrivate: true }],
+    };
+    const authReq = {
+      url: `http://127.0.0.1:${port}/search`,
+      method: "GET" as const,
+      headers: { authorization: "Bearer secret" },
+      label: "Authorized Internal HTTP",
+      trust: "authorized" as const,
+      policy: authorizedPolicy,
+    };
+    const res = await transact(authReq);
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { ok: boolean; path: string } | undefined)?.path, "/search");
+  } finally {
+    server.close();
+  }
+});
 
-  // Mock lookup returning private IP (allowed via allowPrivate) and mock connect
-  const mockLookup = async () => [{ address: "10.0.1.5", family: 4 }];
-  const mockConnect = () => {
-    const { EventEmitter } = require("node:events");
-    const emitter = new EventEmitter();
-    process.nextTick(() => emitter.emit("connect"));
-    return emitter;
-  };
+test("Security: transact never proxies loopback targets even when a proxy is configured", async () => {
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, path: req.url }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = server.address().port;
 
-  // Should NOT throw "Plain http://" error or "destination-blocked"
-  const res = await transact(authReq, {
-    lookupAll: mockLookup,
-    connect: mockConnect as any,
-  }).catch((e) => e);
-  // It proceeds past scheme & host auth to network fetch/connect
-  assert.notEqual((res as Error)?.message, "Plain http:// endpoints are only allowed for loopback defaults or an explicitly authorized target");
+  try {
+    const policy: OutboundPolicy = {
+      authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
+    };
+    const req = {
+      url: `http://127.0.0.1:${port}/search`,
+      method: "GET" as const,
+      headers: { authorization: "Bearer secret" },
+      label: "Loopback bypass proxy gate",
+      trust: "authorized" as const,
+      policy,
+    };
+
+    // A DEAD proxy is configured and allowProxy is false. A loopback target must
+    // BYPASS the proxy gate and dial directly — otherwise every local SearXNG /
+    // custom instance breaks on machines with a system proxy.
+    const res = await transact(req, {
+      proxyUrl: () => "http://127.0.0.1:9",
+    });
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { ok: boolean; path: string } | undefined)?.path, "/search");
+  } finally {
+    server.close();
+  }
+});
+
+test("Security: isLoopbackUrl recognizes localhost and IPv4/IPv6 loopback", () => {
+  assert.equal(isLoopbackUrl("http://127.0.0.1:8080/search"), true);
+  assert.equal(isLoopbackUrl("http://localhost:8080/search"), true);
+  assert.equal(isLoopbackUrl("http://[::1]:8080/search"), true);
+  assert.equal(isLoopbackUrl("https://192.168.1.10/search"), false);
+  assert.equal(isLoopbackUrl("https://example.com/search"), false);
 });

@@ -174,3 +174,9 @@ export declare function createPinnedDispatcher(options: {
     connect: ConnectFn;
     signal: AbortSignal;
 }): Promise<unknown>;
+/**
+ * Whether a URL targets the loopback host. Loopback targets are always dialed
+ * directly (never through a proxy): there is no DNS rebinding concern and a
+ * local instance must not be tunneled to an ambient internet proxy.
+ */
+export declare function isLoopbackUrl(urlStr: string): boolean;

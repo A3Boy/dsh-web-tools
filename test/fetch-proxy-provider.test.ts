@@ -269,12 +269,16 @@ test("provider mode: cancelling a partially-consumed body terminates the upstrea
     await reader.read(); // consume exactly one chunk, then cancel
     await reader.cancel();
 
-    // Wait briefly: the upstream write counter must STOP growing (terminated),
-    // not keep buffering forever, and the response must have closed.
-    const snapshot = writes;
-    await new Promise((r) => setTimeout(r, 300));
+    // Poll for the upstream 'close' (robust under parallel-suite CPU load),
+    // then assert the write counter stops growing once the connection closed.
+    const deadline = Date.now() + 2000;
+    while (!upstreamClosed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
     assert.equal(upstreamClosed, true, "upstream response must close after cancel");
-    assert.ok(writes - snapshot < 5, "upstream must stop producing chunks after cancel");
+    const snapshot = writes;
+    await new Promise((r) => setTimeout(r, 200));
+    assert.ok(writes - snapshot <= 1, "upstream must stop producing chunks after cancel");
   } finally {
     setGlobalOutboundAuthorizations([]);
     server.close();

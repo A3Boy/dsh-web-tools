@@ -443,10 +443,12 @@ export async function transact(
   // ---- 4. proxy decision (fail closed) ----------------------------------
   // Loopback endpoints must be connected to directly even when Windows has a
   // system proxy. This only bypasses proxy routing, NOT allowHttp/allowPrivate
-  // authorization or the DNS preflight and pinned connection below.
+  // authorization or the DNS preflight and pinned connection below. The
+  // isLoopbackUrl check below is defense-in-depth on top of the proxyUrl
+  // bypass, so a loopback target can never hit the proxy gate.
   const proxyUrl = isLoopbackHost(parsed.hostname) ? undefined : deps.proxyUrl?.();
   let dispatcher: unknown;
-  if (proxyUrl !== undefined && !(request.builtInOfficial === true)) {
+  if (proxyUrl !== undefined && !(request.builtInOfficial === true) && !isLoopbackUrl(parsed.href)) {
     if (policy.allowProxy !== true) {
       throw new TransportError(
         "proxy-required",
@@ -761,6 +763,22 @@ function isDestinationBlocked(message: string): boolean {
 
 function isLoopbackHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (host === "localhost" || host === "::1") return true;
-  return /^127\./.test(host);
+  if (host === "localhost" || host === "::1" || host === "0:0:0:0:0:0:0:1") return true;
+  if (/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
+    return Number(host.split(".")[0]) === 127;
+  }
+  return false;
+}
+
+/**
+ * Whether a URL targets the loopback host. Loopback targets are always dialed
+ * directly (never through a proxy): there is no DNS rebinding concern and a
+ * local instance must not be tunneled to an ambient internet proxy.
+ */
+export function isLoopbackUrl(urlStr: string): boolean {
+  try {
+    return isLoopbackHost(new URL(urlStr).hostname);
+  } catch {
+    return false;
+  }
 }
