@@ -337,3 +337,96 @@ test("Integration: SearXNG JSON protocol automatically appends format=json to re
     server.close();
   }
 });
+
+test("Integration: transact bypasses a configured system proxy for loopback targets", async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ results: [{ url: "https://example.com/direct", title: "Direct loopback" }] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  let proxyLookups = 0;
+  let proxyDispatcherCalls = 0;
+
+  try {
+    // Simulate a Windows system proxy. The direct path still requires both
+    // private-address and plaintext-HTTP authorization for the local target.
+    for (const hostname of ["127.0.0.1", "localhost"]) {
+      const result = await transact(
+        {
+          url: `http://${hostname}:${port}/search`,
+          method: "GET",
+          headers: { authorization: "Bearer loopback-only" },
+          label: "Local gateway through transact",
+          trust: "authorized",
+          policy: {
+            authorizations: [{ host: hostname, port, allowPrivate: true, allowHttp: true }],
+          },
+        },
+        {
+          lookupAll: async () => [{ address: "127.0.0.1", family: 4 }],
+          proxyUrl: () => {
+            proxyLookups++;
+            return "http://127.0.0.1:9";
+          },
+          proxyDispatcher: async () => {
+            proxyDispatcherCalls++;
+            throw new Error("loopback must never use the proxy dispatcher");
+          },
+        },
+      );
+      assert.equal(result.ok, true);
+      assert.equal((result.json as { results: Array<{ title: string }> }).results[0].title, "Direct loopback");
+    }
+    assert.equal(proxyLookups, 0, "loopback must skip proxy discovery entirely");
+    assert.equal(proxyDispatcherCalls, 0, "loopback must never create a proxy dispatcher");
+  } finally {
+    server.close();
+  }
+});
+
+test("Integration: transact still blocks unauthorized proxy egress for public targets", async () => {
+  let proxyDispatcherCalls = 0;
+  await assert.rejects(
+    () => transact(
+      {
+        url: "https://93.184.216.34:8443/search",
+        method: "GET",
+        headers: {},
+        label: "Unapproved proxied public gateway",
+        trust: "public",
+        policy: { authorizations: [] },
+      },
+      {
+        proxyUrl: () => "http://127.0.0.1:9",
+        proxyDispatcher: async () => {
+          proxyDispatcherCalls++;
+          throw new Error("must fail before proxy construction");
+        },
+      },
+    ),
+    (err: unknown) => {
+      assert.equal((err as { code?: string }).code, "proxy-required");
+      return true;
+    },
+  );
+  assert.equal(proxyDispatcherCalls, 0);
+});
+
+test("Integration: loopback direct routing does not waive allowHttp or allowPrivate", async () => {
+  const request = {
+    url: "http://127.0.0.1:65000/search",
+    method: "GET" as const,
+    headers: {},
+    label: "Unauthorized local service",
+    trust: "public" as const,
+    policy: { authorizations: [] },
+  };
+  await assert.rejects(
+    () => transact(request, { proxyUrl: () => "http://127.0.0.1:9" }),
+    (err: unknown) => {
+      assert.equal((err as { code?: string }).code, "destination-blocked");
+      return true;
+    },
+  );
+});

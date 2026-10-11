@@ -441,7 +441,10 @@ export async function transact(
   for (const name of Object.keys(request.headers)) assertHeaderName(name);
 
   // ---- 4. proxy decision (fail closed) ----------------------------------
-  const proxyUrl = deps.proxyUrl?.();
+  // Loopback endpoints must be connected to directly even when Windows has a
+  // system proxy. This only bypasses proxy routing, NOT allowHttp/allowPrivate
+  // authorization or the DNS preflight and pinned connection below.
+  const proxyUrl = isLoopbackHost(parsed.hostname) ? undefined : deps.proxyUrl?.();
   let dispatcher: unknown;
   if (proxyUrl !== undefined && !(request.builtInOfficial === true)) {
     if (policy.allowProxy !== true) {
