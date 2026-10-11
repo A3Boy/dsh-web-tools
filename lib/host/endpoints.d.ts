@@ -36,6 +36,13 @@ export interface ProviderEndpoint {
      * different host for those is a credential-leak vector.
      */
     overridable: boolean;
+    /**
+     * Whether the request path is dynamic (a path segment carries the argument).
+     * Only Jina: search and Reader place the query/target in the PATH
+     * (`https://s.jina.ai/<query>`), so official-host matching must accept any
+     * path under the endpoint. Every other endpoint matches its exact path.
+     */
+    dynamicPath?: boolean;
 }
 /** Official endpoints per built-in provider. */
 export declare const PROVIDER_ENDPOINTS: Record<string, {

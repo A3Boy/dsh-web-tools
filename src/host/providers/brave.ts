@@ -113,7 +113,7 @@ export const BraveProvider: ProviderAdapter = {
           },
           body: JSON.stringify(body),
           signal,
-        }, { provider: true });
+        }, { provider: "brave" });
 
         if (res.ok) {
         // Capture quota headers on success (same as classic endpoint).
@@ -166,7 +166,7 @@ export const BraveProvider: ProviderAdapter = {
     const res = await fetchWithProxy(url, {
       headers: { "x-subscription-token": token, accept: "application/json" },
       signal,
-    }, { provider: true });
+    }, { provider: "brave" });
     throwIfHttp("Brave", res);
     defaultQuotaManager.recordFromHeaders(token, res.headers);
     const raw = await res.json();

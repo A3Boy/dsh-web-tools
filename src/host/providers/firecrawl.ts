@@ -106,7 +106,7 @@ export const FirecrawlProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(buildFirecrawlSearchBody(query, count, hints)),
       signal,
-    }, { provider: true });
+    }, { provider: "firecrawl" });
     throwIfHttp("Firecrawl", res);
     const raw = await res.json();
     // Firecrawl v2 normally returns `data` directly. Keep the nested envelopes
@@ -162,7 +162,7 @@ export const FirecrawlProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
       signal,
-    }, { provider: true });
+    }, { provider: "firecrawl" });
     throwIfHttp("Firecrawl", res);
     const data = await res.json();
     const markdown = data?.data?.markdown;

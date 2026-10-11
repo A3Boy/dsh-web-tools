@@ -37,37 +37,48 @@ import {
 import { PROVIDER_ENDPOINTS } from "./endpoints.ts";
 
 /**
- * Exact official default endpoints (scheme://host:port/path), trusted by
- * construction. Being a self-hosted provider or an official HOST is NOT enough:
- * a user-typed override that happens to share a host (e.g. 127.0.0.1 on a
- * different port) still changes the URL, so it fails this exact-match and gets
- * the full outbound policy.
+ * Whether `urlStr` is one of THIS provider's official default endpoints.
+ *
+ * Trust is derived from the requesting provider's identity, never from a global
+ * URL set: a Tavily override that happens to equal SearXNG's default address
+ * (`http://127.0.0.1:8080/search`) must NOT be trusted, and Jina's dynamic
+ * path requests (`https://s.jina.ai/<query>`) MUST be. Each endpoint is matched
+ * on scheme + hostname + port, plus:
+ *  - an exact path match, or
+ *  - any path under the endpoint when the endpoint declares `dynamicPath`
+ *    (Jina only), so the query-in-path form stays official without opening up
+ *    "any path on the domain is exempt" for other providers.
  */
-const OFFICIAL_ENDPOINTS = new Set<string>();
-for (const table of Object.values(PROVIDER_ENDPOINTS)) {
-  const endpoints = [table.search, ...Object.values(table.extra ?? {})];
-  for (const endpoint of endpoints) {
-    try {
-      const u = new URL(endpoint.url);
-      OFFICIAL_ENDPOINTS.add(endpointKeyOf(u));
-    } catch {
-      // malformed built-in metadata — ignore
-    }
-  }
-}
-
-function endpointKeyOf(u: URL): string {
-  const path = u.pathname === "/" ? "/" : u.pathname.replace(/\/+$/, "");
-  return `${u.protocol}//${u.host}${path}`;
-}
-
-/** True only when the URL is EXACTLY a built-in official default endpoint. */
-function isOfficialUrl(urlStr: string): boolean {
+export function isOfficialForProvider(providerName: string, urlStr: string): boolean {
+  const table = PROVIDER_ENDPOINTS[providerName];
+  if (!table) return false;
+  let u: URL;
   try {
-    return OFFICIAL_ENDPOINTS.has(endpointKeyOf(new URL(urlStr)));
+    u = new URL(urlStr);
   } catch {
     return false;
   }
+  const endpoints = [table.search, ...Object.values(table.extra ?? {})];
+  for (const endpoint of endpoints) {
+    let official: URL;
+    try {
+      official = new URL(endpoint.url);
+    } catch {
+      continue;
+    }
+    if (u.protocol !== official.protocol) continue;
+    if (u.hostname.toLowerCase() !== official.hostname.toLowerCase()) continue;
+    // URL.port normalizes default ports to "", so this compares effective ports.
+    if (u.port !== official.port) continue;
+    if (endpoint.dynamicPath) {
+      const base = official.pathname === "/" ? "/" : official.pathname.replace(/\/+$/, "");
+      if (base === "/") return true;
+      if (u.pathname === official.pathname || u.pathname.startsWith(`${base}/`)) return true;
+    } else if (u.pathname === official.pathname) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Whether a request init carries a credential header. */
@@ -88,13 +99,15 @@ function hasAuthHeader(init: RequestInit): boolean {
 /** Optional per-call behavior for fetchWithProxy. */
 export interface FetchWithProxyOptions {
   /**
-   * Strict provider-API mode. Passed by the hosted built-in adapters so ANY
-   * operator override runs the outbound policy: exact-endpoint trust, DNS
-   * preflight, socket pinning, plaintext-http authorization, and fail-closed
-   * proxying. Self-hosted providers (SearXNG) deliberately keep the
-   * operator-trusted legacy path — their configured URL IS the instance.
+   * Strict provider-API mode, scoped to ONE provider identity. Passed by the
+   * hosted built-in adapters so ANY operator override runs the outbound
+   * policy: per-provider endpoint trust, DNS preflight, socket pinning,
+   * plaintext-http authorization, and fail-closed proxying. Trust is decided by
+   * THIS provider's own endpoint table — another provider's default URL is
+   * never trusted. Self-hosted providers (SearXNG) deliberately keep the
+   * operator-trusted legacy path: their configured URL IS the instance.
    */
-  provider?: boolean;
+  provider?: string;
 }
 
 /** Structural ProxyAgent type (we never import undici statically). */
@@ -212,7 +225,17 @@ export function shouldBypassProxy(url: string | URL): boolean {
     });
 }
 
-/** Wrap a response so the per-request pinned dispatcher outlives the BODY. */
+/**
+ * Wrap a response so the per-request pinned dispatcher outlives the BODY.
+ *
+ * The wrapper is PULL-driven (a `pull()` loop that reads from the upstream body
+ * only when the downstream consumer asks for data), so:
+ *  - backpressure is preserved — undici's underlying reader is not drained into
+ *    an unbounded buffer ahead of the consumer;
+ *  - cancellation propagates — `cancel()` cancels the upstream reader so the
+ *    request actually terminates, instead of silently stopping dispatch;
+ *  - on any terminal path (done / error / cancel) the dispatcher is destroyed.
+ */
 function withBodyLifetime(response: Response, onDone: () => void): Response {
   const body = response.body;
   if (!body) {
@@ -226,25 +249,41 @@ function withBodyLifetime(response: Response, onDone: () => void): Response {
       onDone();
     }
   };
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined = body.getReader();
+  let settled = false;
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = body.getReader();
+    async pull(controller) {
+      if (settled || !reader) return;
       try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        const { done, value } = await reader.read();
+        if (done) {
+          settled = true;
+          controller.close();
+          finish();
+          try { reader.releaseLock(); } catch {}
+          reader = undefined;
+        } else {
           controller.enqueue(value);
         }
-        controller.close();
       } catch (err) {
-        controller.error(err);
-      } finally {
-        try { reader.releaseLock(); } catch {}
+        settled = true;
         finish();
+        if (reader) {
+          try { reader.cancel().catch(() => {}); } catch {}
+          try { reader.releaseLock(); } catch {}
+        }
+        reader = undefined;
+        controller.error(err);
       }
     },
     cancel() {
+      settled = true;
       finish();
+      if (reader) {
+        try { reader.cancel().catch(() => {}); } catch {}
+        try { reader.releaseLock(); } catch {}
+        reader = undefined;
+      }
     },
   });
   return new Response(stream, {
@@ -286,8 +325,9 @@ export async function fetchWithProxy(
 ): Promise<Response> {
   const urlStr = typeof url === "string" ? url : url.href;
   const parsed = assertEndpointUrl(urlStr);
-  const providerMode = options?.provider === true;
-  const isOfficial = isOfficialUrl(urlStr);
+  const providerName = options?.provider;
+  const providerMode = providerName !== undefined && providerName !== "";
+  const isOfficial = providerMode && isOfficialForProvider(providerName as string, urlStr);
 
   // A request carrying credentials must NEVER follow redirects, so a 3xx can
   // never leak the credential to another host.

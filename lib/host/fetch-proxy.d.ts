@@ -1,13 +1,29 @@
+/**
+ * Whether `urlStr` is one of THIS provider's official default endpoints.
+ *
+ * Trust is derived from the requesting provider's identity, never from a global
+ * URL set: a Tavily override that happens to equal SearXNG's default address
+ * (`http://127.0.0.1:8080/search`) must NOT be trusted, and Jina's dynamic
+ * path requests (`https://s.jina.ai/<query>`) MUST be. Each endpoint is matched
+ * on scheme + hostname + port, plus:
+ *  - an exact path match, or
+ *  - any path under the endpoint when the endpoint declares `dynamicPath`
+ *    (Jina only), so the query-in-path form stays official without opening up
+ *    "any path on the domain is exempt" for other providers.
+ */
+export declare function isOfficialForProvider(providerName: string, urlStr: string): boolean;
 /** Optional per-call behavior for fetchWithProxy. */
 export interface FetchWithProxyOptions {
     /**
-     * Strict provider-API mode. Passed by the hosted built-in adapters so ANY
-     * operator override runs the outbound policy: exact-endpoint trust, DNS
-     * preflight, socket pinning, plaintext-http authorization, and fail-closed
-     * proxying. Self-hosted providers (SearXNG) deliberately keep the
-     * operator-trusted legacy path — their configured URL IS the instance.
+     * Strict provider-API mode, scoped to ONE provider identity. Passed by the
+     * hosted built-in adapters so ANY operator override runs the outbound
+     * policy: per-provider endpoint trust, DNS preflight, socket pinning,
+     * plaintext-http authorization, and fail-closed proxying. Trust is decided by
+     * THIS provider's own endpoint table — another provider's default URL is
+     * never trusted. Self-hosted providers (SearXNG) deliberately keep the
+     * operator-trusted legacy path: their configured URL IS the instance.
      */
-    provider?: boolean;
+    provider?: string;
 }
 /**
  * Proxy support status for the settings card:

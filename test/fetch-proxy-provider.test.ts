@@ -10,13 +10,18 @@
  *    target FAILS CLOSED (the proxy's own DNS cannot be substantiated locally).
  * 4. Plaintext http carrying an API key requires an explicit allowHttp grant;
  *    authorized internal HTTP gateways receive the key and work.
+ * 5. Trust is per-provider: Jina's dynamic path stays official; a Tavily
+ *    override matching SearXNG's default is NOT trusted; other providers'
+ *    non-endpoint paths are NOT official.
+ * 6. Cancelling a partially-consumed body propagates upstream and terminates
+ *    the request (pull-driven wrapper, no unbounded buffering).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { connect } from "node:net";
 import { once } from "node:events";
-import { fetchWithProxy } from "../src/host/fetch-proxy.ts";
+import { fetchWithProxy, isOfficialForProvider } from "../src/host/fetch-proxy.ts";
 import { setGlobalOutboundAuthorizations, TransportError } from "../src/host/provider-transport.ts";
 
 const PROXY_ENV_KEYS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"];
@@ -59,7 +64,7 @@ test("provider mode: delayed chunked JSON body is read fully past the pinned dis
     const res = await fetchWithProxy(
       `http://127.0.0.1:${port}/search`,
       { method: "POST", headers: { authorization: "Bearer secret-key", "content-type": "application/json" }, body: "{}" },
-      { provider: true },
+      { provider: "tavily" },
     );
     // res.json() must succeed with the FULL body — the dispatcher survived the
     // body read (no premature undici destroy() / terminated stream).
@@ -82,7 +87,7 @@ test("provider mode: unauthorized override to loopback on a different port is re
         fetchWithProxy(
           `http://127.0.0.1:${65000}/search`,
           { headers: { authorization: "Bearer secret" } },
-          { provider: true },
+          { provider: "tavily" },
         ),
       (err: unknown) => {
         assert(err instanceof TransportError);
@@ -117,7 +122,7 @@ test("provider mode: proxy configured without allowProxy authorization fails clo
     // decision rather than the plaintext-http gate.
     await assert.rejects(
       () =>
-        fetchWithProxy(`https://93.184.216.34:8443/search`, { headers: { authorization: "Bearer secret" } }, { provider: true }),
+        fetchWithProxy(`https://93.184.216.34:8443/search`, { headers: { authorization: "Bearer secret" } }, { provider: "tavily" }),
       (err: unknown) => {
         assert(err instanceof TransportError);
         assert.equal(err.code, "proxy-required");
@@ -171,7 +176,7 @@ test("provider mode: authorized target with allowProxy may egress through the pr
     const res = await fetchWithProxy(
       `http://93.184.216.34:8443/search?q=x`,
       { headers: { authorization: "Bearer secret" } },
-      { provider: true },
+      { provider: "tavily" },
     );
     const body = (await res.json()) as { via: string; path: string };
     assert.equal(body.via, "echo", "request must have tunneled through the proxy");
@@ -189,7 +194,7 @@ test("provider mode: plaintext http carrying a key is refused without allowHttp"
   try {
     await assert.rejects(
       () =>
-        fetchWithProxy(`http://93.184.216.34:8080/search`, { headers: { authorization: "Bearer secret" } }, { provider: true }),
+        fetchWithProxy(`http://93.184.216.34:8080/search`, { headers: { authorization: "Bearer secret" } }, { provider: "tavily" }),
       (err: unknown) => {
         assert(err instanceof TransportError);
         assert.equal(err.code, "destination-blocked");
@@ -200,5 +205,78 @@ test("provider mode: plaintext http carrying a key is refused without allowHttp"
     );
   } finally {
     setGlobalOutboundAuthorizations([]);
+  }
+});
+
+test("official identity: Jina dynamic-path URLs stay official for jina only", () => {
+  // Jina search places the query in the PATH — this must be official for jina.
+  assert.equal(isOfficialForProvider("jina", "https://s.jina.ai/quantum%20computing?count=5"), true);
+  // Jina Reader places the target URL in the PATH.
+  assert.equal(isOfficialForProvider("jina", "https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpage"), true);
+  // Exact root forms are official too.
+  assert.equal(isOfficialForProvider("jina", "https://s.jina.ai/"), true);
+  // But Jina's dynamic-path trust must NOT leak to another provider's identity:
+  // a Tavily-override pointing at s.jina.ai is NOT official for tavily.
+  assert.equal(isOfficialForProvider("tavily", "https://s.jina.ai/query"), false);
+});
+
+test("official identity: cross-provider default-address matching is not trusted", () => {
+  // SearXNG's official default is http://127.0.0.1:8080/search. A Tavily override
+  // that lands on that exact URL must NOT be treated as official (P0 gap).
+  assert.equal(isOfficialForProvider("searxng", "http://127.0.0.1:8080/search"), true);
+  assert.equal(isOfficialForProvider("tavily", "http://127.0.0.1:8080/search"), false);
+  assert.equal(isOfficialForProvider("exa", "http://127.0.0.1:8080/search"), false);
+});
+
+test("official identity: non-endpoint paths on official hosts are not official", () => {
+  assert.equal(isOfficialForProvider("tavily", "https://api.tavily.com/search"), true);
+  assert.equal(isOfficialForProvider("tavily", "https://api.tavily.com/anything-else"), false);
+  assert.equal(isOfficialForProvider("exa", "https://api.exa.ai/search"), true);
+  assert.equal(isOfficialForProvider("exa", "https://api.exa.ai/unrelated"), false);
+  // Different port on the official host is not official either.
+  assert.equal(isOfficialForProvider("tavily", "https://api.tavily.com:9443/search"), false);
+});
+
+test("provider mode: cancelling a partially-consumed body terminates the upstream request", async () => {
+  let writes = 0;
+  let upstreamClosed = false;
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/octet-stream" });
+    res.on("close", () => { upstreamClosed = true; });
+    // Stream chunks forever so an unbounded wrapper would keep buffering.
+    const timer = setInterval(() => {
+      try {
+        res.write(Buffer.from(JSON.stringify({ n: writes }) + "\n"));
+        writes += 1;
+      } catch {
+        clearInterval(timer);
+      }
+    }, 20);
+    res.on("close", () => clearInterval(timer));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = server.address().port;
+
+  try {
+    setGlobalOutboundAuthorizations([{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }]);
+    const res = await fetchWithProxy(
+      `http://127.0.0.1:${port}/stream`,
+      { headers: { authorization: "Bearer secret" } },
+      { provider: "tavily" },
+    );
+    const reader = res.body!.getReader();
+    await reader.read(); // consume exactly one chunk, then cancel
+    await reader.cancel();
+
+    // Wait briefly: the upstream write counter must STOP growing (terminated),
+    // not keep buffering forever, and the response must have closed.
+    const snapshot = writes;
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(upstreamClosed, true, "upstream response must close after cancel");
+    assert.ok(writes - snapshot < 5, "upstream must stop producing chunks after cancel");
+  } finally {
+    setGlobalOutboundAuthorizations([]);
+    server.close();
   }
 });

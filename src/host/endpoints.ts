@@ -37,6 +37,13 @@ export interface ProviderEndpoint {
    * different host for those is a credential-leak vector.
    */
   overridable: boolean;
+  /**
+   * Whether the request path is dynamic (a path segment carries the argument).
+   * Only Jina: search and Reader place the query/target in the PATH
+   * (`https://s.jina.ai/<query>`), so official-host matching must accept any
+   * path under the endpoint. Every other endpoint matches its exact path.
+   */
+  dynamicPath?: boolean;
 }
 
 /** Official endpoints per built-in provider. */
@@ -75,8 +82,8 @@ export const PROVIDER_ENDPOINTS: Record<string, { search: ProviderEndpoint; extr
     },
   },
   jina: {
-    search: { defaultBaseUrl: "https://s.jina.ai", path: "/", url: "https://s.jina.ai/", host: "s.jina.ai", overridable: true },
-    extra: { reader: { defaultBaseUrl: "https://r.jina.ai", path: "/", url: "https://r.jina.ai/", host: "r.jina.ai", overridable: false } },
+    search: { defaultBaseUrl: "https://s.jina.ai", path: "/", url: "https://s.jina.ai/", host: "s.jina.ai", overridable: true, dynamicPath: true },
+    extra: { reader: { defaultBaseUrl: "https://r.jina.ai", path: "/", url: "https://r.jina.ai/", host: "r.jina.ai", overridable: false, dynamicPath: true } },
   },
   searxng: {
     search: { defaultBaseUrl: "http://127.0.0.1:8080", path: "/search", url: "http://127.0.0.1:8080/search", host: "127.0.0.1", overridable: true },
