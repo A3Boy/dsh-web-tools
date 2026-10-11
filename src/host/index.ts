@@ -29,8 +29,7 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem } from "./fe
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
-import { transact, setGlobalOutboundAuthorizations, isLoopbackHost, type OutboundAuthorization } from "./provider-transport.ts";
-import { isPrivateOrRestrictedIp } from "./fetch-security.ts";
+import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, type OutboundAuthorization } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
   buildProviderSnapshot,
@@ -634,6 +633,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       username?: string;
       password?: string;
     };
+    confirmTarget?: boolean;
     query: string;
   }): Promise<CustomSourceTestView> {
     const TEST_TIMEOUT_MS = 15_000;
@@ -680,22 +680,48 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       };
 
       const cfg = readConfig();
+      const existingAuths = [
+        ...OUTBOUND_AUTHORIZATIONS,
+        ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+      ];
       const endpointUrl = new URL(config.endpoint.baseUrl);
       const endpointPort = endpointUrl.port
         ? Number(endpointUrl.port)
         : (endpointUrl.protocol === "https:" ? 443 : 80);
-      const isPrivateOrLoopback = isPrivateOrRestrictedIp(endpointUrl.hostname) || isLoopbackHost(endpointUrl.hostname);
-      const draftCandidateAuth: OutboundAuthorization = {
-        host: endpointUrl.hostname,
-        port: endpointPort,
-        allowPrivate: isPrivateOrLoopback,
-        allowHttp: endpointUrl.protocol === "http:",
-      };
-      const authorizations = [
-        ...OUTBOUND_AUTHORIZATIONS,
-        ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
-        draftCandidateAuth,
-      ];
+      const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
+      const isHttp = endpointUrl.protocol === "http:";
+
+      const isAlreadyAuthorized = existingAuths.some(
+        (a) =>
+          (a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() ||
+            (a.host.startsWith(".") && endpointUrl.hostname.toLowerCase().endsWith(a.host.toLowerCase()))) &&
+          (a.port === undefined || a.port === endpointPort) &&
+          (!isPrivateOrLoopback || a.allowPrivate) &&
+          (!isHttp || a.allowHttp),
+      );
+
+      const candidateAuth: OutboundAuthorization[] = [];
+      if ((isPrivateOrLoopback || isHttp) && !isAlreadyAuthorized) {
+        if (input.confirmTarget !== true) {
+          const targetStr = `${endpointUrl.hostname}:${endpointPort}`;
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: `此搜索服务位于本地网络或使用未加密 HTTP 连接。是否允许访问 ${targetStr}？若配置了 API Key，对应凭证将发送给该服务。`,
+            },
+          };
+        }
+        candidateAuth.push({
+          host: endpointUrl.hostname,
+          port: endpointPort,
+          allowPrivate: isPrivateOrLoopback,
+          allowHttp: isHttp,
+          note: `Operator-confirmed: ${config.name}`,
+        });
+      }
+
+      const authorizations = [...existingAuths, ...candidateAuth];
       const { policy, trust } = policyForCustomSource(config, authorizations);
       const adapter = createCustomAdapter(config, {
         transport: secureTransport,

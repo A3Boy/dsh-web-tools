@@ -232,22 +232,92 @@ export function validateAuth(value: unknown): CustomProviderConfig["auth"] {
   return { mode: mode as AuthMode };
 }
 
+/** Validate custom request headers map (string keys, string values, no reserved headers). */
+export function validateCustomHeaders(value: unknown): Record<string, string> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new CustomProviderValidationError("request.headers", "must be an object");
+  }
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!key || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(key)) {
+      throw new CustomProviderValidationError("request.headers", `header "${key}" is not a valid HTTP header token`);
+    }
+    if (["host", "connection", "content-length", "transfer-encoding"].includes(key.toLowerCase())) {
+      throw new CustomProviderValidationError("request.headers", `header "${key}" is reserved`);
+    }
+    if (typeof raw !== "string") {
+      throw new CustomProviderValidationError("request.headers", `value for "${key}" must be a string`);
+    }
+    if (raw.length > 1024) {
+      throw new CustomProviderValidationError("request.headers", `value for "${key}" is too long`);
+    }
+    out[key] = raw;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Validate JSON body template (safe object, max depth 6, max keys 32, no proto pollution). */
+export function validateBodyTemplate(value: unknown, depth = 0): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new CustomProviderValidationError("request.bodyTemplate", "must be an object");
+  }
+  if (depth > 6) {
+    throw new CustomProviderValidationError("request.bodyTemplate", "exceeds maximum nesting depth of 6");
+  }
+  const out: Record<string, unknown> = {};
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 32) {
+    throw new CustomProviderValidationError("request.bodyTemplate", "exceeds maximum of 32 keys");
+  }
+  for (const [key, val] of entries) {
+    if (FORBIDDEN_SEGMENTS.has(key)) {
+      throw new CustomProviderValidationError("request.bodyTemplate", `property "${key}" is forbidden`);
+    }
+    if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+      out[key] = validateBodyTemplate(val, depth + 1);
+    } else if (Array.isArray(val)) {
+      out[key] = val.slice(0, 32);
+    } else if (typeof val === "string" || typeof val === "number" || typeof val === "boolean" || val === null) {
+      out[key] = val;
+    } else {
+      throw new CustomProviderValidationError("request.bodyTemplate", `unsupported value type for "${key}"`);
+    }
+  }
+  return out;
+}
+
 /** Validate the optional request-mapping block. */
 export function validateRequest(value: unknown, protocol: CustomProtocol): CustomRequestConfig | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "object") throw new CustomProviderValidationError("request", "must be an object");
   const raw = value as Record<string, unknown>;
   const defaults = PROTOCOL_DEFAULTS[protocol];
-  const queryField = validateText(raw.queryField ?? defaults.queryField, "request.queryField", 64);
+  const queryField = raw.queryField ? (validateText(raw.queryField, "request.queryField", 64) as string) : defaults?.queryField;
   const limitField =
     raw.limitField === undefined || raw.limitField === null || raw.limitField === ""
-      ? defaults.limitField
+      ? defaults?.limitField
       : (validateText(raw.limitField, "request.limitField", 64) as string);
   const staticParams = validateStaticParams(raw.staticParams);
+  const headers = validateCustomHeaders(raw.headers);
+  const bodyTemplate = validateBodyTemplate(raw.bodyTemplate);
+  const paramsTemplate: Record<string, string> | undefined = raw.paramsTemplate && typeof raw.paramsTemplate === "object"
+    ? Object.fromEntries(
+        Object.entries(raw.paramsTemplate as Record<string, unknown>)
+          .filter(([k, v]) => typeof k === "string" && typeof v === "string")
+          .map(([k, v]) => [k, v as string])
+          .slice(0, 24),
+      )
+    : undefined;
+
   return {
-    queryField: queryField as string,
+    ...(queryField ? { queryField } : {}),
     ...(limitField ? { limitField } : {}),
     ...(staticParams ? { staticParams } : {}),
+    ...(headers ? { headers } : {}),
+    ...(bodyTemplate ? { bodyTemplate } : {}),
+    ...(paramsTemplate ? { paramsTemplate } : {}),
   };
 }
 

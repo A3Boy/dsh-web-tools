@@ -51,6 +51,10 @@ export declare function validateSearchPath(value: unknown, field?: string): stri
 export declare function validateEndpoint(value: unknown): CustomEndpointConfig;
 /** Validate the auth block. */
 export declare function validateAuth(value: unknown): CustomProviderConfig["auth"];
+/** Validate custom request headers map (string keys, string values, no reserved headers). */
+export declare function validateCustomHeaders(value: unknown): Record<string, string> | undefined;
+/** Validate JSON body template (safe object, max depth 6, max keys 32, no proto pollution). */
+export declare function validateBodyTemplate(value: unknown, depth?: number): Record<string, unknown> | undefined;
 /** Validate the optional request-mapping block. */
 export declare function validateRequest(value: unknown, protocol: CustomProtocol): CustomRequestConfig | undefined;
 /** Validate `staticParams`: flat, bounded, primitives only. */

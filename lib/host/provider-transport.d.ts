@@ -164,3 +164,8 @@ export declare function isLoopbackHost(hostname: string): boolean;
  * local instance must not be tunneled to an ambient internet proxy.
  */
 export declare function isLoopbackUrl(urlStr: string): boolean;
+/**
+ * Whether a hostname is an IP literal in private/loopback space or a named local domain.
+ * Normal public domain names (e.g. example.com, api.tavily.com) return false.
+ */
+export declare function isLocalOrPrivateHost(hostname: string): boolean;

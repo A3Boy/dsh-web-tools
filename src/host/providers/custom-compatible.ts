@@ -128,6 +128,38 @@ export function basicAuthHeader(username: string, password: string): string {
   return `Basic ${Buffer.from(`${username}:${password}`, "utf8").toString("base64")}`;
 }
 
+/** Safely interpolate {{query}}, {{maxResults}}, {{apiKey}} in a string template. */
+export function interpolatePlaceholders(template: string, vars: { query: string; maxResults?: number; apiKey?: string }): string {
+  return template
+    .replace(/\{\{\s*query\s*\}\}|\{\s*query\s*\}/gi, vars.query)
+    .replace(/\{\{\s*maxResults\s*\}\}|\{\s*maxResults\s*\}/gi, String(vars.maxResults ?? 10))
+    .replace(/\{\{\s*apiKey\s*\}\}|\{\s*apiKey\s*\}/gi, vars.apiKey ?? "");
+}
+
+/** Recursively interpolate placeholders in a nested JSON structure. */
+export function interpolateJsonStructure(
+  val: unknown,
+  vars: { query: string; maxResults?: number; apiKey?: string },
+): unknown {
+  if (typeof val === "string") {
+    if (/^\{\{\s*maxResults\s*\}\}$/i.test(val.trim())) {
+      return vars.maxResults ?? 10;
+    }
+    return interpolatePlaceholders(val, vars);
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => interpolateJsonStructure(item, vars));
+  }
+  if (val !== null && typeof val === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      out[k] = interpolateJsonStructure(v, vars);
+    }
+    return out;
+  }
+  return val;
+}
+
 /** Parameters actually sent, after static + dynamic merge. */
 function mergeParams(
   config: CustomProviderConfig,
@@ -186,27 +218,36 @@ export async function buildCustomRequest(
   // If apiKey was selected by the runtime key pool, use it directly (supports multi-key rotation).
   // If omitted or empty (e.g. testing), resolve from the stored credentials ref.
   const selectedKey = apiKey && apiKey.trim().length > 0 && !apiKey.startsWith("basic:") ? apiKey.trim() : undefined;
+  const tokenForAuth = selectedKey ?? (deps.refs.key ? (await deps.credentials.read(deps.refs.key)).trim() : "");
+  const vars = { query, maxResults, apiKey: tokenForAuth };
 
+  // 1. Custom headers (supports {{apiKey}}, {{query}} placeholders)
+  if (config.request?.headers) {
+    for (const [hKey, hVal] of Object.entries(config.request.headers)) {
+      headers[hKey.toLowerCase()] = interpolatePlaceholders(hVal, vars);
+    }
+  }
+
+  // 2. Standard auth modes (applied unless explicitly defined in headers)
   switch (config.auth.mode) {
     case "none":
       break;
     case "bearer": {
-      const token = selectedKey ?? (await deps.credentials.read(deps.refs.key ?? "")).trim();
-      if (!token) throw providerError("config", `${config.name}: API key is not configured`);
-      headers.authorization = `Bearer ${token}`;
+      if (!tokenForAuth) throw providerError("config", `${config.name}: API key is not configured`);
+      if (!headers.authorization) headers.authorization = `Bearer ${tokenForAuth}`;
       break;
     }
     case "api-key-header": {
-      const token = selectedKey ?? (await deps.credentials.read(deps.refs.key ?? "")).trim();
-      if (!token) throw providerError("config", `${config.name}: API key is not configured`);
-      headers[(config.auth.headerName ?? "x-api-key").toLowerCase()] = token;
+      if (!tokenForAuth) throw providerError("config", `${config.name}: API key is not configured`);
+      const hName = (config.auth.headerName ?? "x-api-key").toLowerCase();
+      if (!headers[hName]) headers[hName] = tokenForAuth;
       break;
     }
     case "basic": {
       const username = await deps.credentials.read(deps.refs.username ?? "");
       const password = await deps.credentials.read(deps.refs.password ?? "");
       if (!username) throw providerError("config", `${config.name}: basic-auth username is not configured`);
-      headers.authorization = basicAuthHeader(username, password);
+      if (!headers.authorization) headers.authorization = basicAuthHeader(username, password);
       break;
     }
   }
@@ -216,12 +257,22 @@ export async function buildCustomRequest(
 
   if (config.endpoint.encoding === "query") {
     const url = new URL(base);
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    if (config.request?.paramsTemplate) {
+      for (const [key, value] of Object.entries(config.request.paramsTemplate)) {
+        url.searchParams.set(key, interpolatePlaceholders(value, vars));
+      }
+    } else {
+      for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    }
     return { url: url.href, method, headers };
   }
 
   if (config.endpoint.encoding === "json") {
     headers["content-type"] = "application/json";
+    if (config.request?.bodyTemplate) {
+      const interpolatedBody = interpolateJsonStructure(config.request.bodyTemplate, vars);
+      return { url: base, method, headers, body: JSON.stringify(interpolatedBody) };
+    }
     return { url: base, method, headers, body: JSON.stringify(params) };
   }
 

@@ -126,10 +126,10 @@ export const api = {
     call<{ ok: boolean }>("platform/reset", { platform }),
   sourcesDescribe: () =>
     call<{ builtIns: any[]; custom: any[] }>("sources/describe"),
-  sourceCreate: (source: CustomProviderDraft, credential?: unknown) =>
-    call<{ id: string; saved: boolean; revision: number; credentialConfigured: boolean }>("sources/create", { source, credential }),
-  sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown) =>
-    call<{ id: string; saved: boolean; revision: number }>("sources/update", { id, revision, patch, credential }),
+  sourceCreate: (source: CustomProviderDraft, credential?: unknown, confirmTarget?: boolean) =>
+    call<{ id: string; saved: boolean; revision: number; credentialConfigured: boolean }>("sources/create", { source, credential, confirmTarget }),
+  sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown, confirmTarget?: boolean) =>
+    call<{ id: string; saved: boolean; revision: number }>("sources/update", { id, revision, patch, credential, confirmTarget }),
   sourceDelete: (id: string) =>
     call<{ deleted: boolean; credentialsRemoved: string[]; credentialsPending: string[] }>("sources/delete", { id }),
   sourceTest: (payload: {
@@ -141,6 +141,7 @@ export const api = {
       username?: string;
       password?: string;
     };
+    confirmTarget?: boolean;
     query?: string;
   }) => call<CustomSourceTestView>("sources/test", payload),
   sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) =>

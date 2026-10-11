@@ -67,15 +67,25 @@ export interface OutboundAuthorization {
     /** Human note shown in diagnostics. */
     note?: string;
 }
-/** Request-side mapping (generic-json and searxng-json overrides). */
+/** Request-side mapping (generic-json and template overrides). */
 export interface CustomRequestConfig {
-    /** Field/parameter carrying the query text. */
-    queryField: string;
+    /** Field/parameter carrying the query text (used when bodyTemplate/paramsTemplate are omitted). */
+    queryField?: string;
     /** Field/parameter carrying the result limit. Omit to not send one. */
     limitField?: string;
     /** Extra static parameters merged into every request. */
     staticParams?: Record<string, string | number | boolean>;
+    /** Custom request headers supporting {{apiKey}} placeholders. */
+    headers?: Record<string, string>;
+    /** Optional nested JSON body template for POST requests supporting {{query}}, {{maxResults}}, {{apiKey}}. */
+    bodyTemplate?: Record<string, unknown>;
+    /** Optional URL query parameters template supporting {{query}}, {{maxResults}}, {{apiKey}}. */
+    paramsTemplate?: Record<string, string>;
 }
+/** Three distinct user-facing access modes for adding a custom source. */
+export type CustomAccessMode = "compatible" | "template" | "custom";
+/** Classify a protocol into its primary access mode. */
+export declare function accessModeOf(protocol: CustomProtocol): CustomAccessMode;
 /** Response-side mapping: restricted dot paths or numeric indexes. */
 export interface CustomResponseConfig {
     /** Path to the result array, e.g. `data.results`. */

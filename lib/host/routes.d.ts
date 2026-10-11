@@ -65,6 +65,7 @@ export interface RouteDeps {
             username?: string;
             password?: string;
         };
+        confirmTarget?: boolean;
         query: string;
     }) => Promise<CustomSourceTestView>;
     /** Remove every credential ref owned by a deleted source. */

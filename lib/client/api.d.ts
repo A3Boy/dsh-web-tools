@@ -74,13 +74,13 @@ export declare const api: {
         builtIns: any[];
         custom: any[];
     }>;
-    sourceCreate: (source: CustomProviderDraft, credential?: unknown) => Promise<{
+    sourceCreate: (source: CustomProviderDraft, credential?: unknown, confirmTarget?: boolean) => Promise<{
         id: string;
         saved: boolean;
         revision: number;
         credentialConfigured: boolean;
     }>;
-    sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown) => Promise<{
+    sourceUpdate: (id: string, revision: number, patch?: Partial<CustomProviderDraft>, credential?: unknown, confirmTarget?: boolean) => Promise<{
         id: string;
         saved: boolean;
         revision: number;
@@ -99,6 +99,7 @@ export declare const api: {
             username?: string;
             password?: string;
         };
+        confirmTarget?: boolean;
         query?: string;
     }) => Promise<CustomSourceTestView>;
     sourceEndpointSet: (provider: string, baseUrl: string, confirmForeign?: boolean) => Promise<{

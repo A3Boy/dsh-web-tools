@@ -1,12 +1,12 @@
 /**
  * dsh-web-tools — Custom Provider configuration fields component.
  *
- * Provides organized, declarative inputs for:
- *  - Protocol selection (Tavily, SearXNG, Generic JSON)
- *  - Endpoint & transport (Base URL, search path, method, encoding)
- *  - Authentication & credentials (None, Bearer, API Key Header, Basic)
- *  - Request parameters & mapping
- *  - Response JSON field paths
+ * Implements three clean access paths:
+ *  1. Compatible API (e.g. Tavily Compatible) — reuses native logic, no mapping needed.
+ *  2. Protocol Template (e.g. SearXNG JSON) — preconfigures request and response mappings.
+ *  3. Custom JSON API (Generic JSON) — flexible request/response mapping for arbitrary in-house APIs.
+ *
+ * All technical mapping fields are neatly folded by default for preset modes.
  *
  * @module
  */
@@ -17,11 +17,13 @@ import type { TFunc } from "./WebToolsSection.tsx";
 import { SegmentedControl } from "./ui/SegmentedControl.tsx";
 import {
   PROTOCOL_DEFAULTS,
+  accessModeOf,
   type AuthMode,
   type CustomMethod,
   type CustomEncoding,
   type CustomProtocol,
   type CustomProviderDraft,
+  type CustomAccessMode,
 } from "../shared/custom-provider-types.ts";
 import { IconChevronRightOutline14 } from "./icons.ts";
 
@@ -78,29 +80,56 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
     onBasicPasswordChange,
   } = props;
 
+  const currentMode = accessModeOf(draft.protocol);
   const [advancedOpen, setAdvancedOpen] = useState(draft.protocol === "generic-json");
 
-  const handleProtocolChange = (protocol: CustomProtocol) => {
-    const defaults = PROTOCOL_DEFAULTS[protocol];
+  const handleAccessModeChange = (mode: CustomAccessMode) => {
+    let nextProtocol: CustomProtocol = "generic-json";
+    let defaultName = draft.name;
+
+    if (mode === "compatible") {
+      nextProtocol = "tavily-compatible";
+      if (!draft.name || draft.name.startsWith("SearXNG") || draft.name.includes("自建")) {
+        defaultName = "Tavily 兼容网关";
+      }
+    } else if (mode === "template") {
+      nextProtocol = "searxng-json";
+      if (!draft.name || draft.name.includes("Tavily") || draft.name.includes("自建")) {
+        defaultName = "自建 SearXNG";
+      }
+    } else {
+      nextProtocol = "generic-json";
+      if (!draft.name) defaultName = "自建搜索服务";
+    }
+
+    const defs = PROTOCOL_DEFAULTS[nextProtocol];
+    const defaultAuthMode: AuthMode =
+      mode === "template" ? "none" : mode === "compatible" ? "bearer" : "api-key-header";
+
     onChange({
-      protocol,
+      protocol: nextProtocol,
+      name: defaultName,
       endpoint: {
-        ...draft.endpoint,
-        method: defaults.method,
-        encoding: defaults.encoding,
-        searchPath: defaults.searchPath,
+        baseUrl: draft.endpoint.baseUrl,
+        searchPath: defs.searchPath,
+        method: defs.method,
+        encoding: defs.encoding,
+      },
+      auth: {
+        mode: defaultAuthMode,
+        ...(defaultAuthMode === "api-key-header" ? { headerName: "x-api-key" } : {}),
       },
       request: {
-        queryField: defaults.queryField,
-        ...(defaults.limitField ? { limitField: defaults.limitField } : {}),
+        queryField: defs.queryField,
+        ...(defs.limitField ? { limitField: defs.limitField } : {}),
+        ...(defs.staticParams ? { staticParams: defs.staticParams } : {}),
       },
       response: {
-        ...defaults.response,
+        ...defs.response,
       },
     });
-    if (protocol === "generic-json") {
-      setAdvancedOpen(true);
-    }
+
+    setAdvancedOpen(mode === "custom");
   };
 
   const handleAuthModeChange = (mode: AuthMode) => {
@@ -112,24 +141,34 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
     });
   };
 
+  // Smart hint: suggest SearXNG template if URL matches default SearXNG patterns
+  const urlSuggestsSearxng =
+    currentMode !== "template" &&
+    (draft.endpoint.baseUrl.includes(":8080") || draft.endpoint.baseUrl.toLowerCase().includes("searx"));
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* 1. Protocol Picker */}
+      {/* 1. Access Mode Selection (Three Parallel Paths) */}
       <div>
-        <label style={labelStyle}>{t("customProtocol")}</label>
-        <SegmentedControl<CustomProtocol>
+        <label style={labelStyle}>{t("accessModeLabel")}</label>
+        <SegmentedControl<CustomAccessMode>
           style={{ width: "100%" }}
           options={[
-            { value: "tavily-compatible", label: t("protocolTavily") },
-            { value: "searxng-json", label: t("protocolSearxng") },
-            { value: "generic-json", label: t("protocolGeneric") },
+            { value: "compatible", label: t("accessModeCompatible") },
+            { value: "template", label: t("accessModeTemplate") },
+            { value: "custom", label: t("accessModeCustom") },
           ]}
-          value={draft.protocol}
-          onChange={handleProtocolChange}
+          value={currentMode}
+          onChange={handleAccessModeChange}
         />
+        <div style={{ marginTop: 6, fontSize: 12, color: text.tertiary, lineHeight: 1.4 }}>
+          {currentMode === "compatible" && t("compatibleProtocolDesc")}
+          {currentMode === "template" && t("templateProtocolDesc")}
+          {currentMode === "custom" && t("customProtocolDesc")}
+        </div>
       </div>
 
-      {/* 2. Basic Info: Name & Description */}
+      {/* 2. Basic Info: Name & Address */}
       <div style={groupStyle}>
         <div>
           <label style={labelStyle}>{t("customProviderName")}</label>
@@ -139,6 +178,46 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
             onChange={(e) => onChange({ name: e.target.value })}
             placeholder={t("customProviderNamePlaceholder")}
           />
+        </div>
+        <div>
+          <label style={labelStyle}>{t("serviceAddress")}</label>
+          <input
+            style={inputStyle}
+            value={draft.endpoint.baseUrl}
+            onChange={(e) =>
+              onChange({
+                endpoint: { ...draft.endpoint, baseUrl: e.target.value },
+              })
+            }
+            placeholder={
+              currentMode === "template"
+                ? "http://127.0.0.1:8080"
+                : currentMode === "compatible"
+                  ? "https://gateway.example.com"
+                  : "https://search.example.com 或 http://192.168.1.50:8080"
+            }
+          />
+          {urlSuggestsSearxng && (
+            <button
+              type="button"
+              onClick={() => handleAccessModeChange("template")}
+              style={{
+                marginTop: 6,
+                padding: "3px 8px",
+                borderRadius: 4,
+                border: "none",
+                background: "rgba(59, 130, 246, 0.1)",
+                color: "var(--dsw-alias-brand-primary, #3b82f6)",
+                fontSize: 11,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              💡 {t("detectedSearxngHint")}
+            </button>
+          )}
         </div>
         <div>
           <label style={labelStyle}>{t("customProviderDescription")}</label>
@@ -151,89 +230,42 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
         </div>
       </div>
 
-      {/* 3. Endpoint Configuration */}
+      {/* 3. Authentication & Key Management */}
       <div style={groupStyle}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: text.primary }}>{t("serviceAddress")}</div>
-        <div>
-          <label style={labelStyle}>{t("serviceAddress")}</label>
-          <input
-            style={inputStyle}
-            value={draft.endpoint.baseUrl}
-            onChange={(e) =>
-              onChange({
-                endpoint: { ...draft.endpoint, baseUrl: e.target.value },
-              })
-            }
-            placeholder="https://search.example.com"
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text.primary }}>{t("authMode")}</div>
+          {currentMode === "template" && draft.auth.mode === "none" && (
+            <span style={{ fontSize: 11, color: text.tertiary }}>
+              {t("searxngDefaultHint") || "默认无需密钥"}
+            </span>
+          )}
+        </div>
+
+        {/* Auth mode selector: full for custom mode, compact for presets */}
+        {currentMode === "custom" ? (
+          <SegmentedControl<AuthMode>
+            style={{ width: "100%" }}
+            options={[
+              { value: "api-key-header", label: t("authModeApiKeyHeader") },
+              { value: "bearer", label: t("authModeBearer") },
+              { value: "basic", label: t("authModeBasic") },
+              { value: "none", label: t("authModeNone") },
+            ]}
+            value={draft.auth.mode}
+            onChange={handleAuthModeChange}
           />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <label style={labelStyle}>{t("searchPath")}</label>
-            <input
-              style={inputStyle}
-              value={draft.endpoint.searchPath}
-              onChange={(e) =>
-                onChange({
-                  endpoint: { ...draft.endpoint, searchPath: e.target.value },
-                })
-              }
-              placeholder="/search"
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>{t("httpMethod")}</label>
-            <select
-              style={{ ...inputStyle, cursor: "pointer" }}
-              value={draft.endpoint.method}
-              onChange={(e) =>
-                onChange({
-                  endpoint: { ...draft.endpoint, method: e.target.value as CustomMethod },
-                })
-              }
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-            </select>
-          </div>
-        </div>
-
-        {draft.endpoint.method === "POST" && (
-          <div>
-            <label style={labelStyle}>{t("encoding")}</label>
-            <SegmentedControl<CustomEncoding>
-              style={{ width: "100%" }}
-              options={[
-                { value: "json", label: t("encodingJson") },
-                { value: "form", label: t("encodingForm") },
-                { value: "query", label: t("encodingQuery") },
-              ]}
-              value={draft.endpoint.encoding}
-              onChange={(encoding) =>
-                onChange({
-                  endpoint: { ...draft.endpoint, encoding },
-                })
-              }
-            />
-          </div>
-        )}
-      </div>
-
-      {/* 4. Authentication */}
-      <div style={groupStyle}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: text.primary }}>{t("authMode")}</div>
-        <SegmentedControl<AuthMode>
-          style={{ width: "100%" }}
-          options={[
-            { value: "bearer", label: t("authModeBearer") },
-            { value: "api-key-header", label: t("authModeApiKeyHeader") },
-            { value: "basic", label: t("authModeBasic") },
-            { value: "none", label: t("authModeNone") },
-          ]}
-          value={draft.auth.mode}
-          onChange={handleAuthModeChange}
-        />
+        ) : currentMode === "template" ? (
+          <SegmentedControl<AuthMode>
+            style={{ width: "100%" }}
+            options={[
+              { value: "none", label: t("authModeNone") },
+              { value: "basic", label: t("authModeBasic") },
+              { value: "bearer", label: t("authModeBearer") },
+            ]}
+            value={draft.auth.mode}
+            onChange={handleAuthModeChange}
+          />
+        ) : null}
 
         {draft.auth.mode === "api-key-header" && (
           <div>
@@ -294,7 +326,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
         ) : null}
       </div>
 
-      {/* 5. Request & Response Mapping (Foldable / Generic JSON) */}
+      {/* 4. Advanced Interface & Mapping (Folded by default for presets, open for custom) */}
       <div style={{ border: `1px solid ${surface.border}`, borderRadius: 8, overflow: "hidden" }}>
         <button
           type="button"
@@ -314,7 +346,12 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
             fontFamily: "inherit",
           }}
         >
-          <span>{t("responseMappingSettings")}</span>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+            <span>{t("advancedMappingFold")}</span>
+            <span style={{ fontSize: 11, color: text.tertiary, fontWeight: 400 }}>
+              {currentMode === "custom" ? t("requestSettings") : t("advancedMappingFoldDesc")}
+            </span>
+          </div>
           <span
             style={{
               transform: advancedOpen ? "rotate(90deg)" : "none",
@@ -328,140 +365,164 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
         </button>
 
         {advancedOpen && (
-          <div style={{ padding: "12px 14px", background: surface.layer2, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={labelStyle}>{t("queryField")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.request?.queryField ?? "q"}
-                  onChange={(e) =>
-                    onChange({
-                      request: { ...draft.request, queryField: e.target.value },
-                    })
-                  }
-                  placeholder="q"
-                />
+          <div style={{ padding: "12px 14px", background: surface.layer2, display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Request Settings */}
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: text.secondary, marginBottom: 8 }}>
+                {t("requestSettings")}
               </div>
-              <div>
-                <label style={labelStyle}>{t("limitField")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.request?.limitField ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      request: { ...draft.request, limitField: e.target.value || undefined, queryField: draft.request?.queryField ?? "q" },
-                    })
-                  }
-                  placeholder="limit"
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>{t("searchPath")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.endpoint.searchPath}
+                    onChange={(e) =>
+                      onChange({
+                        endpoint: { ...draft.endpoint, searchPath: e.target.value },
+                      })
+                    }
+                    placeholder="/search"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t("httpMethod")}</label>
+                  <select
+                    style={{ ...inputStyle, cursor: "pointer" }}
+                    value={draft.endpoint.method}
+                    onChange={(e) =>
+                      onChange({
+                        endpoint: { ...draft.endpoint, method: e.target.value as CustomMethod },
+                      })
+                    }
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                  </select>
+                </div>
+              </div>
+
+              {draft.endpoint.method === "POST" && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={labelStyle}>{t("encoding")}</label>
+                  <SegmentedControl<CustomEncoding>
+                    style={{ width: "100%" }}
+                    options={[
+                      { value: "json", label: t("encodingJson") },
+                      { value: "form", label: t("encodingForm") },
+                      { value: "query", label: t("encodingQuery") },
+                    ]}
+                    value={draft.endpoint.encoding}
+                    onChange={(encoding) =>
+                      onChange({
+                        endpoint: { ...draft.endpoint, encoding },
+                      })
+                    }
+                  />
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
+                <div>
+                  <label style={labelStyle}>{t("queryField")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.request?.queryField ?? "q"}
+                    onChange={(e) =>
+                      onChange({
+                        request: { ...draft.request, queryField: e.target.value },
+                      })
+                    }
+                    placeholder="q"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t("limitField")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.request?.limitField ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        request: { ...draft.request, limitField: e.target.value || undefined, queryField: draft.request?.queryField ?? "q" },
+                      })
+                    }
+                    placeholder="limit"
+                  />
+                </div>
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={labelStyle}>{t("itemsPath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.itemsPath ?? "results"}
-                  onChange={(e) =>
-                    onChange({
-                      response: { ...draft.response, itemsPath: e.target.value, urlPath: draft.response?.urlPath ?? "url" },
-                    })
-                  }
-                  placeholder="results"
-                />
+            {/* Response Mapping */}
+            <div style={{ paddingTop: 8, borderTop: `1px solid ${surface.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: text.secondary, marginBottom: 8 }}>
+                {t("responseMappingSettings")}
               </div>
-              <div>
-                <label style={labelStyle}>{t("urlPath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.urlPath ?? "url"}
-                  onChange={(e) =>
-                    onChange({
-                      response: { ...draft.response, urlPath: e.target.value, itemsPath: draft.response?.itemsPath ?? "results" },
-                    })
-                  }
-                  placeholder="url"
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={labelStyle}>{t("itemsPath")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.response?.itemsPath ?? "results"}
+                    onChange={(e) =>
+                      onChange({
+                        response: { ...draft.response, itemsPath: e.target.value, urlPath: draft.response?.urlPath ?? "url" },
+                      })
+                    }
+                    placeholder="results"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t("urlPath")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.response?.urlPath ?? "url"}
+                    onChange={(e) =>
+                      onChange({
+                        response: { ...draft.response, urlPath: e.target.value, itemsPath: draft.response?.itemsPath ?? "results" },
+                      })
+                    }
+                    placeholder="url"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={labelStyle}>{t("titlePath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.titlePath ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      response: {
-                        ...draft.response,
-                        titlePath: e.target.value || undefined,
-                        itemsPath: draft.response?.itemsPath ?? "results",
-                        urlPath: draft.response?.urlPath ?? "url",
-                      },
-                    })
-                  }
-                  placeholder="title"
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t("snippetPath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.snippetPath ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      response: {
-                        ...draft.response,
-                        snippetPath: e.target.value || undefined,
-                        itemsPath: draft.response?.itemsPath ?? "results",
-                        urlPath: draft.response?.urlPath ?? "url",
-                      },
-                    })
-                  }
-                  placeholder="snippet"
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <label style={labelStyle}>{t("publishedAtPath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.publishedAtPath ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      response: {
-                        ...draft.response,
-                        publishedAtPath: e.target.value || undefined,
-                        itemsPath: draft.response?.itemsPath ?? "results",
-                        urlPath: draft.response?.urlPath ?? "url",
-                      },
-                    })
-                  }
-                  placeholder="publishedDate"
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t("answerPath")}</label>
-                <input
-                  style={inputStyle}
-                  value={draft.response?.answerPath ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      response: {
-                        ...draft.response,
-                        answerPath: e.target.value || undefined,
-                        itemsPath: draft.response?.itemsPath ?? "results",
-                        urlPath: draft.response?.urlPath ?? "url",
-                      },
-                    })
-                  }
-                  placeholder="answer"
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
+                <div>
+                  <label style={labelStyle}>{t("titlePath")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.response?.titlePath ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        response: {
+                          ...draft.response,
+                          titlePath: e.target.value || undefined,
+                          itemsPath: draft.response?.itemsPath ?? "results",
+                          urlPath: draft.response?.urlPath ?? "url",
+                        },
+                      })
+                    }
+                    placeholder="title"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>{t("snippetPath")}</label>
+                  <input
+                    style={inputStyle}
+                    value={draft.response?.snippetPath ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        response: {
+                          ...draft.response,
+                          snippetPath: e.target.value || undefined,
+                          itemsPath: draft.response?.itemsPath ?? "results",
+                          urlPath: draft.response?.urlPath ?? "url",
+                        },
+                      })
+                    }
+                    placeholder="content 或 snippet"
+                  />
+                </div>
               </div>
             </div>
           </div>

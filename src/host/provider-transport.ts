@@ -247,6 +247,16 @@ const defaultLookupAll: LookupAllFn = (hostname) =>
  * @throws {TransportError} `destination-blocked` when it may not.
  */
 export function assertAddressAllowed(address: string, allowPrivate: boolean): void {
+  // Cloud metadata (169.254.169.254 or 169.254.0.0/16, fe80::/10) is UNCONDITIONALLY
+  // blocked. Even with explicit allowPrivate authorization, no search provider
+  // is ever permitted to reach cloud instance metadata or link-local endpoints.
+  const lower = address.toLowerCase();
+  if (lower.startsWith("169.254.") || lower.startsWith("fe80:") || lower.startsWith("::ffff:169.254.")) {
+    throw new TransportError(
+      "destination-blocked",
+      `Access to cloud metadata or link-local address ${address} is strictly forbidden`,
+    );
+  }
   if (allowPrivate) return;
   if (isPrivateOrRestrictedIp(address)) {
     throw new TransportError(
@@ -764,4 +774,25 @@ export function isLoopbackUrl(urlStr: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a hostname is an IP literal in private/loopback space or a named local domain.
+ * Normal public domain names (e.g. example.com, api.tavily.com) return false.
+ */
+export function isLocalOrPrivateHost(hostname: string): boolean {
+  const clean = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (isLoopbackHost(clean)) return true;
+  const ipVer = isIP(clean);
+  if (ipVer !== 0) {
+    return isPrivateOrRestrictedIp(clean);
+  }
+  return (
+    clean === "localhost" ||
+    clean.endsWith(".localhost") ||
+    clean.endsWith(".local") ||
+    clean.endsWith(".internal") ||
+    clean.endsWith(".lan") ||
+    clean.endsWith(".localdomain")
+  );
 }

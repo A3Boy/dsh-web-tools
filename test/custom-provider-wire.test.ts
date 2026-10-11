@@ -217,6 +217,63 @@ test("Wire: Generic JSON protocol maps nested response paths and handles limit",
   assert.equal(mapped.sources[0].snippet, "Summary of doc one");
 });
 
+test("Wire: Generic JSON supports nested body template and custom headers with placeholders", async () => {
+  const config: CustomProviderConfig = {
+    schemaVersion: 1,
+    id: "custom_passthrough01",
+    name: "Pass-through API",
+    enabled: true,
+    protocol: "generic-json",
+    endpoint: {
+      baseUrl: "https://search.example.com/api",
+      searchPath: "/query",
+      method: "POST",
+      encoding: "json",
+    },
+    auth: { mode: "none" },
+    request: {
+      headers: {
+        "X-API-Key": "{{apiKey}}",
+        "X-Custom-Tenant": "research",
+      },
+      bodyTemplate: {
+        search: "{{query}}",
+        count: "{{maxResults}}",
+        options: {
+          mode: "web",
+        },
+      },
+    },
+    response: {
+      itemsPath: "data.hits",
+      urlPath: "link",
+      titlePath: "name",
+      snippetPath: "description",
+    },
+    revision: 1,
+  };
+
+  const creds = { read: async () => "token-xyz-789" };
+  const built = await buildCustomRequest(
+    config,
+    { credentials: creds, refs: { key: "REF_K" } },
+    "quantum teleportation",
+    8,
+    "token-xyz-789",
+  );
+
+  assert.equal(built.url, "https://search.example.com/api/query");
+  assert.equal(built.method, "POST");
+  assert.equal(built.headers["x-api-key"], "token-xyz-789");
+  assert.equal(built.headers["x-custom-tenant"], "research");
+  assert.equal(built.headers["content-type"], "application/json");
+
+  const parsedBody = JSON.parse(built.body!);
+  assert.equal(parsedBody.search, "quantum teleportation");
+  assert.equal(parsedBody.count, 8);
+  assert.deepEqual(parsedBody.options, { mode: "web" });
+});
+
 test("Wire: response mapping rejects missing or invalid containers", () => {
   const config: CustomProviderConfig = {
     schemaVersion: 1,

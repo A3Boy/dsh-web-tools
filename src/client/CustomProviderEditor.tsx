@@ -62,7 +62,7 @@ function initialDraftFor(p?: ProviderView): CustomProviderDraft {
   const defaultProtocol: CustomProtocol = "tavily-compatible";
   const def = PROTOCOL_DEFAULTS[defaultProtocol];
   return {
-    name: "",
+    name: "Tavily 兼容网关",
     description: "",
     enabled: true,
     protocol: defaultProtocol,
@@ -141,7 +141,12 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
         query: testQuery || "OpenAI",
       };
 
-      const res = await api.sourceTest(payload);
+      let res = await api.sourceTest(payload);
+      if (!res.ok && res.error?.code === "conflict") {
+        if (window.confirm(res.error.message || t("confirmLocalOrHttpTarget", { target: draft.endpoint.baseUrl }))) {
+          res = await api.sourceTest({ ...payload, confirmTarget: true });
+        }
+      }
       setTestResult(res);
       if (!res.ok && res.error) {
         setError(res.error.message);
@@ -184,19 +189,42 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
         }
       }
 
-      if (isEditing) {
-        const res = await api.sourceUpdate(
-          provider.name,
-          provider.revision ?? 1,
-          draft,
-          credentialPayload,
-        );
-        await onSaved(res.id, false);
-      } else {
-        const res = await api.sourceCreate(draft, credentialPayload);
-        await onSaved(res.id, addToOrder);
+      try {
+        if (isEditing) {
+          const res = await api.sourceUpdate(
+            provider.name,
+            provider.revision ?? 1,
+            draft,
+            credentialPayload,
+          );
+          await onSaved(res.id, false);
+        } else {
+          const res = await api.sourceCreate(draft, credentialPayload);
+          await onSaved(res.id, addToOrder);
+        }
+        onClose();
+      } catch (saveErr: any) {
+        if (saveErr?.code === "conflict" && saveErr?.message?.includes("是否允许")) {
+          if (window.confirm(saveErr.message)) {
+            if (isEditing) {
+              const res = await api.sourceUpdate(
+                provider.name,
+                provider.revision ?? 1,
+                draft,
+                credentialPayload,
+                true,
+              );
+              await onSaved(res.id, false);
+            } else {
+              const res = await api.sourceCreate(draft, credentialPayload, true);
+              await onSaved(res.id, addToOrder);
+            }
+            onClose();
+            return;
+          }
+        }
+        throw saveErr;
       }
-      onClose();
     } catch (err: any) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -319,6 +347,19 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
                     : t("testDraftFailed", { msg: testResult.error?.message ?? "Error" })}
                 </span>
               </div>
+              {!testResult.ok && testResult.error && (
+                <div style={{ marginTop: 4, color: text.secondary, fontSize: 11, lineHeight: 1.4 }}>
+                  {testResult.error.code === "network" || testResult.error.code === "timeout" ? (
+                    <div>💡 {t("errorActionHintConnect")}</div>
+                  ) : testResult.error.code === "auth" ? (
+                    <div>💡 {t("errorActionHintAuth")}</div>
+                  ) : testResult.error.code === "invalid-response" ? (
+                    <div>💡 {t("errorActionHintProtocol")}</div>
+                  ) : testResult.error.code === "mapping-error" ? (
+                    <div>💡 {t("errorActionHintMapping")}</div>
+                  ) : null}
+                </div>
+              )}
               {testResult.ok && testResult.results && testResult.results.length > 0 && (
                 <div style={{ marginTop: 4, color: text.secondary, display: "flex", flexDirection: "column", gap: 2 }}>
                   {testResult.results.map((r, idx) => (

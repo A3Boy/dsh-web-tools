@@ -34,8 +34,7 @@ import {
   type CustomSourceTestView,
 } from "../shared/custom-provider-types.ts";
 import { sanitizeBaseUrlOverrides } from "./config.ts";
-import { isPrivateOrRestrictedIp } from "./fetch-security.ts";
-import type { OutboundAuthorization } from "./provider-transport.ts";
+import { isLocalOrPrivateHost, type OutboundAuthorization } from "./provider-transport.ts";
 
 import type { BrowserPlatform } from "./browser/types.ts";
 import type { SpecializedSourceRegistry } from "./sources/registry.ts";
@@ -168,6 +167,7 @@ export interface RouteDeps {
       username?: string;
       password?: string;
     };
+    confirmTarget?: boolean;
     query: string;
   }) => Promise<CustomSourceTestView>;
   /** Remove every credential ref owned by a deleted source. */
@@ -746,7 +746,7 @@ async function handleSourcesDescribe(deps: RouteDeps) {
 
 /** `sources/create` */
 async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
-  const p = (payload ?? {}) as { source?: unknown; credential?: unknown };
+  const p = (payload ?? {}) as { source?: unknown; credential?: unknown; confirmTarget?: unknown };
   const list = readCustomProviders(deps);
   if (list.length >= MAX_CUSTOM_PROVIDERS) {
     throw new RouteError("config", `At most ${MAX_CUSTOM_PROVIDERS} custom sources are allowed`, 409);
@@ -765,23 +765,37 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
   const endpointPort = endpointUrl.port
     ? Number(endpointUrl.port)
     : (endpointUrl.protocol === "https:" ? 443 : 80);
-  const isPrivateOrLoopback = isPrivateOrRestrictedIp(endpointUrl.hostname) || isLoopbackHost(endpointUrl.hostname);
+  const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
   const isHttp = endpointUrl.protocol === "http:";
 
+  const isAlreadyAuthorized = currentAuths.some(
+    (a) =>
+      (a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() ||
+        (a.host.startsWith(".") && endpointUrl.hostname.toLowerCase().endsWith(a.host.toLowerCase()))) &&
+      (a.port === undefined || a.port === endpointPort) &&
+      (!isPrivateOrLoopback || a.allowPrivate) &&
+      (!isHttp || a.allowHttp),
+  );
+
   let updatedAuths = currentAuths;
-  if (isPrivateOrLoopback || isHttp) {
-    if (!currentAuths.some((a) => a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() && (a.port === undefined || a.port === endpointPort))) {
-      updatedAuths = [
-        ...currentAuths,
-        {
-          host: endpointUrl.hostname,
-          port: endpointPort,
-          allowPrivate: isPrivateOrLoopback,
-          allowHttp: isHttp,
-          note: `Auto-authorized for custom source: ${config.name}`,
-        },
-      ];
+  if ((isPrivateOrLoopback || isHttp) && !isAlreadyAuthorized) {
+    if (p.confirmTarget !== true) {
+      throw new RouteError(
+        "conflict",
+        `此搜索服务位于本地网络或使用未加密 HTTP 连接。是否允许访问 ${endpointUrl.hostname}:${endpointPort}？若配置了 API Key，对应凭证将发送给该服务。`,
+        409,
+      );
     }
+    updatedAuths = [
+      ...currentAuths,
+      {
+        host: endpointUrl.hostname,
+        port: endpointPort,
+        allowPrivate: isPrivateOrLoopback,
+        allowHttp: isHttp,
+        note: `Operator-confirmed: ${config.name}`,
+      },
+    ];
   }
 
   await deps.writeConfig({ customProviders: [...list, config], outboundAuthorizations: updatedAuths });
@@ -890,7 +904,43 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
   const next: CustomProviderConfig = { schemaVersion: 1, id: config.id, revision: config.revision + 1, ...draft };
 
   const nextList = list.map((entry) => (entry.id === config.id ? next : entry));
-  await deps.writeConfig({ customProviders: nextList });
+
+  const cfg = deps.readConfig();
+  let updatedAuths = Array.isArray(cfg.outboundAuthorizations) ? [...(cfg.outboundAuthorizations as OutboundAuthorization[])] : [];
+  if (next.endpoint.baseUrl !== config.endpoint.baseUrl) {
+    const endpointUrl = new URL(next.endpoint.baseUrl);
+    const endpointPort = endpointUrl.port
+      ? Number(endpointUrl.port)
+      : (endpointUrl.protocol === "https:" ? 443 : 80);
+    const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
+    const isHttp = endpointUrl.protocol === "http:";
+    const isAlreadyAuthorized = updatedAuths.some(
+      (a) =>
+        (a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() ||
+          (a.host.startsWith(".") && endpointUrl.hostname.toLowerCase().endsWith(a.host.toLowerCase()))) &&
+        (a.port === undefined || a.port === endpointPort) &&
+        (!isPrivateOrLoopback || a.allowPrivate) &&
+        (!isHttp || a.allowHttp),
+    );
+    if ((isPrivateOrLoopback || isHttp) && !isAlreadyAuthorized) {
+      if ((p as any).confirmTarget !== true) {
+        throw new RouteError(
+          "conflict",
+          `此搜索服务位于本地网络或使用未加密 HTTP 连接。是否允许访问 ${endpointUrl.hostname}:${endpointPort}？若配置了 API Key，对应凭证将发送给该服务。`,
+          409,
+        );
+      }
+      updatedAuths.push({
+        host: endpointUrl.hostname,
+        port: endpointPort,
+        allowPrivate: isPrivateOrLoopback,
+        allowHttp: isHttp,
+        note: `Operator-confirmed: ${next.name}`,
+      });
+    }
+  }
+
+  await deps.writeConfig({ customProviders: nextList, outboundAuthorizations: updatedAuths });
 
   // A changed endpoint invalidates health/cooldown recorded against the OLD
   // destination, and a changed auth mode changes which credential refs exist.
@@ -908,7 +958,7 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
     } catch (credErr) {
       // Compensation: rollback config update if credential write fails,
       // preventing half-updated configuration from lingering.
-      await deps.writeConfig({ customProviders: list }).catch(() => {});
+      await deps.writeConfig({ customProviders: list, outboundAuthorizations: cfg.outboundAuthorizations as OutboundAuthorization[] }).catch(() => {});
       throw credErr;
     }
   }
@@ -999,6 +1049,7 @@ async function handleSourceTest(deps: RouteDeps, payload: unknown) {
     draft: p.draft,
     sourceId: validatedSourceId,
     credential: p.credential,
+    confirmTarget: (p as any).confirmTarget === true,
     query,
   });
 }

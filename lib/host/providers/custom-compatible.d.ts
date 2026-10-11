@@ -40,6 +40,18 @@ export interface BuiltRequest {
 }
 /** Basic-auth header value (password may contain `:`, `,`, `;` — no splitting). */
 export declare function basicAuthHeader(username: string, password: string): string;
+/** Safely interpolate {{query}}, {{maxResults}}, {{apiKey}} in a string template. */
+export declare function interpolatePlaceholders(template: string, vars: {
+    query: string;
+    maxResults?: number;
+    apiKey?: string;
+}): string;
+/** Recursively interpolate placeholders in a nested JSON structure. */
+export declare function interpolateJsonStructure(val: unknown, vars: {
+    query: string;
+    maxResults?: number;
+    apiKey?: string;
+}): unknown;
 /**
  * Build the outbound request for one custom source.
  *

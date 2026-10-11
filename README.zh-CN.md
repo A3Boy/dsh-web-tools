@@ -135,7 +135,7 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 除了内置的 8 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
 
 * **内置源地址覆盖与恢复**：
-  * 全部 8 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、SearXNG）均支持自定义服务地址（例如公司内部 API 网关、代理镜像）。
+  * 全部 8 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
   * 保持完整的路径前缀（如 `/v2`），并在跨域名变更时进行凭证保护提示，支持随时一键恢复官方默认地址。
 * **自定义搜索源管理**：
   * 在 `Settings` → `Web Search` 中支持快速添加、编辑与删除自定义搜索源。

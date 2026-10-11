@@ -106,27 +106,41 @@ test("Security: truncateUnicodeSafe never creates lone surrogates", () => {
 });
 
 test("Security: assertAddressAllowed blocks loopback, private, and metadata IPs", () => {
-  const blockedIps = [
+  const normalPrivateIps = [
     "127.0.0.1",
     "10.0.0.1",
     "172.16.0.5",
     "192.168.1.1",
-    "169.254.169.254", // Cloud metadata
     "::1",
     "::ffff:127.0.0.1",
-    "fe80::1",
     "fc00::1",
   ];
+  const metadataAndLinkLocalIps = [
+    "169.254.169.254", // Cloud metadata
+    "fe80::1",         // Link-local
+  ];
 
-  for (const ip of blockedIps) {
+  for (const ip of [...normalPrivateIps, ...metadataAndLinkLocalIps]) {
     assert.throws(() => assertAddressAllowed(ip, false), (err: unknown) => {
       assert(err instanceof TransportError);
       assert.equal(err.code, "destination-blocked");
       return true;
     }, `Expected ${ip} to be blocked`);
+  }
 
-    // Allowed when explicit allowPrivate is granted
+  // Normal private IPs are allowed when explicit allowPrivate is granted
+  for (const ip of normalPrivateIps) {
     assert.doesNotThrow(() => assertAddressAllowed(ip, true));
+  }
+
+  // Cloud metadata & link-local are STRICTLY FORBIDDEN even when allowPrivate is granted
+  for (const ip of metadataAndLinkLocalIps) {
+    assert.throws(() => assertAddressAllowed(ip, true), (err: unknown) => {
+      assert(err instanceof TransportError);
+      assert.equal(err.code, "destination-blocked");
+      assert(err.message.includes("strictly forbidden"));
+      return true;
+    }, `Expected cloud metadata/link-local ${ip} to be strictly forbidden even with allowPrivate=true`);
   }
 
   // Public IP is allowed without allowPrivate

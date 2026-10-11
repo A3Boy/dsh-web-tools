@@ -135,7 +135,7 @@ Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects
 In addition to the 8 built-in search adapters and social platforms, dsh-web-tools natively supports **Custom Search Providers** and **Built-in Service Address Overrides**:
 
 * **Built-in Base URL Overrides**:
-  * All 8 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, SearXNG) support custom service addresses (e.g. corporate API gateways, reverse proxies).
+  * All 8 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, SearXNG) support custom service addresses (e.g. self-hosted API gateways, reverse proxies).
   * Preserves path prefixes (such as `/v2`), prompts for confirmation on foreign destinations to protect API keys, and supports instant restoration to official defaults.
 * **Custom Search Provider Management**:
   * Add, edit, and delete custom providers directly in `Settings` → `Web Search`.
