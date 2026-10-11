@@ -47,7 +47,7 @@ test("Integration: real HTTP server test for custom provider with Undici pinned 
       enabled: true,
       protocol: "tavily-compatible",
       endpoint: {
-        baseUrl: `http://localhost:${port}`,
+        baseUrl: `http://127.0.0.1:${port}`,
         searchPath: "/search",
         method: "POST",
         encoding: "json",
@@ -57,7 +57,7 @@ test("Integration: real HTTP server test for custom provider with Undici pinned 
     };
 
     const policy = {
-      authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+      authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
       allowPublicHttp: true,
     };
 
@@ -104,8 +104,8 @@ test("Integration: real HTTP server test for built-in provider address override"
   try {
     // Built-in hosted providers now run the strict provider gate: an override
     // to a loopback gateway requires an explicit authorization.
-    setGlobalOutboundAuthorizations([{ host: "localhost", port, allowPrivate: true, allowHttp: true }]);
-    const gatewayBaseUrl = `http://localhost:${port}/v1/proxy`;
+    setGlobalOutboundAuthorizations([{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }]);
+    const gatewayBaseUrl = `http://127.0.0.1:${port}/v1/proxy`;
     const outcome = await TavilyProvider.search(
       "testing override",
       5,
@@ -141,7 +141,7 @@ test("Integration: 302 redirect on authenticated request is blocked to prevent c
       enabled: true,
       protocol: "tavily-compatible",
       endpoint: {
-        baseUrl: `http://localhost:${port}`,
+        baseUrl: `http://127.0.0.1:${port}`,
         searchPath: "/search",
         method: "POST",
         encoding: "json",
@@ -151,7 +151,7 @@ test("Integration: 302 redirect on authenticated request is blocked to prevent c
     };
 
     const policy = {
-      authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+      authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
       allowPublicHttp: true,
     };
 
@@ -199,7 +199,7 @@ test("Integration: Basic Auth custom source transmits base64 over real HTTP sock
       enabled: true,
       protocol: "searxng-json",
       endpoint: {
-        baseUrl: `http://localhost:${port}`,
+        baseUrl: `http://127.0.0.1:${port}`,
         searchPath: "/search",
         method: "GET",
         encoding: "query",
@@ -218,7 +218,7 @@ test("Integration: Basic Auth custom source transmits base64 over real HTTP sock
       credentials: { read: async (ref) => creds.get(ref) ?? "" },
       refs: { username: "U_REF", password: "P_REF" },
       policy: {
-        authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+        authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
         allowPublicHttp: true,
       },
       trust: "authorized",
@@ -256,7 +256,7 @@ test("Integration: multi-key pool sends individually selected Key, not full comm
       enabled: true,
       protocol: "tavily-compatible",
       endpoint: {
-        baseUrl: `http://localhost:${port}`,
+        baseUrl: `http://127.0.0.1:${port}`,
         searchPath: "/search",
         method: "POST",
         encoding: "json",
@@ -271,7 +271,7 @@ test("Integration: multi-key pool sends individually selected Key, not full comm
       credentials: { read: async () => "key_alpha,key_beta,key_gamma" },
       refs: { key: "KEY_REF" },
       policy: {
-        authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+        authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
         allowPublicHttp: true,
       },
       trust: "authorized",
@@ -309,7 +309,7 @@ test("Integration: SearXNG JSON protocol automatically appends format=json to re
       enabled: true,
       protocol: "searxng-json",
       endpoint: {
-        baseUrl: `http://localhost:${port}`,
+        baseUrl: `http://127.0.0.1:${port}`,
         searchPath: "/search",
         method: "GET",
         encoding: "query",
@@ -323,14 +323,14 @@ test("Integration: SearXNG JSON protocol automatically appends format=json to re
       credentials: { read: async () => "" },
       refs: {},
       policy: {
-        authorizations: [{ host: "localhost", port, allowPrivate: true, allowHttp: true }],
+        authorizations: [{ host: "127.0.0.1", port, allowPrivate: true, allowHttp: true }],
         allowPublicHttp: true,
       },
       trust: "authorized",
     });
 
     await adapter.search("hello world", 5, "", undefined);
-    const parsed = new URL(`http://localhost:${port}${requestedUrl}`);
+    const parsed = new URL(`http://127.0.0.1:${port}${requestedUrl}`);
     assert.equal(parsed.searchParams.get("format"), "json", "SearXNG request must include format=json");
     assert.equal(parsed.searchParams.get("q"), "hello world");
   } finally {
