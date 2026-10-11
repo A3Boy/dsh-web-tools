@@ -90,6 +90,12 @@ export interface OutboundAuthorization {
   allowHttp?: boolean;
   /** Allow private/loopback/link-local resolved addresses. */
   allowPrivate?: boolean;
+  /**
+   * Allow proxied egress for this target. Through a proxy the final DNS and
+   * connection happen at the proxy, so a local preflight cannot substantiate
+   * the destination — proxied access therefore REQUIRES this explicit grant.
+   */
+  allowProxy?: boolean;
   /** Human note shown in diagnostics. */
   note?: string;
 }

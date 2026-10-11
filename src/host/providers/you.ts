@@ -105,7 +105,7 @@ export const YouProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
       body: JSON.stringify(body),
       signal,
-    });
+    }, { provider: true });
     if (!res.ok) throwYouError(res);
     const raw = await res.json();
     // POST /v1/search → { results: { web: [...], news: [...] } }
@@ -162,7 +162,7 @@ export const YouProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", ...youAuthHeader(apiKey) },
       body: JSON.stringify(body),
       signal,
-    });
+    }, { provider: true });
     if (!res.ok) throwYouError(res);
     const data = await res.json();
     // /contents returns an array of result objects: [{ url, title, markdown }]
@@ -183,7 +183,7 @@ export async function pollYouQuota(apiKey: string): Promise<QuotaSnapshot> {
   const res = await fetchWithProxy(YOU_BALANCE_URL, {
     method: "GET",
     headers: youAuthHeader(apiKey),
-  });
+  }, { provider: true });
   if (!res.ok) {
     return {
       supported: true,

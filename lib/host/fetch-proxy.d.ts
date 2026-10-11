@@ -1,3 +1,14 @@
+/** Optional per-call behavior for fetchWithProxy. */
+export interface FetchWithProxyOptions {
+    /**
+     * Strict provider-API mode. Passed by the hosted built-in adapters so ANY
+     * operator override runs the outbound policy: exact-endpoint trust, DNS
+     * preflight, socket pinning, plaintext-http authorization, and fail-closed
+     * proxying. Self-hosted providers (SearXNG) deliberately keep the
+     * operator-trusted legacy path — their configured URL IS the instance.
+     */
+    provider?: boolean;
+}
 /**
  * Proxy support status for the settings card:
  *  - configured: a proxy is present (env var or Windows system proxy)
@@ -31,7 +42,15 @@ export declare function shouldBypassProxy(url: string | URL): boolean;
  * Fetch a URL, honoring proxies (env vars, then Windows system proxy) unless
  * `NO_PROXY` matches.
  *
- * For non-official endpoints (operator overrides), applies outbound SSRF
- * validation, DNS preflight, and prevents credential leakage across redirects.
+ * Two modes:
+ *  - legacy/page mode (default): unchanged proxy behavior. Used by web_fetch
+ *    (generic-fetch preflights upstream) and the release checker.
+ *  - `options.provider` mode: strict outbound policy for hosted built-in
+ *    providers. ANY operator override runs the full gate — exact-endpoint
+ *    trust, DNS preflight + socket pinning, plaintext-http authorization, and
+ *    fail-closed proxying (a proxy's own DNS cannot be substantiated locally).
+ *    The pinned dispatcher is kept alive until the response BODY has been
+ *    consumed (adapters read it after fetch() resolves on the headers), so
+ *    undici's destroy() can never terminate a mid-read body.
  */
-export declare function fetchWithProxy(url: string | URL, init?: RequestInit): Promise<Response>;
+export declare function fetchWithProxy(url: string | URL, init?: RequestInit, options?: FetchWithProxyOptions): Promise<Response>;

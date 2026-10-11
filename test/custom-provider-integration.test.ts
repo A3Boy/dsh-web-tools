@@ -14,7 +14,7 @@ import http from "node:http";
 import { TavilyProvider } from "../src/host/providers/tavily.ts";
 import { ExaProvider } from "../src/host/providers/exa.ts";
 import { createCustomAdapter } from "../src/host/providers/custom-compatible.ts";
-import { transact } from "../src/host/provider-transport.ts";
+import { setGlobalOutboundAuthorizations, transact } from "../src/host/provider-transport.ts";
 import type { CustomProviderConfig } from "../src/shared/custom-provider-types.ts";
 
 test("Integration: real HTTP server test for custom provider with Undici pinned connector", async () => {
@@ -102,6 +102,9 @@ test("Integration: real HTTP server test for built-in provider address override"
   const port = (server.address() as any).port;
 
   try {
+    // Built-in hosted providers now run the strict provider gate: an override
+    // to a loopback gateway requires an explicit authorization.
+    setGlobalOutboundAuthorizations([{ host: "localhost", port, allowPrivate: true, allowHttp: true }]);
     const gatewayBaseUrl = `http://localhost:${port}/v1/proxy`;
     const outcome = await TavilyProvider.search(
       "testing override",
@@ -115,6 +118,7 @@ test("Integration: real HTTP server test for built-in provider address override"
     assert.equal(outcome.sources.length, 1);
     assert.equal(outcome.sources[0].title, "Gateway Hit");
   } finally {
+    setGlobalOutboundAuthorizations([]);
     server.close();
   }
 });

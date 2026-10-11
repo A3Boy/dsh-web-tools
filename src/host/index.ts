@@ -533,9 +533,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // the synchronous apply() body readConfig() would only return defaults.
   configHandle.onMounted(() => {
     const cfg = readConfig();
-    if (Array.isArray(cfg.outboundAuthorizations)) {
-      setGlobalOutboundAuthorizations(cfg.outboundAuthorizations);
-    }
+    syncGlobalOutboundAuthorizations();
     const braveCache = cfg.braveQuotaCache ?? {};
     braveQuotaPersist.seed(braveCache);
     for (const [key, snap] of Object.entries(braveCache)) {
@@ -580,6 +578,16 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   };
 
   // ---- Issue #9: custom source lifecycle helpers --------------------------
+  /**
+   * Publish operator outbound-authorization entries into the shared network
+   * gate. Called on boot and after every config write, so authorization edits
+   * apply live.
+   */
+  function syncGlobalOutboundAuthorizations() {
+    const cfg = readConfig();
+    setGlobalOutboundAuthorizations(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []);
+  }
+
   /**
    * Drop runtime state for ONE source.
    *
@@ -730,7 +738,13 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     () =>
       registerRoutes(ctx, {
         readConfig: () => readConfig() as unknown as Record<string, unknown>,
-        writeConfig: (patch) => configHandle.write(patch as Partial<WebToolsSettings>),
+        writeConfig: async (patch) => {
+          await configHandle.write(patch as Partial<WebToolsSettings>);
+          // Publish the (possibly updated) operator outbound-authorization list
+          // to the shared network gate immediately, so a just-saved intranet
+          // gateway starts working without a plugin reload.
+          syncGlobalOutboundAuthorizations();
+        },
         readCredential: (ref) => readCredential(ctx, ref),
         writeCredential: (ref, value) => writeCredential(ctx, ref, value),
         testProviderSearch,

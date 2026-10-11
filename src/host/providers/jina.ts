@@ -91,7 +91,7 @@ export const JinaProvider: ProviderAdapter = {
       method: "GET",
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       signal,
-    });
+    }, { provider: true });
     throwIfHttp("Jina", res);
     let body: unknown;
     try {
@@ -110,7 +110,7 @@ export const JinaProvider: ProviderAdapter = {
       method: "GET",
       headers: buildJinaReaderHeaders(token, options),
       signal,
-    });
+    }, { provider: true });
     throwIfHttp("Jina", res);
     const text = await res.text();
     if (!text.trim()) throw providerError("invalid-response", `Jina Reader returned empty content for ${url}`);
@@ -168,7 +168,7 @@ export async function jinaQuota(apiKey: string, signal?: AbortSignal): Promise<Q
   const res = await fetchWithProxy(JINA_READER_URL, {
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
-  });
+  }, { provider: true });
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) throw providerError("auth", `Jina balance auth failed (HTTP ${res.status})`, res.status);
     if (res.status === 429) throw providerError("rate-limit", "Jina rate limit exceeded (HTTP 429)", res.status);

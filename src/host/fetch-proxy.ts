@@ -26,28 +26,76 @@
 import { execFileSync } from "node:child_process";
 import {
   assertEndpointUrl,
-  preflightDns,
   createPinnedDispatcher,
   defaultConnect,
+  findAuthorization,
   OUTBOUND_AUTHORIZATIONS,
+  preflightDns,
+  TransportError,
   type OutboundPolicy,
 } from "./provider-transport.ts";
+import { PROVIDER_ENDPOINTS } from "./endpoints.ts";
 
-/** Official API hosts that are trusted by definition. */
-const OFFICIAL_HOSTS = new Set([
-  "api.tavily.com",
-  "api.exa.ai",
-  "api.firecrawl.dev",
-  "api.parallel.ai",
-  "api.search.brave.com",
-  "ydc-index.io",
-  "api.you.com",
-  "s.jina.ai",
-  "r.jina.ai",
-  "127.0.0.1",
-  "localhost",
-  "api.github.com",
-]);
+/**
+ * Exact official default endpoints (scheme://host:port/path), trusted by
+ * construction. Being a self-hosted provider or an official HOST is NOT enough:
+ * a user-typed override that happens to share a host (e.g. 127.0.0.1 on a
+ * different port) still changes the URL, so it fails this exact-match and gets
+ * the full outbound policy.
+ */
+const OFFICIAL_ENDPOINTS = new Set<string>();
+for (const table of Object.values(PROVIDER_ENDPOINTS)) {
+  const endpoints = [table.search, ...Object.values(table.extra ?? {})];
+  for (const endpoint of endpoints) {
+    try {
+      const u = new URL(endpoint.url);
+      OFFICIAL_ENDPOINTS.add(endpointKeyOf(u));
+    } catch {
+      // malformed built-in metadata — ignore
+    }
+  }
+}
+
+function endpointKeyOf(u: URL): string {
+  const path = u.pathname === "/" ? "/" : u.pathname.replace(/\/+$/, "");
+  return `${u.protocol}//${u.host}${path}`;
+}
+
+/** True only when the URL is EXACTLY a built-in official default endpoint. */
+function isOfficialUrl(urlStr: string): boolean {
+  try {
+    return OFFICIAL_ENDPOINTS.has(endpointKeyOf(new URL(urlStr)));
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a request init carries a credential header. */
+function hasAuthHeader(init: RequestInit): boolean {
+  const raw = init.headers;
+  if (!raw) return false;
+  if (typeof (raw as Headers).get === "function") {
+    const h = raw as Headers;
+    return !!(h.get("authorization") || h.get("x-api-key") || h.get("x-subscription-token"));
+  }
+  const h = raw as Record<string, string>;
+  return Object.keys(h).some((k) => {
+    const lower = k.toLowerCase();
+    return lower === "authorization" || lower === "x-api-key" || lower === "x-subscription-token";
+  });
+}
+
+/** Optional per-call behavior for fetchWithProxy. */
+export interface FetchWithProxyOptions {
+  /**
+   * Strict provider-API mode. Passed by the hosted built-in adapters so ANY
+   * operator override runs the outbound policy: exact-endpoint trust, DNS
+   * preflight, socket pinning, plaintext-http authorization, and fail-closed
+   * proxying. Self-hosted providers (SearXNG) deliberately keep the
+   * operator-trusted legacy path — their configured URL IS the instance.
+   */
+  provider?: boolean;
+}
 
 /** Structural ProxyAgent type (we never import undici statically). */
 type ProxyAgentLike = new (proxy: string) => unknown;
@@ -164,50 +212,106 @@ export function shouldBypassProxy(url: string | URL): boolean {
     });
 }
 
+/** Wrap a response so the per-request pinned dispatcher outlives the BODY. */
+function withBodyLifetime(response: Response, onDone: () => void): Response {
+  const body = response.body;
+  if (!body) {
+    onDone();
+    return response;
+  }
+  let finished = false;
+  const finish = () => {
+    if (!finished) {
+      finished = true;
+      onDone();
+    }
+  };
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      } finally {
+        try { reader.releaseLock(); } catch {}
+        finish();
+      }
+    },
+    cancel() {
+      finish();
+    },
+  });
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+async function destroySafely(dispatcher: unknown): Promise<void> {
+  if (dispatcher && typeof (dispatcher as { destroy?: unknown }).destroy === "function") {
+    try {
+      await (dispatcher as { destroy: () => Promise<unknown> }).destroy();
+    } catch {
+      // destroy failures are best-effort
+    }
+  }
+}
+
 /**
  * Fetch a URL, honoring proxies (env vars, then Windows system proxy) unless
  * `NO_PROXY` matches.
  *
- * For non-official endpoints (operator overrides), applies outbound SSRF
- * validation, DNS preflight, and prevents credential leakage across redirects.
+ * Two modes:
+ *  - legacy/page mode (default): unchanged proxy behavior. Used by web_fetch
+ *    (generic-fetch preflights upstream) and the release checker.
+ *  - `options.provider` mode: strict outbound policy for hosted built-in
+ *    providers. ANY operator override runs the full gate — exact-endpoint
+ *    trust, DNS preflight + socket pinning, plaintext-http authorization, and
+ *    fail-closed proxying (a proxy's own DNS cannot be substantiated locally).
+ *    The pinned dispatcher is kept alive until the response BODY has been
+ *    consumed (adapters read it after fetch() resolves on the headers), so
+ *    undici's destroy() can never terminate a mid-read body.
  */
-export async function fetchWithProxy(url: string | URL, init?: RequestInit): Promise<Response> {
+export async function fetchWithProxy(
+  url: string | URL,
+  init?: RequestInit,
+  options?: FetchWithProxyOptions,
+): Promise<Response> {
   const urlStr = typeof url === "string" ? url : url.href;
   const parsed = assertEndpointUrl(urlStr);
-  const host = parsed.hostname.toLowerCase();
-  const isOfficial = OFFICIAL_HOSTS.has(host);
+  const providerMode = options?.provider === true;
+  const isOfficial = isOfficialUrl(urlStr);
 
-  // Security guard for provider requests:
-  // 1. A request carrying credentials must NEVER follow redirects (redirect: "error"),
-  //    preventing credentials from being leaked to an unexpected 3xx destination.
+  // A request carrying credentials must NEVER follow redirects, so a 3xx can
+  // never leak the credential to another host.
   const modifiedInit: RequestInit & { dispatcher?: unknown } = { ...(init ?? {}) };
-  const rawHeaders = modifiedInit.headers;
-  let hasAuth = false;
-  if (rawHeaders) {
-    if (typeof (rawHeaders as Headers).get === "function") {
-      const h = rawHeaders as Headers;
-      hasAuth = !!(h.get("authorization") || h.get("x-api-key") || h.get("x-subscription-token"));
-    } else {
-      const h = rawHeaders as Record<string, string>;
-      hasAuth = Object.keys(h).some((k) => {
-        const lower = k.toLowerCase();
-        return lower === "authorization" || lower === "x-api-key" || lower === "x-subscription-token";
-      });
-    }
-  }
-  if (hasAuth && modifiedInit.redirect === undefined) {
+  if (hasAuthHeader(modifiedInit) && modifiedInit.redirect === undefined) {
     modifiedInit.redirect = "error";
   }
 
-  // 2. Preflight DNS and reject private/loopback/cloud-metadata targets unless authorized.
-  // When connecting directly (no proxy), pin the socket to the preflighted IP using
-  // createPinnedDispatcher, eliminating DNS rebinding TOCTOU vulnerabilities.
-  let pinnedDispatcher: any = undefined;
-  if (!isOfficial) {
-    const policy: OutboundPolicy = {
-      authorizations: OUTBOUND_AUTHORIZATIONS,
-    };
-    const preflight = await preflightDns(host, "public", policy, {
+  // ---- provider mode + overridden destination: strict outbound policy ------
+  if (providerMode && !isOfficial) {
+    const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+    const hostname = parsed.hostname.toLowerCase();
+    const policy: OutboundPolicy = { authorizations: OUTBOUND_AUTHORIZATIONS };
+    const authorization = findAuthorization(hostname, port, policy);
+
+    // Plaintext http carrying an API key requires an explicit allowHttp grant.
+    if (parsed.protocol === "http:" && authorization?.allowHttp !== true) {
+      throw new TransportError(
+        "destination-blocked",
+        `Provider endpoint "${hostname}:${port}" is not authorized for plaintext http access`,
+      );
+    }
+
+    const preflight = await preflightDns(hostname, authorization ? "authorized" : "public", policy, {
       lookupAll: async (h) => {
         const dns = await import("node:dns/promises");
         const res = await dns.lookup(h, { all: true });
@@ -215,40 +319,64 @@ export async function fetchWithProxy(url: string | URL, init?: RequestInit): Pro
       },
     });
 
-    const isBypass = shouldBypassProxy(url);
-    const proxy = isBypass ? undefined : (proxyFromEnv() ?? proxyFromSystem());
-    if (proxy === undefined) {
-      const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
-      pinnedDispatcher = await createPinnedDispatcher({
-        address: preflight.addresses[0].address,
-        port,
-        servername: parsed.hostname,
-        useTls: parsed.protocol === "https:",
-        connectTimeoutMs: 10_000,
-        connect: defaultConnect,
-        signal: (modifiedInit.signal as AbortSignal) ?? new AbortController().signal,
-      });
-      modifiedInit.dispatcher = pinnedDispatcher;
+    const proxyUrl = shouldBypassProxy(url) ? undefined : (proxyFromEnv() ?? proxyFromSystem());
+    if (proxyUrl !== undefined) {
+      // Through a proxy the final DNS/connection happens at the proxy, so a
+      // local preflight cannot substantiate the destination. Fail closed unless
+      // this exact target is authorized for proxied egress.
+      if (authorization?.allowProxy !== true) {
+        throw new TransportError(
+          "proxy-required",
+          `Provider endpoint "${hostname}:${port}" is not authorized for proxied egress; add an outbound authorization with allowProxy`,
+        );
+      }
+      const Ctor = await getProxyAgentCtor();
+      if (Ctor === null) {
+        throw new TransportError("network", "undici ProxyAgent unavailable for authorized proxied egress");
+      }
+      let agent = agentCache.get(proxyUrl);
+      if (!agent) {
+        agent = new Ctor(proxyUrl);
+        agentCache.set(proxyUrl, agent);
+      }
+      const { dispatcher: _ignored, ...rest } = modifiedInit;
+      void _ignored;
+      return await fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
+    }
+
+    // Direct path: pin the socket to the preflighted IP, keep the dispatcher
+    // alive until the response body is fully consumed.
+    const pinnedDispatcher = await createPinnedDispatcher({
+      address: preflight.addresses[0].address,
+      port,
+      servername: parsed.hostname,
+      useTls: parsed.protocol === "https:",
+      connectTimeoutMs: 10_000,
+      connect: defaultConnect,
+      signal: (modifiedInit.signal as AbortSignal) ?? new AbortController().signal,
+    });
+    modifiedInit.dispatcher = pinnedDispatcher;
+    try {
+      const response = await fetch(url, modifiedInit as unknown as RequestInit);
+      return withBodyLifetime(response, () => void destroySafely(pinnedDispatcher));
+    } catch (err) {
+      await destroySafely(pinnedDispatcher);
+      throw err;
     }
   }
 
-  try {
-    if (shouldBypassProxy(url)) return await fetch(url, modifiedInit);
-    const proxy = proxyFromEnv() ?? proxyFromSystem();
-    if (proxy === undefined) return await fetch(url, modifiedInit);
-    const Ctor = await getProxyAgentCtor();
-    if (Ctor === null) return await fetch(url, modifiedInit); // undici missing → plain fetch
-    let agent = agentCache.get(proxy);
-    if (!agent) {
-      agent = new Ctor(proxy);
-      agentCache.set(proxy, agent);
-    }
-    const { dispatcher, ...rest } = modifiedInit as RequestInit & { dispatcher?: unknown };
-    void dispatcher; // ignore any caller-supplied dispatcher (we own the proxy)
-    return await fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
-  } finally {
-    if (pinnedDispatcher && typeof pinnedDispatcher.destroy === "function") {
-      try { await pinnedDispatcher.destroy(); } catch {}
-    }
+  // ---- official default endpoints and legacy/page mode: existing behavior --
+  if (shouldBypassProxy(url)) return await fetch(url, modifiedInit as unknown as RequestInit);
+  const proxy = proxyFromEnv() ?? proxyFromSystem();
+  if (proxy === undefined) return await fetch(url, modifiedInit as unknown as RequestInit);
+  const Ctor = await getProxyAgentCtor();
+  if (Ctor === null) return await fetch(url, modifiedInit as unknown as RequestInit); // undici missing → plain fetch
+  let agent = agentCache.get(proxy);
+  if (!agent) {
+    agent = new Ctor(proxy);
+    agentCache.set(proxy, agent);
   }
+  const { dispatcher, ...rest } = modifiedInit;
+  void dispatcher; // ignore any caller-supplied dispatcher (we own the proxy)
+  return await fetch(url, { ...rest, dispatcher: agent } as unknown as RequestInit);
 }

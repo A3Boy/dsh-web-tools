@@ -164,7 +164,7 @@ export const TavilyProvider: ProviderAdapter = {
       },
       body: JSON.stringify(requestBody),
       signal,
-    });
+    }, { provider: true });
     if (!res.ok) await throwTavilyError(res);
     const raw = await res.json();
     const results = Array.isArray(raw?.results) ? raw.results : [];
@@ -201,7 +201,7 @@ export const TavilyProvider: ProviderAdapter = {
       },
       body: JSON.stringify(body),
       signal,
-    });
+    }, { provider: true });
     if (!res.ok) await throwTavilyError(res);
     const data = await res.json();
     const failed = Array.isArray(data?.failed_results) ? data.failed_results[0] : undefined;

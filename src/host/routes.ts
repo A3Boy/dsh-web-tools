@@ -306,10 +306,15 @@ function isSameOrigin(req: WebToolsHttpRequest): boolean {
   if (typeof origin !== "string" || origin.length === 0) return true;
   try {
     const originUrl = new URL(origin);
+    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") return false;
     const hostHeader = typeof req.headers?.host === "string" ? req.headers.host.toLowerCase() : "";
     if (!hostHeader) return false;
     const requestUrl = new URL(`http://${hostHeader}`);
-    if (originUrl.protocol !== "http:" && originUrl.protocol !== "https:") return false;
+    // Derive the ACTUAL request scheme from the connection (TLS peers expose
+    // socket.encrypted) and compare strictly: scheme + host + port.
+    const socket = (req as unknown as { socket?: { encrypted?: unknown } }).socket;
+    const requestScheme = socket?.encrypted ? "https:" : "http:";
+    if (originUrl.protocol !== requestScheme) return false;
     return originUrl.host.toLowerCase() === requestUrl.host.toLowerCase();
   } catch {
     return false;
@@ -785,15 +790,36 @@ async function applyCredentialPatch(
   if (refs.username !== undefined || refs.password !== undefined) {
     const username = (patch as { username?: unknown }).username;
     const password = (patch as { password?: unknown }).password;
+
+    // Capture previous values so a partial write can be rolled back.
+    const prev = async (ref: string | undefined) =>
+      ref ? ((await deps.readCredential(ref)).value ?? "") : "";
+
+    if (refs.username) {
+      const prevUser = await prev(refs.username);
+      const prevPass = refs.password ? await prev(refs.password) : undefined;
+      try {
+        if (typeof username === "string" && username.length > 0) {
+          await deps.writeCredential(refs.username, username);
+        }
+        if (refs.password && typeof password === "string" && password.length > 0) {
+          await deps.writeCredential(refs.password, password);
+        }
+      } catch (err) {
+        // Compensation: restore both refs to their previous values so a Basic
+        // credential is never left half-updated (username new / password old).
+        try {
+          await deps.writeCredential(refs.username, prevUser);
+          if (refs.password && prevPass !== undefined) await deps.writeCredential(refs.password, prevPass);
+        } catch {
+          // restore is best-effort; the config is rolled back separately
+        }
+        throw err;
+      }
+    }
     let configured = false;
-    if (typeof username === "string" && username.length > 0) {
-      await deps.writeCredential(refs.username as string, username);
-      configured = true;
-    }
-    if (typeof password === "string" && password.length > 0) {
-      await deps.writeCredential(refs.password as string, password);
-      configured = true;
-    }
+    if (refs.username && typeof username === "string" && username.length > 0) configured = true;
+    if (refs.password && typeof password === "string" && password.length > 0) configured = true;
     return configured;
   }
 

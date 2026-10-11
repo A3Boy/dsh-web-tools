@@ -65,7 +65,7 @@ export const ParallelProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", "x-api-key": token },
       body: JSON.stringify(buildParallelSearchBody(query, count, options, hints)),
       signal,
-    });
+    }, { provider: true });
     throwIfHttp("Parallel", res);
     let raw: unknown;
     try {
@@ -88,7 +88,7 @@ export const ParallelProvider: ProviderAdapter = {
       headers: { "content-type": "application/json", "x-api-key": token },
       body: JSON.stringify({ urls: [url], advanced_settings: { full_content: true } }),
       signal,
-    });
+    }, { provider: true });
     throwIfHttp("Parallel", res);
     let raw: unknown;
     try {
