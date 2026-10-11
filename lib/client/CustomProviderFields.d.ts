@@ -9,5 +9,6 @@ export interface CustomProviderFieldsProps {
     onChange: (patch: Partial<CustomProviderDraft>) => void;
     onCredentialChange: (value: string) => void;
     onBasicPasswordChange?: (value: string) => void;
+    onValidationErrorChange?: (error: string | null) => void;
 }
 export declare function CustomProviderFields(props: CustomProviderFieldsProps): import("react").JSX.Element;

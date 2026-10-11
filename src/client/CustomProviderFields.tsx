@@ -36,6 +36,7 @@ export interface CustomProviderFieldsProps {
   onChange: (patch: Partial<CustomProviderDraft>) => void;
   onCredentialChange: (value: string) => void;
   onBasicPasswordChange?: (value: string) => void;
+  onValidationErrorChange?: (error: string | null) => void;
 }
 
 const inputStyle: CSSProperties = {
@@ -119,6 +120,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
     onChange,
     onCredentialChange,
     onBasicPasswordChange,
+    onValidationErrorChange,
   } = props;
 
   const currentMode = accessModeOf(draft.protocol);
@@ -141,8 +143,11 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
       setBodyMode("template");
       setBodyTemplateText(JSON.stringify(draft.request.bodyTemplate, null, 2));
       setBodyJsonError("");
+      onValidationErrorChange?.(null);
     } else {
       setBodyMode("standard");
+      setBodyJsonError("");
+      onValidationErrorChange?.(null);
     }
     if (draft.request?.paramsTemplate && Object.keys(draft.request.paramsTemplate).length > 0) {
       setParamsMode("template");
@@ -610,6 +615,8 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                     onChange={(mode) => {
                       setBodyMode(mode);
                       if (mode === "standard") {
+                        setBodyJsonError("");
+                        onValidationErrorChange?.(null);
                         onChange({
                           request: {
                             ...draft.request,
@@ -629,6 +636,8 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                           },
                         });
                         setBodyTemplateText(JSON.stringify(draft.request?.bodyTemplate ?? defaultTemplate, null, 2));
+                        setBodyJsonError("");
+                        onValidationErrorChange?.(null);
                       }
                     }}
                   />
@@ -676,6 +685,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                           try {
                             const parsed = JSON.parse(val);
                             setBodyJsonError("");
+                            onValidationErrorChange?.(null);
                             onChange({
                               request: {
                                 ...draft.request,
@@ -683,7 +693,9 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                               },
                             });
                           } catch {
-                            setBodyJsonError(t("bodyTemplateInvalid"));
+                            const err = t("bodyTemplateInvalid");
+                            setBodyJsonError(err);
+                            onValidationErrorChange?.(err);
                           }
                         }}
                       />

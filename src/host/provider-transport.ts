@@ -229,13 +229,34 @@ export interface ResolvedAddress {
 /** Injectable DNS resolver (tests never touch the network). */
 export type LookupAllFn = (hostname: string) => Promise<ResolvedAddress[]>;
 
-const defaultLookupAll: LookupAllFn = (hostname) =>
+export const defaultLookupAll: LookupAllFn = (hostname) =>
   new Promise((resolve, reject) => {
     dnsLookup(hostname, { all: true }, (err, addresses) => {
       if (err) reject(err);
       else resolve(addresses as ResolvedAddress[]);
     });
   });
+
+/**
+ * Asynchronously probe whether a hostname resolves to private/loopback/restricted IP addresses.
+ * Returns true if any candidate A/AAAA record is private/loopback/restricted.
+ * Returns false for public IPs or on lookup failure.
+ */
+export async function resolvesToPrivateIp(
+  hostname: string,
+  lookupAll: LookupAllFn = defaultLookupAll,
+): Promise<boolean> {
+  const clean = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (isIP(clean) !== 0) {
+    return isPrivateOrRestrictedIp(clean);
+  }
+  try {
+    const records = await lookupAll(clean);
+    return Array.isArray(records) && records.some((r) => isPrivateOrRestrictedIp(r.address));
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Unconditionally blocked destination check for cloud instance metadata and link-local addresses.

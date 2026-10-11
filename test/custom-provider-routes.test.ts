@@ -514,3 +514,134 @@ test("Routes: authorization lifecycle tracks sourceId, prunes old on update, and
   assert.equal(res3.statusCode, 200);
   assert.equal(storedConfig.outboundAuthorizations.length, 0, "Deleting source must prune its confirmed authorization");
 });
+
+test("Routes: intranet domain resolving to private IP triggers 409 conflict and grants allowPrivate upon confirmation", async () => {
+  const { server, getHandler } = mockServer();
+
+  let storedConfig: any = {
+    customProviders: [],
+    outboundAuthorizations: [],
+  };
+
+  const fakeLookupAll = async (hostname: string) => {
+    if (hostname === "search.corp-intranet.com") {
+      return [{ address: "10.0.0.88", family: 4 }];
+    }
+    return [{ address: "93.184.216.34", family: 4 }];
+  };
+
+  const deps: RouteDeps = {
+    readConfig: () => storedConfig,
+    writeConfig: async (patch) => { storedConfig = { ...storedConfig, ...patch }; },
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+    lookupAll: fakeLookupAll,
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  const payload = {
+    source: {
+      name: "Corporate Search",
+      protocol: "tavily-compatible",
+      endpoint: { baseUrl: "https://search.corp-intranet.com", searchPath: "/search", method: "POST", encoding: "json" },
+      auth: { mode: "bearer" },
+    },
+  };
+
+  // 1. Without confirmTarget -> triggers 409 conflict because DNS resolved to 10.0.0.88
+  const { req: req1, res: res1 } = fakeReqRes("POST", `${API_PREFIX}/sources/create`, payload);
+  await handler(req1, res1);
+
+  assert.equal(res1.statusCode, 409);
+  assert.equal(JSON.parse(res1.body).error.code, "conflict");
+
+  // 2. With confirmTarget: true -> succeeds and records allowPrivate: true for this domain
+  const { req: req2, res: res2 } = fakeReqRes("POST", `${API_PREFIX}/sources/create`, { ...payload, confirmTarget: true });
+  await handler(req2, res2);
+
+  assert.equal(res2.statusCode, 200);
+  assert.equal(storedConfig.outboundAuthorizations.length, 1);
+  assert.equal(storedConfig.outboundAuthorizations[0].host, "search.corp-intranet.com");
+  assert.equal(storedConfig.outboundAuthorizations[0].allowPrivate, true);
+});
+
+test("Routes: shared endpoint authorization is preserved while any source uses it and pruned when the last source is deleted", async () => {
+  const { server, getHandler } = mockServer();
+
+  let storedConfig: any = {
+    customProviders: [],
+    outboundAuthorizations: [
+      // Pre-existing default SearXNG rule (must never be deleted)
+      { host: "127.0.0.1", port: 8080, allowPrivate: true, allowHttp: true, note: "Built-in SearXNG default" },
+    ],
+  };
+
+  const deps: RouteDeps = {
+    readConfig: () => storedConfig,
+    writeConfig: async (patch) => { storedConfig = { ...storedConfig, ...patch }; },
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+    revokeSourceCredentials: async () => ({ removed: [], failed: [] }),
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  // 1. Create Source A on http://192.168.1.50:8080
+  const { req: reqA, res: resA } = fakeReqRes("POST", `${API_PREFIX}/sources/create`, {
+    source: {
+      name: "Source A",
+      protocol: "searxng-json",
+      endpoint: { baseUrl: "http://192.168.1.50:8080", searchPath: "/search", method: "GET", encoding: "query" },
+      auth: { mode: "none" },
+    },
+    confirmTarget: true,
+  });
+  await handler(reqA, resA);
+  assert.equal(resA.statusCode, 200);
+  const idA = JSON.parse(resA.body).value.id;
+
+  // 2. Create Source B on same http://192.168.1.50:8080 (already authorized)
+  const { req: reqB, res: resB } = fakeReqRes("POST", `${API_PREFIX}/sources/create`, {
+    source: {
+      name: "Source B",
+      protocol: "searxng-json",
+      endpoint: { baseUrl: "http://192.168.1.50:8080", searchPath: "/search", method: "GET", encoding: "query" },
+      auth: { mode: "none" },
+    },
+    confirmTarget: true,
+  });
+  await handler(reqB, resB);
+  assert.equal(resB.statusCode, 200);
+  const idB = JSON.parse(resB.body).value.id;
+
+  // Total authorizations: default SearXNG + shared 192.168.1.50:8080 = 2
+  assert.equal(storedConfig.outboundAuthorizations.length, 2);
+
+  // 3. Delete Source A: Source B still uses 192.168.1.50:8080 -> auth must NOT be deleted
+  const { req: delA, res: resDelA } = fakeReqRes("POST", `${API_PREFIX}/sources/delete`, { id: idA });
+  await handler(delA, resDelA);
+  assert.equal(resDelA.statusCode, 200);
+  assert.equal(storedConfig.outboundAuthorizations.length, 2, "Shared authorization must be retained while Source B still uses it");
+
+  // 4. Delete Source B: no custom source uses 192.168.1.50:8080 anymore -> auth MUST be pruned!
+  const { req: delB, res: resDelB } = fakeReqRes("POST", `${API_PREFIX}/sources/delete`, { id: idB });
+  await handler(delB, resDelB);
+  assert.equal(resDelB.statusCode, 200);
+  // Shared authorization pruned, default SearXNG remains
+  assert.equal(storedConfig.outboundAuthorizations.length, 1);
+  assert.equal(storedConfig.outboundAuthorizations[0].host, "127.0.0.1");
+  assert.equal(storedConfig.outboundAuthorizations[0].note, "Built-in SearXNG default");
+});

@@ -15,6 +15,7 @@ import { type PoolEntry } from "./pool.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { SearchMode, SearchModeView, VersionCheckView } from "../shared/api-types.ts";
 import { type CustomCredentialRefs, type CustomSourceTestView } from "../shared/custom-provider-types.ts";
+import { type LookupAllFn } from "./provider-transport.ts";
 import type { SpecializedSourceRegistry } from "./sources/registry.ts";
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export declare function keyIdOf(key: string): string;
@@ -75,6 +76,8 @@ export interface RouteDeps {
     }>;
     /** Drop runtime state (health cooldown, key pool) for one source. */
     forgetSource?: (sourceId: string) => void;
+    /** Injectable DNS resolver for testing. */
+    lookupAll?: LookupAllFn;
 }
 /**
  * The real connection peer address.

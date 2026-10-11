@@ -68,6 +68,13 @@ export interface ResolvedAddress {
 }
 /** Injectable DNS resolver (tests never touch the network). */
 export type LookupAllFn = (hostname: string) => Promise<ResolvedAddress[]>;
+export declare const defaultLookupAll: LookupAllFn;
+/**
+ * Asynchronously probe whether a hostname resolves to private/loopback/restricted IP addresses.
+ * Returns true if any candidate A/AAAA record is private/loopback/restricted.
+ * Returns false for public IPs or on lookup failure.
+ */
+export declare function resolvesToPrivateIp(hostname: string, lookupAll?: LookupAllFn): Promise<boolean>;
 /**
  * Unconditionally blocked destination check for cloud instance metadata and link-local addresses.
  *

@@ -66,6 +66,8 @@ export interface OutboundAuthorization {
     allowProxy?: boolean;
     /** Optional custom source ID that requested or owns this authorization. */
     sourceId?: string;
+    /** System marker identifying authorizations created and managed for custom search sources. */
+    managedBy?: "custom-source";
     /** Human note shown in diagnostics. */
     note?: string;
 }

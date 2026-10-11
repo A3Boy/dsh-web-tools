@@ -34,7 +34,7 @@ import {
   type CustomSourceTestView,
 } from "../shared/custom-provider-types.ts";
 import { sanitizeBaseUrlOverrides } from "./config.ts";
-import { isLocalOrPrivateHost, type OutboundAuthorization } from "./provider-transport.ts";
+import { isLocalOrPrivateHost, resolvesToPrivateIp, type LookupAllFn, type OutboundAuthorization } from "./provider-transport.ts";
 
 import type { BrowserPlatform } from "./browser/types.ts";
 import type { SpecializedSourceRegistry } from "./sources/registry.ts";
@@ -174,6 +174,8 @@ export interface RouteDeps {
   revokeSourceCredentials?: (sourceId: string) => Promise<{ removed: string[]; failed: string[] }>;
   /** Drop runtime state (health cooldown, key pool) for one source. */
   forgetSource?: (sourceId: string) => void;
+  /** Injectable DNS resolver for testing. */
+  lookupAll?: LookupAllFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +767,9 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
   const endpointPort = endpointUrl.port
     ? Number(endpointUrl.port)
     : (endpointUrl.protocol === "https:" ? 443 : 80);
-  const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
+  const isPrivateOrLoopback =
+    isLocalOrPrivateHost(endpointUrl.hostname) ||
+    (await resolvesToPrivateIp(endpointUrl.hostname, deps.lookupAll));
   const isHttp = endpointUrl.protocol === "http:";
 
   const isAlreadyAuthorized = currentAuths.some(
@@ -795,6 +799,7 @@ async function handleSourceCreate(deps: RouteDeps, payload: unknown) {
         allowHttp: isHttp,
         allowProxy: !isPrivateOrLoopback,
         sourceId: id,
+        managedBy: "custom-source",
         note: `Operator-confirmed: ${config.name}`,
       },
     ];
@@ -914,7 +919,9 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
     const endpointPort = endpointUrl.port
       ? Number(endpointUrl.port)
       : (endpointUrl.protocol === "https:" ? 443 : 80);
-    const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
+    const isPrivateOrLoopback =
+      isLocalOrPrivateHost(endpointUrl.hostname) ||
+      (await resolvesToPrivateIp(endpointUrl.hostname, deps.lookupAll));
     const isHttp = endpointUrl.protocol === "http:";
     const isAlreadyAuthorized = updatedAuths.some(
       (a) =>
@@ -939,6 +946,7 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
         allowHttp: isHttp,
         allowProxy: !isPrivateOrLoopback,
         sourceId: config.id,
+        managedBy: "custom-source",
         note: `Operator-confirmed: ${next.name}`,
       });
     }
@@ -960,7 +968,8 @@ async function handleSourceUpdate(deps: RouteDeps, payload: unknown) {
           !(
             a.host.toLowerCase() === oldUrl.hostname.toLowerCase() &&
             (a.port === undefined || a.port === oldPort) &&
-            (a.sourceId === config.id ||
+            (a.managedBy === "custom-source" ||
+              a.sourceId !== undefined ||
               a.note?.includes(config.name) ||
               a.note?.includes(config.id) ||
               a.note?.startsWith("Auto-authorized for custom source:"))
@@ -1034,9 +1043,9 @@ async function handleSourceDelete(deps: RouteDeps, payload: unknown) {
           !(
             a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() &&
             (a.port === undefined || a.port === endpointPort) &&
-            (a.sourceId === config.id ||
-              a.note?.includes(config.name) ||
-              a.note?.includes(config.id) ||
+            (a.managedBy === "custom-source" ||
+              a.sourceId !== undefined ||
+              a.note?.startsWith("Operator-confirmed:") ||
               a.note?.startsWith("Auto-authorized for custom source:"))
           ),
         );

@@ -102,6 +102,7 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(initialDraftFor(provider));
@@ -109,6 +110,7 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
     setBasicPassword("");
     setTestResult(null);
     setError("");
+    setValidationError(null);
     setAddToOrder(!isEditing);
   }, [provider, isEditing]);
 
@@ -121,6 +123,10 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
   };
 
   const handleTest = async () => {
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     if (!draft.endpoint.baseUrl.trim()) {
       setError(t("baseUrlPlaceholder"));
       return;
@@ -159,6 +165,10 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
   };
 
   const handleSave = async () => {
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     if (!draft.name.trim()) {
       setError(t("customProviderName") + " " + t("notConfigured"));
       return;
@@ -294,6 +304,7 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
           onChange={handleDraftChange}
           onCredentialChange={setCredentialValue}
           onBasicPasswordChange={setBasicPassword}
+          onValidationErrorChange={setValidationError}
         />
 
         {/* Test Section */}
@@ -319,7 +330,7 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
               size="sm"
               variant="outline"
               onClick={() => void handleTest()}
-              disabled={testing || saving}
+              disabled={testing || saving || !!validationError}
             >
               {testing ? t("testingDraft") : t("testDraft")}
             </Button>
@@ -412,7 +423,7 @@ export function CustomProviderEditor(props: CustomProviderEditorProps) {
             <Button size="sm" variant="ghost" onClick={onClose} disabled={saving || deleting}>
               {t("cancel")}
             </Button>
-            <Button size="sm" variant="primary" onClick={() => void handleSave()} disabled={saving || deleting}>
+            <Button size="sm" variant="primary" onClick={() => void handleSave()} disabled={saving || deleting || !!validationError}>
               {saving ? t("saving") : t("save")}
             </Button>
           </div>

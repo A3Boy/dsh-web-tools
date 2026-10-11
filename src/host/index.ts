@@ -29,7 +29,7 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDis
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
-import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, type OutboundAuthorization } from "./provider-transport.ts";
+import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
   buildProviderSnapshot,
@@ -692,7 +692,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       const endpointPort = endpointUrl.port
         ? Number(endpointUrl.port)
         : (endpointUrl.protocol === "https:" ? 443 : 80);
-      const isPrivateOrLoopback = isLocalOrPrivateHost(endpointUrl.hostname);
+      const isPrivateOrLoopback =
+        isLocalOrPrivateHost(endpointUrl.hostname) ||
+        (await resolvesToPrivateIp(endpointUrl.hostname));
       const isHttp = endpointUrl.protocol === "http:";
 
       const isAlreadyAuthorized = existingAuths.some(
@@ -723,6 +725,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           allowHttp: isHttp,
           allowProxy: !isPrivateOrLoopback,
           sourceId: input.sourceId,
+          managedBy: "custom-source",
           note: `Operator-confirmed: ${config.name}`,
         });
       }
@@ -752,6 +755,22 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           })),
         };
       } catch (err) {
+        if (
+          err instanceof TransportError &&
+          err.code === "destination-blocked" &&
+          err.message.includes("private, loopback, or link-local") &&
+          input.confirmTarget !== true
+        ) {
+          const targetStr = `${endpointUrl.hostname}:${endpointPort}`;
+          return {
+            ok: false,
+            latencyMs: Date.now() - started,
+            error: {
+              code: "conflict",
+              message: `此搜索服务位于本地网络或解析到内网私有地址。是否允许访问 ${targetStr}？若配置了 API Key，对应凭证将发送给该服务。`,
+            },
+          };
+        }
         const classified = toProviderError(err);
         return {
           ok: false,
