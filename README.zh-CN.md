@@ -169,11 +169,37 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 * **确定性 Provider Fallback**：遇到网络异常、超时、5xx 服务端错误、429 限流或配额耗尽时，自动降级至链条中的下一搜索源。
 * **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免在冷却期内产生无效请求。
 * **搜索路由策略**：`web_search` 支持顺序模式（Ordered）、轮询模式（Round-Robin）和随机模式（Random）；`web_fetch` 始终按可抓取 Provider 的确定性链条执行。
-* **会话级联网模式 (Search Mode)**：输入框左侧的单按钮 + 下拉菜单，三个模式，默认「智能联网」。
-  * **智能联网**：由 Agent 按问题自行判断是否需要联网。
-  * **始终联网**：每轮对话至少完成一次 `web_search` 或 `web_fetch`；失败也算已尝试，但 Agent 会被要求说明哪些内容未能验证。
-  * **关闭联网**：真正的关闭。Agent 的工具列表里移除 `web_search` / `web_fetch`，即使历史上下文让它发出调用，也会在执行前被单调拒绝，并注入一条「已关闭」说明。开关状态由程序判定，不依赖模型自觉。
-* **代理支持**：支持 Windows 系统代理、`HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`。本地回环地址绕过代理；**解析到私网地址的自建搜索源也直接拨号**，避免「开着系统代理时局域网 SearXNG/自建网关无法搜索」的问题。
+* **会话级联网控制 (Search Mode)**：输入框集成单入口紧凑切换器（单按钮 + 极简下拉菜单），提供三档确定性检索模式（默认「智能联网」）：
+  * **智能联网 (Smart)**：弹性语义决策。由 Agent 根据上下文问题意图，自主判断是否调起外部网络检索。
+  * **始终联网 (Always)**：强一致性知识校验。要求 Agent 每轮对话至少完成一次有效的外部检索或内容深抓，确保回答具备外部权威可溯源依据。
+  * **关闭联网 (Off)**：确定性物理隔离。彻底抛弃依赖弱提示词（System Prompt）容易被模型忽略的弊端，采用**底层运行时三重物理拦截**（从可用工具集中动态剔除 `web_search` / `web_fetch`、单调守卫 Monotonic Guard 强行阻断历史惯性调用、首轮注入运行时断网说明），由宿主环境硬性判定，确保绝不产生外部网络请求。
+
+<div align="center">
+  <table>
+    <thead>
+      <tr>
+        <th align="center">交互菜单 (Picker Menu)</th>
+        <th align="center">三态激活视觉呈现 (Active States)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td align="center" width="55%">
+          <img src="assets/search-mode-menu.png" width="290" alt="联网模式切换菜单" />
+        </td>
+        <td align="center" width="45%">
+          <img src="assets/search-mode-smart.png" height="28" alt="智能联网 (Smart)" /><br/>
+          <sub><b>智能联网</b>：按需自适应检索（默认）</sub><br/><br/>
+          <img src="assets/search-mode-always.png" height="28" alt="始终联网 (Always)" /><br/>
+          <sub><b>始终联网</b>：强求证高亮激活</sub><br/><br/>
+          <img src="assets/search-mode-off.png" height="28" alt="关闭联网 (Off)" /><br/>
+          <sub><b>关闭联网</b>：运行时硬性阻断</sub>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+* **智能代理分流与内网直连 (Intranet Proxy Bypass)**：完整支持 Windows 系统代理及 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 环境变量。内置 **DNS 预检与私网智能旁路**，公网请求正常走代理通道，而本地回环及解析至私网地址（RFC 1918）的自建搜索源（如局域网自建 SearXNG 或私有网关）自动采用底层直连拨号，彻底消弭开启系统代理时内网服务不可达的拓扑冲突。
 
 ---
 
