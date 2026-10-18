@@ -44,21 +44,50 @@ export function webResearchCompleted(state: TurnState): boolean {
   return state.webSearchCompleted || state.webFetchCompleted;
 }
 
+/** The turn policy lines every required turn needs, regardless of platform routing. */
+const REQUIRED_SEARCH_CORE_LINES = [
+  "Web Search is required for this turn.",
+  "Before finalizing, complete at least one web_search or web_fetch call.",
+  "Use web_fetch for a specific URL; otherwise use web_search.",
+  "Treat web_search snippets as discovery evidence, not page details or comments.",
+  "Describe comments or replies as verified only when web_fetch returns their contents.",
+  "If web access fails, say what could not be verified.",
+];
+
+/**
+ * The two lines that only make sense while a platform source (Xiaohongshu / X)
+ * is enabled: they advertise a routing prefix the provider strips before the
+ * platform search box. Advertising it while both platforms are switched off
+ * would teach the model a prefix that does nothing.
+ */
+const REQUIRED_SEARCH_PLATFORM_LINES = [
+  "To target a platform, use exactly one routing prefix such as 小红书: or X:; do not repeat the platform name as a topic keyword.",
+  "The provider removes that routing prefix before entering the platform search box.",
+];
+
 /** The injected "you must research" instruction the model sees on step 1.
  * Compact: one hard requirement (complete an appropriate web tool), concrete
  * routing (URL → web_fetch, otherwise web_search), honest disclosure on
  * failure. General query-quality guidance belongs to DSH's own tool-web
- * prompt, not this per-turn policy. */
+ * prompt, not this per-turn policy. This default DOES advertise platform
+ * routing; use {@link requiredSearchText} to decide per live config. */
 export const REQUIRED_SEARCH_TEXT = [
-  "Web Search is required for this turn.",
-  "Before finalizing, complete at least one web_search or web_fetch call.",
-  "Use web_fetch for a specific URL; otherwise use web_search.",
-  "To target a platform, use exactly one routing prefix such as 小红书: or X:; do not repeat the platform name as a topic keyword.",
-  "The provider removes that routing prefix before entering the platform search box.",
-  "Treat web_search snippets as discovery evidence, not page details or comments.",
-  "Describe comments or replies as verified only when web_fetch returns their contents.",
-  "If web access fails, say what could not be verified.",
+  ...REQUIRED_SEARCH_CORE_LINES.slice(0, 3),
+  ...REQUIRED_SEARCH_PLATFORM_LINES,
+  ...REQUIRED_SEARCH_CORE_LINES.slice(3),
 ].join("\n");
+
+/** Same policy with the platform-routing lines dropped (both platforms off). */
+export const REQUIRED_SEARCH_TEXT_NO_PLATFORMS = REQUIRED_SEARCH_CORE_LINES.join("\n");
+
+/**
+ * Pick the policy text for the live configuration.
+ * @param platformsEnabled - true when at least one platform source may serve a
+ *   routed query. Omitted (or true) keeps the full text.
+ */
+export function requiredSearchText(platformsEnabled?: boolean): string {
+  return platformsEnabled === false ? REQUIRED_SEARCH_TEXT_NO_PLATFORMS : REQUIRED_SEARCH_TEXT;
+}
 
 /** One-shot steer used when the model tries to end without researching. */
 export const REQUIRED_SEARCH_CORRECTION_TEXT =
@@ -181,9 +210,14 @@ export interface SearchModeMessages {
  * ({ content, source }). Extracted so tests can assert the exact wire shape
  * without booting the host.
  * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
+ * @param platformsEnabled - live predicate for the platform-routing lines. Read
+ *   on every `required()` call so toggling a platform source in settings takes
+ *   effect on the NEXT turn without re-wiring the runtime. Omitted keeps the
+ *   full text.
  */
 export function createSearchModeMessages(
   createUserMessage: (input: unknown) => unknown,
+  platformsEnabled?: () => boolean,
 ): SearchModeMessages {
   const snapshot = (text: string, section: string) =>
     createUserMessage({
@@ -195,8 +229,19 @@ export function createSearchModeMessages(
         sections: [{ name: section, text }],
       },
     });
+  const policyText = () => {
+    let enabled = true;
+    if (platformsEnabled !== undefined) {
+      try {
+        enabled = platformsEnabled() !== false;
+      } catch {
+        enabled = true;
+      }
+    }
+    return requiredSearchText(enabled);
+  };
   return {
-    required: () => snapshot(REQUIRED_SEARCH_TEXT, "web-search-mode"),
+    required: () => snapshot(policyText(), "web-search-mode"),
     correction: () =>
       createUserMessage({
         content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],

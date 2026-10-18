@@ -559,7 +559,17 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // provider service is enabled with a chain provider. Messages use the
   // OFFICIAL @deepseek-ai/dsh-llm createUserMessage ({ content, source }):
   // required = durable snapshot section, correction = one-shot notice.
-  const searchModeMessages = createSearchModeMessages((input) => createUserMessage(input as never));
+  const searchModeMessages = createSearchModeMessages(
+    (input) => createUserMessage(input as never),
+    () => {
+      // The platform-routing lines only make sense while a platform source can
+      // actually serve a routed query; otherwise the model is taught a prefix
+      // that silently does nothing.
+      const cfg = readConfig();
+      const platforms = cfg.platformEnabled ?? {};
+      return platforms.xiaohongshu !== false || platforms.x !== false;
+    },
+  );
   const searchModeRuntime = new SearchModeRuntime(() => routedSearchProvider.available());
   ctx.effect(
     () =>

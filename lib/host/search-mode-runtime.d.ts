@@ -42,8 +42,17 @@ export declare function webResearchCompleted(state: TurnState): boolean;
  * Compact: one hard requirement (complete an appropriate web tool), concrete
  * routing (URL → web_fetch, otherwise web_search), honest disclosure on
  * failure. General query-quality guidance belongs to DSH's own tool-web
- * prompt, not this per-turn policy. */
+ * prompt, not this per-turn policy. This default DOES advertise platform
+ * routing; use {@link requiredSearchText} to decide per live config. */
 export declare const REQUIRED_SEARCH_TEXT: string;
+/** Same policy with the platform-routing lines dropped (both platforms off). */
+export declare const REQUIRED_SEARCH_TEXT_NO_PLATFORMS: string;
+/**
+ * Pick the policy text for the live configuration.
+ * @param platformsEnabled - true when at least one platform source may serve a
+ *   routed query. Omitted (or true) keeps the full text.
+ */
+export declare function requiredSearchText(platformsEnabled?: boolean): string;
 /** One-shot steer used when the model tries to end without researching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT = "Web Search is required for this turn. Call web_search or web_fetch before finalizing.";
 /**
@@ -106,8 +115,12 @@ export interface SearchModeMessages {
  * ({ content, source }). Extracted so tests can assert the exact wire shape
  * without booting the host.
  * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
+ * @param platformsEnabled - live predicate for the platform-routing lines. Read
+ *   on every `required()` call so toggling a platform source in settings takes
+ *   effect on the NEXT turn without re-wiring the runtime. Omitted keeps the
+ *   full text.
  */
-export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown): SearchModeMessages;
+export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown, platformsEnabled?: () => boolean): SearchModeMessages;
 /**
  * Decide which pre-step Search Mode message (if any) to inject for one step.
  * Pure and one-shot: ONLY step 1 in a required turn injects the policy
