@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Guards the inlined Lucide geometry against silent edits.
  *
  * The icons are hand-copied from lucide-static (ISC) rather than pulled from
@@ -28,11 +28,13 @@ const EXPECTED_PATHS: Record<string, string[]> = {
     "M22 8.82a15 15 0 0 0-11.288-3.764",
     "m2 2 20 20",
   ],
-  RefreshCw: [
-    "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8",
-    "M21 3v5h-5",
-    "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
-    "M8 16H3v5",
+  RadioTower: [
+    "M4.9 16.1C1 12.2 1 5.8 4.9 1.9",
+    "M7.8 4.7a6.14 6.14 0 0 0-.8 7.5",
+    "M16.2 4.8c2 2 2.26 5.11.8 7.47",
+    "M19.1 1.9a9.96 9.96 0 0 1 0 14.1",
+    "M9.5 18h5",
+    "m8 22 4-11 4 11",
   ],
   ChevronDown: ["m6 9 6 6 6-6"],
   Check: ["M20 6 9 17l-5-5"],
@@ -69,3 +71,4 @@ test("the shared frame keeps the product defaults and inherits colour", () => {
   assert.match(SOURCE, /strokeLinecap="round"/);
   assert.match(SOURCE, /strokeLinejoin="round"/);
 });
+
