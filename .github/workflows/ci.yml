@@ -7,24 +7,51 @@ on:
     branches: [main]
 
 jobs:
+  # The shipping build: what a user actually installs, resolved from the
+  # committed lockfile.
   build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Type-checking and build need the DSH peer deps resolvable.
+      - name: Install (incl. peers for type resolution)
+        run: npm install --no-audit --no-fund
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  # Per-DSH-line type check. A prerelease tuple bump (0.2.0-rc.x -> 0.2.1-rc.x)
+  # is invisible to the lockfile, and DSH gates plugin admission on the declared
+  # peer ranges, so the surface has to be compiled against each supported line.
+  #
+  # This runs in a scratch directory with a package.json that declares NO
+  # peerDependencies: installing a package that the manifest already lists as a
+  # peer crashes npm's resolver ("Cannot read properties of null (reading
+  # 'edgesOut')"), and the checked-in manifest is not what we are testing here —
+  # the source is.
+  dsh-line-typecheck:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # The plugin supports every DSH line it declares in peerDependencies.
-        # Pinning the peer set here is the only way to catch API drift: the
-        # lockfile is a single point in time, and a prerelease tuple bump
-        # (0.2.0-rc.x -> 0.2.1-rc.x) is invisible to a plain `npm install`.
-        #
-        # 0.1.0-rc.6 stays declared in peerDependencies for the installs still
-        # on it, but is deliberately not a CI leg: the 0.1.x peer closure is
-        # self-inconsistent upstream (dsh-session@0.1.0-rc.8 peer-requires
-        # dsh-llm@^0.1.0-rc.8), so it cannot be pinned coherently without
-        # --legacy-peer-deps, which then leaves dsh-llm unable to resolve its
-        # own nested modules. A green leg there would be a lie.
+        # 0.1.0-rc.6 stays declared in peerDependencies for existing installs but
+        # is not a leg: the 0.1.x peer closure is self-inconsistent upstream
+        # (dsh-session@0.1.0-rc.8 peer-requires dsh-llm@^0.1.0-rc.8), so it
+        # cannot be pinned coherently. A green leg there would be a lie.
         dsh: ["0.2.0-rc.2", "0.2.1-rc.2"]
-    name: dsh ${{ matrix.dsh }}
+    name: typecheck dsh ${{ matrix.dsh }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,16 +59,17 @@ jobs:
         with:
           node-version: 22
 
-      # Resolve the WHOLE tree from scratch for this leg. Overlaying a pinned
-      # peer set onto a tree resolved for another DSH line produces an
-      # incoherent module graph (a nested package ended up unable to resolve
-      # `@deepseek-ai/cordis`), and `--legacy-peer-deps` makes it worse by not
-      # installing peers at all. A lockfile-free install lets npm build a
-      # consistent closure per leg.
-      - name: Install (fresh resolution on the ${{ matrix.dsh }} line)
+      - name: Stage sources in a scratch project
         run: |
-          rm -rf node_modules package-lock.json
-          npm install --no-audit --no-fund --save-dev \
+          mkdir -p "$RUNNER_TEMP/leg"
+          cp -r src tsconfig.json tsconfig.client.json "$RUNNER_TEMP/leg/"
+          cd "$RUNNER_TEMP/leg"
+          printf '{ "name": "dsh-line-typecheck", "private": true, "type": "module", "version": "0.0.0" }\n' > package.json
+
+      - name: Install the ${{ matrix.dsh }} peer set
+        working-directory: ${{ runner.temp }}/leg
+        run: |
+          npm install --no-audit --no-fund \
             @deepseek-ai/cordis@4.0.5 \
             @deepseek-ai/schemastery@3.18.5 \
             @deepseek-ai/dsh-web@${{ matrix.dsh }} \
@@ -53,30 +81,30 @@ jobs:
             @deepseek-ai/dsh-client-locale@${{ matrix.dsh }} \
             @deepseek-ai/dsh-client-ui-primitives@${{ matrix.dsh }} \
             @deepseek-ai/dsh-client-ui-settings@${{ matrix.dsh }} \
-            @deepseek-ai/dsh-client-ui-slots@${{ matrix.dsh }}
+            @deepseek-ai/dsh-client-ui-slots@${{ matrix.dsh }} \
+            typescript@5.9.3 \
+            @types/node@22.10.0 \
+            @types/react@18.3.31 \
+            react@18.3.1 \
+            defuddle@0.19.3 \
+            linkedom@0.18.13 \
+            undici@6.26.0 \
+            ws@8.18.0 \
+            @types/ws@8.5.14
 
-      - name: Report resolved peer versions
-        run: |
-          echo -n "cordis: "
-          node -p "require('@deepseek-ai/cordis/package.json').version"
-          for p in dsh-web dsh-llm dsh-client-ui-primitives; do
-            echo -n "$p: "
-            node -p "require('@deepseek-ai/$p/package.json').version"
-          done
-
-      # A pinned devDependency can resolve to a different line than requested;
-      # fail loudly instead of silently testing the wrong runtime.
-      - name: Assert the resolved DSH line matches the matrix
+      # A pinned version can resolve to a neighbouring line; fail loudly instead
+      # of silently checking the wrong surface.
+      - name: Assert the resolved line
+        working-directory: ${{ runner.temp }}/leg
         env:
           WANT: ${{ matrix.dsh }}
         run: |
           node -e "const w=process.env.WANT;const g=require('@deepseek-ai/dsh-web/package.json').version;if(g!==w){console.error('expected '+w+', resolved '+g);process.exit(1)}console.log('resolved line OK: '+g)"
 
-      - name: Type-check
-        run: npm run typecheck
+      - name: Type-check host project
+        working-directory: ${{ runner.temp }}/leg
+        run: npx tsc -p tsconfig.json --noEmit
 
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm test
+      - name: Type-check client project
+        working-directory: ${{ runner.temp }}/leg
+        run: npx tsc -p tsconfig.client.json --noEmit
