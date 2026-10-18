@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — web-search mode selector mounted in `conversation.input.left`.
  *
  * One compact trigger plus a popover menu (the composer tool-picker pattern),
@@ -20,7 +20,7 @@
  * @module
  */
 import { useEffect, useRef, useState } from "react";
-import { GlobeIcon, WifiOffIcon, RadioTowerIcon, ChevronDownIcon, CheckIcon } from "./lucide-icons.tsx";
+import { GlobeIcon, WifiOffIcon, EarthIcon, ChevronDownIcon, CheckIcon } from "./lucide-icons.tsx";
 import { api, type SearchMode } from "./api.ts";
 import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 
@@ -55,7 +55,7 @@ const DEFAULT_DESCRIPTIONS: Record<SearchMode, string> = {
 };
 
 function ModeIcon(props: { mode: SearchMode }) {
-  if (props.mode === "required") return <RadioTowerIcon size={16} />;
+  if (props.mode === "required") return <EarthIcon size={16} />;
   if (props.mode === "off") return <WifiOffIcon size={16} />;
   return <GlobeIcon size={16} />;
 }
@@ -244,4 +244,5 @@ export function SearchModeButton({
     </div>
   );
 }
+
 

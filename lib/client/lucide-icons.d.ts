@@ -24,8 +24,8 @@ export interface LucideIconProps {
 export declare function GlobeIcon(props: LucideIconProps): import("react").JSX.Element;
 /** `wifi-off` — web access switched off. */
 export declare function WifiOffIcon(props: LucideIconProps): import("react").JSX.Element;
-/** `radio-tower` — the mode that stays switched on every turn. */
-export declare function RadioTowerIcon(props: LucideIconProps): import("react").JSX.Element;
+/** `earth` — the mode that stays switched on (continents, not a wireframe). */
+export declare function EarthIcon(props: LucideIconProps): import("react").JSX.Element;
 /** `chevron-down` — "there is a menu here". */
 export declare function ChevronDownIcon(props: LucideIconProps): import("react").JSX.Element;
 /** `check` — the active menu row. */

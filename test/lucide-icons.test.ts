@@ -28,13 +28,10 @@ const EXPECTED_PATHS: Record<string, string[]> = {
     "M22 8.82a15 15 0 0 0-11.288-3.764",
     "m2 2 20 20",
   ],
-  RadioTower: [
-    "M4.9 16.1C1 12.2 1 5.8 4.9 1.9",
-    "M7.8 4.7a6.14 6.14 0 0 0-.8 7.5",
-    "M16.2 4.8c2 2 2.26 5.11.8 7.47",
-    "M19.1 1.9a9.96 9.96 0 0 1 0 14.1",
-    "M9.5 18h5",
-    "m8 22 4-11 4 11",
+  Earth: [
+    "M21.54 15H17a2 2 0 0 0-2 2v4.54",
+    "M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17",
+    "M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05",
   ],
   ChevronDown: ["m6 9 6 6 6-6"],
   Check: ["M20 6 9 17l-5-5"],
@@ -71,4 +68,5 @@ test("the shared frame keeps the product defaults and inherits colour", () => {
   assert.match(SOURCE, /strokeLinecap="round"/);
   assert.match(SOURCE, /strokeLinejoin="round"/);
 });
+
 
