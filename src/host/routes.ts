@@ -578,7 +578,7 @@ async function handleSearchModeSet(deps: RouteDeps, payload: unknown) {
   const sessionId = String(p.sessionId ?? "");
   const mode = p.mode;
   if (!sessionId) throw new Error("missing sessionId");
-  if (mode !== "auto" && mode !== "required") throw new Error("invalid mode");
+  if (mode !== "auto" && mode !== "required" && mode !== "off") throw new Error("invalid mode");
   if (!deps.searchMode) throw new Error("search-mode runtime unavailable");
   return deps.searchMode.set(sessionId, mode);
 }

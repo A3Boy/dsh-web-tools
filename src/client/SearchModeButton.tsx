@@ -23,6 +23,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconGlobeOutline14 } from "./icons.ts";
 import { api, type SearchMode } from "./api.ts";
+import { nextSearchMode } from "../shared/api-types.ts";
 import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 
 /** Props the session-scoped seat supplies plus localized copy. */
@@ -32,6 +33,11 @@ interface Props {
   unavailableLabel?: string;
   autoTooltip?: string;
   requiredTooltip?: string;
+  /** Label while web search is switched OFF for this session. */
+  offLabel?: string;
+  offTooltip?: string;
+  /** Label while the turn is forced to research. */
+  requiredLabel?: string;
 }
 
 /** Revalidation cadence while the page is visible. */
@@ -39,10 +45,13 @@ const REVALIDATE_MS = 1000;
 
 export function SearchModeButton({
   sessionId,
-  label = "联网搜索",
+  label = "自动联网",
   unavailableLabel = "没有可用的搜索源",
-  autoTooltip = "自动联网：Agent 会在需要时使用联网搜索",
-  requiredTooltip = "已要求联网：回答前必须完成一次联网搜索",
+  autoTooltip = "自动联网：Agent 会在需要时使用联网搜索（点击切换为强制联网）",
+  requiredTooltip = "已要求联网：回答前必须完成一次联网搜索（点击关闭联网）",
+  offLabel = "联网已关闭",
+  offTooltip = "联网已关闭：不提供联网工具，Agent 不能搜索（点击恢复自动）",
+  requiredLabel = "强制联网",
 }: Props) {
   const [mode, setMode] = useState<SearchMode>();
   const [available, setAvailable] = useState(true);
@@ -109,13 +118,14 @@ export function SearchModeButton({
   }, [sessionId]);
 
   const required = mode === "required";
+  const off = mode === "off";
   const loading = mode === undefined;
 
   const toggle = async () => {
     if (mode === undefined || pending || !available) return;
     const current = generation.current;
     const previous = mode;
-    const next: SearchMode = previous === "required" ? "auto" : "required";
+    const next: SearchMode = nextSearchMode(previous);
 
     // Optimistic flip: no visible round-trip delay, no second click while pending.
     setPending(true);
@@ -140,21 +150,28 @@ export function SearchModeButton({
 
   const tooltip = !available
     ? unavailableLabel
-    : required
-      ? requiredTooltip
-      : autoTooltip;
+    : off
+      ? offTooltip
+      : required
+        ? requiredTooltip
+        : autoTooltip;
+
+  // One label per state so the button names what it currently IS, not only
+  // what clicking it would do.
+  const shownLabel = !available ? unavailableLabel : off ? offLabel : required ? requiredLabel : label;
 
   return (
     <button
       type="button"
       className={searchModeCss.trigger}
       data-active={required || undefined}
+      data-off={off || undefined}
       data-loading={loading || undefined}
       data-pending={pending || undefined}
       data-unavailable={!available || undefined}
       aria-busy={loading || pending || undefined}
       aria-pressed={required}
-      aria-label={label}
+      aria-label={shownLabel}
       title={tooltip}
       disabled={!available || loading || pending}
       onMouseDown={(event) => {
@@ -168,7 +185,7 @@ export function SearchModeButton({
       <span className={searchModeCss.icon} aria-hidden>
         <IconGlobeOutline14 size={14} />
       </span>
-      <span className={searchModeCss.label}>{label}</span>
+      <span className={searchModeCss.label}>{shownLabel}</span>
     </button>
   );
 }

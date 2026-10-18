@@ -331,6 +331,45 @@ test("Security: transact never proxies loopback targets even when a proxy is con
   }
 });
 
+test("Security: transact dials intranet destinations directly even with a system proxy", async () => {
+  // The Windows-proxy failure mode: a self-hosted source on LAN space is saved
+  // and authorized, but because an HTTP proxy is configured the request used to
+  // abort with `proxy-required` — a proxy cannot reach 10.x/192.168.x anyway.
+  // The resolved address now decides: private destination -> direct dial.
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, path: req.url }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const port = server.address().port;
+
+  try {
+    const host = "search.corp-intranet.example";
+    const policy: OutboundPolicy = {
+      authorizations: [{ host, port, allowPrivate: true, allowHttp: true }],
+      allowProxy: false,
+    };
+    const req = {
+      url: `http://${host}:${port}/search`,
+      method: "GET" as const,
+      headers: { authorization: "Bearer secret" },
+      label: "Intranet bypass proxy gate",
+      trust: "authorized" as const,
+      policy,
+    };
+
+    const res = await transact(req, {
+      proxyUrl: () => "http://127.0.0.1:9",
+      lookupAll: async () => [{ address: "127.0.0.1", family: 4 }],
+    });
+    assert.equal(res.status, 200);
+    assert.equal((res.json as { ok: boolean; path: string } | undefined)?.path, "/search");
+  } finally {
+    server.close();
+  }
+});
+
 test("Security: isLoopbackUrl recognizes localhost and IPv4/IPv6 loopback", () => {
   assert.equal(isLoopbackUrl("http://127.0.0.1:8080/search"), true);
   assert.equal(isLoopbackUrl("http://localhost:8080/search"), true);

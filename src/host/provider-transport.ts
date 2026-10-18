@@ -521,13 +521,24 @@ export async function transact(
   // ---- 3. header hygiene -------------------------------------------------
   for (const name of Object.keys(request.headers)) assertHeaderName(name);
 
-  // ---- 4. proxy decision (fail closed) ----------------------------------
-  // Loopback endpoints must be connected to directly even when Windows has a
-  // system proxy. This only bypasses proxy routing, NOT allowHttp/allowPrivate
-  // authorization or the DNS preflight and pinned connection below. The
-  // isLoopbackUrl check below is defense-in-depth on top of the proxyUrl
-  // bypass, so a loopback target can never hit the proxy gate.
-  const proxyUrl = isLoopbackHost(parsed.hostname) ? undefined : deps.proxyUrl?.();
+  // ---- 4. DNS pre-flight ------------------------------------------------
+  // Runs BEFORE the proxy decision because the resolved address decides it: an
+  // ambient HTTP proxy cannot reach private/LAN space (it dials from wherever
+  // it runs), so a destination that resolves to a private address must be
+  // dialed directly even when Windows has a system proxy configured. Without
+  // this, a self-hosted source on 192.168.x.x could be saved and authorized and
+  // still fail every search with `proxy-required`.
+  const preflight = await preflightDns(parsed.hostname, request.trust, policy, deps);
+  const pinned = preflight.addresses[0];
+  const useTls = parsed.protocol === "https:";
+  const privateDestination = preflight.addresses.some((record) => isPrivateOrRestrictedIp(record.address));
+
+  // ---- 5. proxy decision (fail closed) ----------------------------------
+  // Loopback and private destinations are connected directly: this only
+  // bypasses proxy ROUTING, never the allowHttp/allowPrivate authorization or
+  // the pinned connection below.
+  const directDial = isLoopbackHost(parsed.hostname) || privateDestination;
+  const proxyUrl = directDial ? undefined : deps.proxyUrl?.();
   let dispatcher: unknown;
   if (proxyUrl !== undefined && !(request.builtInOfficial === true) && !isLoopbackUrl(parsed.href)) {
     if (policy.allowProxy !== true) {
@@ -538,11 +549,6 @@ export async function transact(
     }
     dispatcher = await deps.proxyDispatcher?.(proxyUrl);
   }
-
-  // ---- 5. DNS pre-flight + pinned connect --------------------------------
-  const preflight = await preflightDns(parsed.hostname, request.trust, policy, deps);
-  const pinned = preflight.addresses[0];
-  const useTls = parsed.protocol === "https:";
 
   // Only attach the custom dispatcher when we are NOT pinning, i.e. built-in
   // official endpoints (whose host is trusted by construction) and proxied

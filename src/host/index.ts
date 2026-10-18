@@ -585,7 +585,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // The routes expose the same runtime map to the button / slash commands.
   const searchMode = {
     view: (sessionId: string) => searchModeRuntime.view(sessionId),
-    set: (sessionId: string, mode: "auto" | "required") => {
+    set: (sessionId: string, mode: "auto" | "required" | "off") => {
       searchModeRuntime.setMode(sessionId, mode);
       return searchModeRuntime.view(sessionId);
     },

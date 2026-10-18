@@ -95,6 +95,9 @@ export function apply(ctx: any) {
       unavailableLabel: t("searchModeUnavailable"),
       autoTooltip: t("searchModeTooltipAuto"),
       requiredTooltip: t("searchModeTooltipRequired"),
+      requiredLabel: t("searchModeLabelRequired"),
+      offLabel: t("searchModeLabelOff"),
+      offTooltip: t("searchModeTooltipOff"),
     });
   };
 

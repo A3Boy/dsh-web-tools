@@ -138,12 +138,22 @@ export interface CredentialsView {
     credentials: Record<string, CredentialView>;
 }
 /**
- * "Web Search mode" per-session policy: `auto` lets the agent decide whether
- * to call web_search; `required` demands at least one completed web_search
- * call (success OR failure) before that turn may end. Host-owned state, so it
- * survives browser refresh / relaunch.
+ * "Web Search mode" per-session policy:
+ *  - `auto`     — the agent decides whether to research.
+ *  - `required` — at least one completed web_search/web_fetch before the turn
+ *                 may end (success OR failure counts as an attempt).
+ *  - `off`      — web tools are withheld from the agent and any call is denied
+ *                 at the tool gate, so "close web search" actually closes it
+ *                 instead of merely dropping the requirement.
+ * Host-owned state, so it survives browser refresh / relaunch.
  */
-export type SearchMode = "auto" | "required";
+export type SearchMode = "auto" | "required" | "off";
+/**
+ * The click/keyboard cycle shared by the button and the `/search` command:
+ * auto → required → off → auto. Keeping it in one place means the UI cannot
+ * disagree with the slash command about what the next state is.
+ */
+export declare function nextSearchMode(mode: SearchMode): SearchMode;
 /** The search-mode state surfaced to the client. */
 export interface SearchModeView {
     mode: SearchMode;

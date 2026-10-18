@@ -16,11 +16,13 @@ import {
   searchModeStepMessage,
   webResearchCompleted,
   requiredSearchText,
+  SEARCH_DISABLED_TEXT,
   REQUIRED_SEARCH_TEXT,
   REQUIRED_SEARCH_TEXT_NO_PLATFORMS,
   REQUIRED_SEARCH_CORRECTION_TEXT,
   type TurnState,
 } from "../src/host/search-mode-runtime.ts";
+import { nextSearchMode } from "../src/shared/api-types.ts";
 
 function runtime(available = true): SearchModeRuntime {
   return new SearchModeRuntime(() => available);
@@ -226,6 +228,49 @@ test("requiredSearchText defaults to the platform-aware text", () => {
   assert.equal(requiredSearchText(true), REQUIRED_SEARCH_TEXT);
   assert.equal(requiredSearchText(false), REQUIRED_SEARCH_TEXT_NO_PLATFORMS);
 });
+
+test("off mode freezes a disabled turn and never demands research", () => {
+  const r = runtime();
+  r.setMode("s-off", "off");
+  assert.equal(r.getMode("s-off"), "off");
+  assert.equal(r.isOff("s-off"), true);
+
+  const turn = r.beginTurn("s-off", 1);
+  assert.equal(turn.disabled, true, "off turns are frozen as disabled");
+  assert.equal(turn.required, false, "off must never be a required turn");
+});
+
+test("off mode injects the switched-off notice on step 1 only", () => {
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+  const r = runtime();
+  r.setMode("s-off", "off");
+  const turn = r.beginTurn("s-off", 1);
+
+  const built = searchModeStepMessage(turn, 1, messages) as { __built: { content: Array<{ text: string }> } };
+  assert.equal(built.__built.content[0].text, SEARCH_DISABLED_TEXT);
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0].source as { summary?: string }).summary, "Web Search disabled");
+
+  assert.equal(searchModeStepMessage(turn, 2, messages), undefined,
+    "later steps stay silent; the gate enforces the mode");
+});
+
+test("a disabled turn is never corrected at turn-stopping", () => {
+  const r = runtime();
+  r.setMode("s-off", "off");
+  const turn = r.beginTurn("s-off", 1);
+  // Turn-stopping only steers `required` turns; off must fall straight through.
+  assert.equal(turn.required, false);
+  assert.equal(webResearchCompleted(turn), false);
+});
+
+test("nextSearchMode cycles auto -> required -> off -> auto", () => {
+  assert.equal(nextSearchMode("auto"), "required");
+  assert.equal(nextSearchMode("required"), "off");
+  assert.equal(nextSearchMode("off"), "auto");
+});
+
 
 test("correction message is a one-shot plugin notice (not a snapshot)", () => {
   const { calls, createUserMessage } = captureFactory();

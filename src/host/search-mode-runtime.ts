@@ -24,6 +24,7 @@
  */
 import type { WebToolsContext, WebToolsCommandDefinition, WebToolsCommandInvocation, WebToolsCommandResult } from "./context-types.ts";
 import type { SearchMode, SearchModeView } from "../shared/api-types.ts";
+import { nextSearchMode } from "../shared/api-types.ts";
 
 /** The two user-facing modes. */
 export type { SearchMode };
@@ -32,6 +33,8 @@ export type { SearchMode };
 export interface TurnState {
   turn: number;
   required: boolean;
+  /** True when this turn runs with web search switched OFF (tools withheld). */
+  disabled: boolean;
   webSearchCompleted: boolean;
   webSearchSucceeded: boolean;
   webFetchCompleted: boolean;
@@ -115,6 +118,11 @@ export class SearchModeRuntime {
     else this.modes.set(sessionId, mode);
   }
 
+  /** True when this session has web search switched OFF. */
+  isOff(sessionId: string): boolean {
+    return this.getMode(sessionId) === "off";
+  }
+
   /** Whether a usable search provider currently exists (drives `available`). */
   available(): boolean {
     try {
@@ -134,6 +142,7 @@ export class SearchModeRuntime {
     const state: TurnState = {
       turn,
       required: this.getMode(sessionId) === "required",
+      disabled: this.isOff(sessionId),
       webSearchCompleted: false,
       webSearchSucceeded: false,
       webFetchCompleted: false,
@@ -192,8 +201,9 @@ export interface SearchModeRuntimeDeps {
 /**
  * The UserMessages the runtime injects. Constructed with the OFFICIAL
  * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
- * ad-hoc shape. Only TWO messages exist:
+ * ad-hoc shape. THREE messages exist:
  *  - required(): the one-shot step-1 policy snapshot.
+ *  - disabled(): the one-shot step-1 "web search is OFF" notice.
  *  - correction(): the one-shot turn-stopping steer (form: "notice").
  * Later-step reminder/grounding/failure re-injection is intentionally gone:
  * tool results already become the freshest context of the next model request.
@@ -201,9 +211,15 @@ export interface SearchModeRuntimeDeps {
 export interface SearchModeMessages {
   /** Step 1 (once per turn): the compact research policy. */
   required(): unknown;
+  /** Step 1 (once per turn): web search is switched off for this session. */
+  disabled(): unknown;
   /** turn-stopping steer (one-shot notice). */
   correction(): unknown;
 }
+
+/** One-shot notice injected on step 1 of an `off` turn. */
+export const SEARCH_DISABLED_TEXT =
+  "Web search is switched OFF for this session. Do not call web_search or web_fetch; answer from the context you already have. If a question truly requires fresh web data, say what could not be verified.";
 
 /**
  * Build the injected messages with the official `createUserMessage`
@@ -242,6 +258,16 @@ export function createSearchModeMessages(
   };
   return {
     required: () => snapshot(policyText(), "web-search-mode"),
+    disabled: () =>
+      createUserMessage({
+        content: [{ type: "text", text: SEARCH_DISABLED_TEXT }],
+        source: {
+          kind: "plugin:dsh-web-tools",
+          plugin: "dsh-web-tools",
+          form: "notice",
+          summary: "Web Search disabled",
+        },
+      }),
     correction: () =>
       createUserMessage({
         content: [{ type: "text", text: REQUIRED_SEARCH_CORRECTION_TEXT }],
@@ -257,19 +283,21 @@ export function createSearchModeMessages(
 
 /**
  * Decide which pre-step Search Mode message (if any) to inject for one step.
- * Pure and one-shot: ONLY step 1 in a required turn injects the policy
- * snapshot. Later steps inject NOTHING — the web tool result(s) are already
- * the freshest context, and enforcement happens in turn-stopping, not by
- * re-reminding the model every step.
- * @returns undefined (no injection) unless `state.required && step === 1`.
+ * Pure and one-shot: ONLY step 1 injects — either the research policy (required
+ * turns) or the "switched off" notice (off turns). Later steps inject NOTHING:
+ * the web tool result(s) are the freshest context, and enforcement happens at
+ * the tool gate, not by re-reminding the model every step.
+ * @returns undefined (no injection) unless step 1 of a required/off turn.
  */
 export function searchModeStepMessage(
   state: TurnState | undefined,
   step: number,
   messages: SearchModeMessages,
 ): unknown | undefined {
-  if (!state?.required) return undefined;
+  if (!state) return undefined;
   if (step !== 1) return undefined;
+  if (state.disabled) return messages.disabled();
+  if (!state.required) return undefined;
   return messages.required();
 }
 
@@ -277,7 +305,19 @@ export function searchModeStepMessage(
 interface AgentScopedCtx {
   on(event: string, listener: (...args: any[]) => unknown, options?: unknown): () => void;
   effect(fn: () => void | (() => void), label?: string): void;
+  /** Per-scope tool surface (may be absent on older hosts). */
+  tools?: {
+    restrict?(filter: { allow?: readonly string[]; deny?: readonly string[] }): () => void;
+    guard?(guard: (execution: { name: string }) => string | undefined): () => void;
+  };
 }
+
+/** The two model-facing web tools this plugin owns the policy for. */
+export const WEB_TOOL_NAMES: readonly string[] = ["web_search", "web_fetch"];
+
+/** Denial reason shown to the model when it calls a web tool while OFF. */
+export const WEB_DISABLED_DENIAL =
+  "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";
 interface ScopedAgent {
   id: string;
   ctx: AgentScopedCtx;
@@ -302,6 +342,27 @@ export function installSearchModeRuntime(
     // Register this agent's listeners inside its own scope so scope-filtered
     // dispatch reaches them; cleaning up when the agent scope unwinds.
     return agent.ctx.effect(() => {
+      // ---- layer 1: hide the web tools from this agent's tool list ---------
+      // Scoped, so other sessions keep their tools. Applied at turn start and
+      // lifted as soon as the mode leaves `off`.
+      let liftRestriction: (() => void) | undefined;
+      const syncRestriction = () => {
+        const off = runtime.isOff(agent.id);
+        if (off && liftRestriction === undefined) {
+          liftRestriction = agent.ctx.tools?.restrict?.({ deny: [...WEB_TOOL_NAMES] });
+        } else if (!off && liftRestriction !== undefined) {
+          liftRestriction();
+          liftRestriction = undefined;
+        }
+      };
+      // ---- layer 2: monotonic gate -----------------------------------------
+      // Model inertia can still emit a call from history after a toggle; the
+      // guard denies it before the body runs and cannot be re-allowed by a
+      // later listener.
+      const stopGuard = agent.ctx.tools?.guard?.((execution) =>
+        runtime.isOff(agent.id) && WEB_TOOL_NAMES.includes(execution.name) ? WEB_DISABLED_DENIAL : undefined,
+      );
+
       const stopPreStep = agent.ctx.on(
         "agent/pre-step",
         async (payload: { turn: number; step: number; signal?: AbortSignal }, next: () => Promise<unknown>) => {
@@ -309,6 +370,7 @@ export function installSearchModeRuntime(
           if (!decision || (decision as { kind?: string }).kind === "reject") return decision;
           if (payload.signal?.aborted) return decision;
           const state = runtime.beginTurn(agent.id, payload.turn);
+          syncRestriction();
           const inject = searchModeStepMessage(state, payload.step, messages);
           if (!inject) return decision;
           const entered = decision as { kind: "enter"; messages: unknown[] };
@@ -350,6 +412,11 @@ export function installSearchModeRuntime(
         stopPreStep?.();
         stopResult?.();
         stopStopping?.();
+        stopGuard?.();
+        if (liftRestriction !== undefined) {
+          liftRestriction();
+          liftRestriction = undefined;
+        }
         runtime.clear(agent.id);
       };
     }, "dsh-web-tools: search-mode agent listeners");
@@ -389,10 +456,13 @@ function toggleCommandHandler(
 ): WebToolsCommandResult {
   const id = String(invocation.agent?.id ?? "");
   if (!id) return { kind: "error", text: "no session" };
-  const next = runtime.getMode(id) === "required" ? "auto" : "required";
+  const next = nextSearchMode(runtime.getMode(id));
   runtime.setMode(id, next);
-  return {
-    kind: "success",
-    text: next === "required" ? "联网搜索已开启（本轮起每轮先搜索）" : "联网搜索已关闭（回到自动判断）",
-  };
+  const text =
+    next === "required"
+      ? "联网搜索已开启（每轮强制搜索）"
+      : next === "off"
+        ? "联网搜索已关闭（不提供联网工具，Agent 不能搜索）"
+        : "联网搜索已恢复为自动（Agent 自行判断是否需要搜索）";
+  return { kind: "success", text };
 }
