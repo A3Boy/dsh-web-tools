@@ -91,13 +91,18 @@ export function apply(ctx: any) {
     );
     return React.createElement(SearchModeButton, {
       sessionId: props.sessionId,
-      label: t("searchModeLabel"),
       unavailableLabel: t("searchModeUnavailable"),
-      autoTooltip: t("searchModeTooltipAuto"),
-      requiredTooltip: t("searchModeTooltipRequired"),
-      requiredLabel: t("searchModeLabelRequired"),
-      offLabel: t("searchModeLabelOff"),
-      offTooltip: t("searchModeTooltipOff"),
+      menuLabel: t("searchModeMenuLabel"),
+      labels: {
+        auto: t("searchModeAuto"),
+        required: t("searchModeRequired"),
+        off: t("searchModeOff"),
+      },
+      descriptions: {
+        auto: t("searchModeAutoDesc"),
+        required: t("searchModeRequiredDesc"),
+        off: t("searchModeOffDesc"),
+      },
     });
   };
 

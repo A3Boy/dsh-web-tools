@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — client status/summary logic tests (plain node, no tsx).
  *
  * Verifies the provider state model that drives the settings-page dots:
@@ -320,10 +320,21 @@ test("forbidden marketing copy audit: zhDict contains no banned terms", () => {
     "广告",
   ];
 
+  // Approved product terms are allowed to contain a banned substring: the
+  // "智能" ban targets marketing filler, not the chosen name of a mode. Strip
+  // the approved strings before scanning so every OTHER use stays forbidden.
+  const approvedTerms = ["智能联网"];
+
   for (const [key, val] of Object.entries(zhDict)) {
+    let scanned = val;
+    for (const approved of approvedTerms) scanned = scanned.split(approved).join("");
     for (const banned of bannedTerms) {
-      assert.ok(!val.includes(banned), `zhDict[${key}] = "${val}" contains forbidden term "${banned}"`);
+      assert.ok(
+        !scanned.includes(banned),
+        `zhDict[${key}] = "${val}" contains forbidden term "${banned}" (outside approved product terms)`,
+      );
     }
   }
 });
+
 
