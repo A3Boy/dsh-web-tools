@@ -15,8 +15,11 @@
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
+import { endpointViewOf } from "../endpoints.ts";
 import type { JinaProviderOptions } from "../../shared/provider-options.ts";
 
+/** Official fallbacks. Search is overridable; the Reader is a different host
+ *  (`r.jina.ai`) and stays pinned. */
 const JINA_SEARCH_URL = "https://s.jina.ai/";
 const JINA_READER_URL = "https://r.jina.ai/";
 
@@ -73,18 +76,22 @@ export function buildJinaReaderHeaders(token: string, options?: Readonly<JinaPro
 export const JinaProvider: ProviderAdapter = {
   ...JINA_META,
 
-  async search(query, maxResults, apiKey, _baseUrl, contextOrSignal) {
+  async search(query, maxResults, apiKey, baseUrl, contextOrSignal) {
     const { signal, hints } = resolveContext(contextOrSignal);
     const token = (apiKey ?? "").trim();
     if (!token) throw providerError("config", "Jina API key is not configured");
     const count = Math.min(Math.max(maxResults ?? 5, 1), JINA_MAX_RESULTS);
     const cleanQ = hints?.cleanQuery ? hints.cleanQuery : query;
-    const url = `${JINA_SEARCH_URL}${encodeURIComponent(cleanQ)}?count=${count}`;
+    // Jina's search endpoint takes the query as a PATH segment, not a query
+    // parameter: `{base}/{encodedQuery}?count=N`.
+    const searchEndpoint = endpointViewOf("jina", { jina: baseUrl })?.url ?? JINA_SEARCH_URL;
+    const asPath = searchEndpoint.endsWith("/") ? searchEndpoint : `${searchEndpoint}/`;
+    const url = `${asPath}${encodeURIComponent(cleanQ)}?count=${count}`;
     const res = await fetchWithProxy(url, {
       method: "GET",
       headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       signal,
-    });
+    }, { provider: "jina" });
     throwIfHttp("Jina", res);
     let body: unknown;
     try {
@@ -103,7 +110,7 @@ export const JinaProvider: ProviderAdapter = {
       method: "GET",
       headers: buildJinaReaderHeaders(token, options),
       signal,
-    });
+    }, { provider: "jina" });
     throwIfHttp("Jina", res);
     const text = await res.text();
     if (!text.trim()) throw providerError("invalid-response", `Jina Reader returned empty content for ${url}`);
@@ -161,7 +168,7 @@ export async function jinaQuota(apiKey: string, signal?: AbortSignal): Promise<Q
   const res = await fetchWithProxy(JINA_READER_URL, {
     headers: { authorization: `Bearer ${apiKey}` },
     signal,
-  });
+  }, { provider: "jina" });
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) throw providerError("auth", `Jina balance auth failed (HTTP ${res.status})`, res.status);
     if (res.status === 429) throw providerError("rate-limit", "Jina rate limit exceeded (HTTP 429)", res.status);

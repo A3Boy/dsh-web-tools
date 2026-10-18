@@ -340,8 +340,8 @@ function ConnectionSettingsDisclosure(props: {
 }) {
   const { t, p, draftBaseUrl, setDraftBaseUrl, onBaseUrl } = props;
   const selfHosted = p.name === "searxng";
-  const [open, setOpen] = useState(selfHosted);
-  const isConfigured = !!p.baseUrl;
+  const isConfigured = !!p.baseUrlConfigured;
+  const [open, setOpen] = useState(selfHosted || isConfigured);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -380,17 +380,24 @@ function ConnectionSettingsDisclosure(props: {
                 }
               }}
               onBlur={() => {
-                if (draftBaseUrl.trim() !== (p.baseUrl ?? "")) onBaseUrl(draftBaseUrl.trim());
+                if (draftBaseUrl.trim() !== (p.baseUrlConfigured ? (p.baseUrl ?? "") : "")) {
+                  onBaseUrl(draftBaseUrl.trim());
+                }
               }}
-              placeholder={t("baseUrlPlaceholder")}
+              placeholder={p.defaultBaseUrl || t("baseUrlPlaceholder")}
               style={{ flex: 1, padding: "6px 10px", borderRadius: 6, border: `1px solid ${surface.border}`, background: surface.layer2, color: text.primary, fontFamily: "inherit", fontSize: 13 }}
             />
-            {p.baseUrl && (
+            {isConfigured && (
               <Button size="sm" variant="ghost" onClick={() => { setDraftBaseUrl(""); onBaseUrl(""); }}>
                 {t("restoreDefaultUrl")}
               </Button>
             )}
           </div>
+          {p.baseUrlForeign && (
+            <div style={{ fontSize: 12, color: stateColor.warning, marginTop: 2 }}>
+              {t("foreignHostWarning")}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -401,7 +408,7 @@ export function ProviderModal(props: Props) {
   adoptWebToolsStyles();
   const { t, p, quota, testResult, busy, showPreferred, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
   const [localError, setLocalError] = useState("");
-  const [draftBaseUrl, setDraftBaseUrl] = useState(p.baseUrl ?? "");
+  const [draftBaseUrl, setDraftBaseUrl] = useState(p.baseUrlConfigured ? (p.baseUrl ?? "") : "");
   const base = providerStatusOf(p, quota, inChain);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {

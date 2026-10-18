@@ -130,18 +130,56 @@ Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects
 
 ---
 
+## Custom Search Providers & Address Overrides (Issue #9)
+
+In addition to the 8 built-in search adapters and social platforms, dsh-web-tools natively supports **Custom Search Providers** and **Built-in Service Address Overrides**:
+
+* **Built-in Base URL Overrides**:
+  * All 8 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, SearXNG) support custom service addresses (e.g. self-hosted API gateways, reverse proxies).
+  * Preserves path prefixes (such as `/v1`, `/v2`), prompts for confirmation on foreign destinations to protect API keys, and supports instant restoration to official defaults.
+* **Three Parallel Access Paths (Progressive Modal UX)**:
+  * **Compatible Provider API**: Follows the standard Tavily POST JSON specification with zero manual mapping. Ideal for self-hosted proxies and compatible gateways.
+  * **Protocol Template**: Pre-configured standard meta-search protocol (e.g. SearXNG JSON `GET /search?format=json`), keyless by default with automatic result mapping.
+  * **Custom JSON API (Generic JSON)**: Full declarative mapping engine for internal knowledge bases, private clusters, or arbitrary RESTful search endpoints:
+    * **Custom Request Headers**: Add arbitrary HTTP headers with `{{apiKey}}` and `{{query}}` placeholder interpolation.
+    * **Nested JSON Body Template (`bodyTemplate`)**: In POST JSON mode, author arbitrary nested JSON request bodies (e.g. `{"query": "{{query}}", "limit": "{{maxResults}}"}`) without writing code.
+    * **Query Parameters Template (`paramsTemplate`)**: In GET or query-encoded mode, configure custom query parameters with full placeholder support.
+    * **Declarative Response Mapping**: Non-executable dot-path reader (`itemsPath`, `urlPath`, `titlePath`, `snippetPath`, etc.) with prototype pollution defenses.
+    * **Single-Pass Interpolation**: Prevents recursive placeholder expansion and secret leakage when user query contains placeholder syntax.
+    * **Real-Time Syntax Validation**: Invalid JSON in the body template immediately triggers visual error feedback and disables testing/saving to prevent stale config writes.
+* **Credential Isolation & Key Pooling**:
+  * Supports Bearer Token, API Key Header, HTTP Basic (isolated username/password storage with rollback compensation), and Keyless modes.
+  * API secrets are managed securely by the DSH credentials service and never echoed back to browser configuration views. Integrates with key rotation and health tracking.
+* **Draft Testing & Routing Integration**:
+  * Test search drafts directly before saving to verify latency and field mapping without contaminating runtime health or circuit breakers.
+  * Custom providers seamlessly participate in fallback chains and routing policies (Ordered, Round-Robin, Random).
+* **Tiered Outbound Security & SSRF Defense**:
+  * **Default Safe Destinations**: Public HTTPS targets and default self-hosted SearXNG (`127.0.0.1:8080`, `localhost:8080`) are pre-authorized with zero dialogs.
+  * **Explicit Operator Confirmation (409 Conflict)**: Private RFC 1918 networks, plain unencrypted HTTP, and custom domains resolving to private IPs (probed via `resolvesToPrivateIp()`) require explicit one-time confirmation before issuing outbound grants. Silent auto-authorization is strictly prohibited.
+  * **Shared Endpoint Lifecycle Cleanup**: Managed authorizations (`managedBy: "custom-source"`) are safely reused when multiple custom sources share an internal endpoint, and automatically revoked when the last source is deleted or reassigned. System defaults remain untouched.
+  * **Unconditional Cloud Metadata & Link-Local Hard Blocks**: `169.254.0.0/16`, `fe80::/10` (fe80:: to febf::), IPv4-mapped variants (`::ffff:a9fe:a9fe`, etc.), and IMDSv6 are unconditionally blocked at the transport layer, even if explicitly authorized.
+  * **Proxy Egress & Pinned Connections**: Public custom endpoints automatically route through `undici.ProxyAgent` when a Windows system proxy or `HTTP_PROXY` is configured; private and loopback targets strictly bypass the proxy and dial directly with IP pinning.
+  * **Configuration Plane Integrity**: Privileged management routes verify genuine TCP socket `remoteAddress` to prevent Host header spoofing.
+
+---
+
 ## Fallback & Resilience
 
 * **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.
 * **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
 * **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately.
 * **Configurable Routing Policies**: `web_search` supports Ordered, Round-Robin, and Random starting-provider selection. `web_fetch` always follows the deterministic fetch-capable chain.
-* **Session-Level Search Mode**: Requires at least one completed `web_search` or `web_fetch` call before an answer. A failed call still counts as an attempt, and the agent is instructed to disclose what could not be verified.
-* **Proxy Support**: Supports the Windows system proxy, `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`, with automatic loopback bypass.
+* **Session-Level Search Mode**: one compact picker in the composer (button + menu), three modes, defaulting to Smart.
+  * **Smart (智能联网)**: the agent decides whether a question needs the web.
+  * **Always (始终联网)**: at least one completed `web_search` / `web_fetch` per turn. A failed call still counts as an attempt, and the agent must disclose what could not be verified.
+  * **Off (关闭联网)**: actually off. `web_search` / `web_fetch` are withheld from that agent's tool surface, any call still emitted from history is denied by a monotonic guard before it runs, and a one-shot notice explains the state. The host decides — not the model's memory of past turns.
+* **Proxy Support**: Supports the Windows system proxy, `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. Loopback bypasses the proxy, and **so does any self-hosted source that resolves to private address space** — a LAN SearXNG/gateway keeps working on a machine with a system proxy configured.
 
 ---
 
 ## Installation & Updates
+
+**DSH version support**: `0.1.0-rc.6` and later, including the `0.2.0-rc.x` and `0.2.1-rc.x` lines (both the `latest` and `next` channels are verified). The requirement lives in `peerDependencies`, which DSH uses to decide whether the plugin may activate; if the plugin stays inactive after a DSH upgrade, run `dsh plugin --profile web update dsh-web-tools` once.
 
 ```bash
 # Install

@@ -7,6 +7,7 @@
  */
 
 import type { ProviderOptionView } from "./provider-options.ts";
+import type { OutboundAuthorization } from "./custom-provider-types.ts";
 
 /** Search routing policy — how the host picks which provider to try first. */
 export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
@@ -21,6 +22,29 @@ export interface ProviderView {
   baseUrl?: string;
   /** True only when the operator explicitly configured a base URL (adapter defaults don't count). */
   baseUrlConfigured?: boolean;
+  /** Official base URL, for the "restore default" affordance. */
+  defaultBaseUrl?: string;
+  /**
+   * Which host the credential will actually be sent to. True when the operator
+   * pointed this provider at a host that is NOT the official endpoint, which
+   * means an existing API key now leaves for a different service.
+   */
+  baseUrlForeign?: boolean;
+  /** True when this row is an operator-defined custom source (Issue #9). */
+  custom?: boolean;
+  /** Wire protocol, custom sources only. */
+  protocol?: string;
+  /** Optimistic-concurrency revision, custom sources only. */
+  revision?: number;
+  /** Auth mode, custom sources only (`none` needs no credential). */
+  authMode?: string;
+  /** Full configuration for custom sources, preserving non-default mapping fields in the editor. */
+  customConfig?: {
+    endpoint: import("./custom-provider-types.ts").CustomEndpointConfig;
+    auth?: import("./custom-provider-types.ts").CustomAuthConfig;
+    request?: import("./custom-provider-types.ts").CustomRequestConfig;
+    response?: import("./custom-provider-types.ts").CustomResponseConfig;
+  };
   credRef: string;
   keyConfigured: boolean;
   keyWritable: boolean;
@@ -54,6 +78,8 @@ export interface ConfigView {
   };
   /** Search routing policy (ordered/round-robin/random). */
   searchRoutingPolicy?: SearchRoutingPolicy;
+  /** Operator-granted outbound destinations for internal gateways / private IPs. */
+  outboundAuthorizations?: OutboundAuthorization[];
 }
 
 /** One quota snapshot for the card (display only). */
@@ -104,12 +130,27 @@ export interface CredentialsView {
 }
 
 /**
- * "Web Search mode" per-session policy: `auto` lets the agent decide whether
- * to call web_search; `required` demands at least one completed web_search
- * call (success OR failure) before that turn may end. Host-owned state, so it
- * survives browser refresh / relaunch.
+ * "Web Search mode" per-session policy:
+ *  - `auto`     — the agent decides whether to research.
+ *  - `required` — at least one completed web_search/web_fetch before the turn
+ *                 may end (success OR failure counts as an attempt).
+ *  - `off`      — web tools are withheld from the agent and any call is denied
+ *                 at the tool gate, so "close web search" actually closes it
+ *                 instead of merely dropping the requirement.
+ * Host-owned state, so it survives browser refresh / relaunch.
  */
-export type SearchMode = "auto" | "required";
+export type SearchMode = "auto" | "required" | "off";
+
+/**
+ * The click/keyboard cycle shared by the button and the `/search` command:
+ * auto → required → off → auto. Keeping it in one place means the UI cannot
+ * disagree with the slash command about what the next state is.
+ */
+export function nextSearchMode(mode: SearchMode): SearchMode {
+  if (mode === "auto") return "required";
+  if (mode === "required") return "off";
+  return "auto";
+}
 
 /** The search-mode state surfaced to the client. */
 export interface SearchModeView {

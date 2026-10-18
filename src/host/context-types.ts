@@ -45,11 +45,6 @@ export interface WebToolsWebServer {
   readonly host?: string;
 }
 
-/** The web runtime face (trusted hosts list for the browser fence). */
-export interface WebToolsWebRuntime {
-  trustedHosts: readonly string[];
-}
-
 /** The settings service face (mirror of dsh-settings SettingsProvider). */
 export interface WebToolsSettingsService {
   register<T>(
@@ -118,7 +113,6 @@ export interface WebToolsEffect {
  */
 export interface WebToolsContext {
   webServer: WebToolsWebServer;
-  webRuntime: WebToolsWebRuntime;
   settings: WebToolsSettingsService;
   credentials: WebToolsCredentialsService;
   web: WebToolsWebSeam;
@@ -177,4 +171,3 @@ export interface WebToolsCommandDefinition {
 export interface WebToolsCommands {
   register(definition: WebToolsCommandDefinition): () => void;
 }
-

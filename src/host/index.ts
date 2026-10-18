@@ -25,10 +25,27 @@ import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { fetchWithProxy, proxyStatus } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDispatcher } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
+import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
+import {
+  OUTBOUND_AUTHORIZATIONS,
+  buildProviderSnapshot,
+  policyForCustomSource,
+  type ProviderSnapshot,
+} from "./custom-provider-registry.ts";
+import { createCustomAdapter, type CredentialSource, type TransportFn } from "./providers/custom-compatible.ts";
+import {
+  allCredentialRefsOf,
+  credentialRefsOf,
+  loadCustomProviders,
+  validateDraft,
+  validateSourceId,
+  CustomProviderValidationError,
+} from "./custom-provider-schema.ts";
+import type { CustomProviderConfig, CustomSourceErrorCode, CustomSourceTestView, CustomProviderDraft } from "../shared/custom-provider-types.ts";
 
 import { SpecializedSourceRegistry } from "./sources/registry.ts";
 import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
@@ -41,7 +58,7 @@ import type { SourceFetchOutcome } from "./sources/types.ts";
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "webRuntime", "settings", "credentials", "web", "agents", "commands"];
+export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
@@ -213,10 +230,63 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     };
   };
   const resolveKeys = async (providerName: string) => {
+    // Custom sources own host-derived refs (and may use two refs for Basic).
+    // Resolve through the catalog so both kinds share one pool store, and a
+    // custom source's key can never collide with a built-in's.
+    const entry = buildSnapshot().get(providerName);
+    if (entry && !entry.builtIn) {
+      const refs = entry.refs;
+      if (refs.username !== undefined || refs.password !== undefined) {
+        // Basic auth uses two separate credentials refs so passwords containing
+        // delimiters (comma, semicolon, space) are never corrupted by splitting.
+        // If username is configured, return an account identifier so the pool
+        // allocates a healthy dispatch slot rather than skipping the provider.
+        const user = (await readCredential(ctx, refs.username ?? "")).value ?? "";
+        return user ? `basic:${user}` : "";
+      }
+      if (refs.key === undefined) return "";
+      const cred = await readCredential(ctx, refs.key);
+      return cred.value ?? "";
+    }
     const ref = credRefOf(providerName);
     const cred = await readCredential(ctx, ref);
     return cred.value ?? "";
   };
+
+  // ---- Issue #9: credentials, secure transport, dynamic catalog -----------
+  /** Credential access by ref, for custom source adapters. */
+  const credentialSource: CredentialSource = {
+    read: async (ref) => (ref ? ((await readCredential(ctx, ref)).value ?? "") : ""),
+  };
+
+  /** The ambient proxy, if any (env var first, then the Windows system proxy). */
+  const currentProxyUrl = () => proxyFromEnv() ?? proxyFromSystem();
+
+  /** All outbound requests for custom sources go through the guarded transport. */
+  const secureTransport: TransportFn = (request) =>
+    transact(request, {
+      proxyUrl: currentProxyUrl,
+      proxyDispatcher: getProxyDispatcher,
+    });
+
+  /** Credential refs for one source id, resolved against the live catalog. */
+  const buildSnapshot = (): ProviderSnapshot => {
+    const cfg = readConfig();
+    const authorizations = [
+      ...OUTBOUND_AUTHORIZATIONS,
+      ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+    ];
+    return buildProviderSnapshot({
+      providerBaseUrls: cfg.providerBaseUrls ?? {},
+      customProviders: loadCustomProviders(cfg.customProviders),
+      credentials: credentialSource,
+      transport: secureTransport,
+      authorizations,
+    });
+  };
+  const resolveSnapshot = () => buildSnapshot();
+  const sourceRefsOf = (sourceId: string): { key?: string; username?: string; password?: string } | undefined =>
+    buildSnapshot().get(sourceId)?.refs;
 
   // ONE shared pool store for search + fetch: they see the same key usage
   // and health, and rebuild only when a credential actually changes.
@@ -229,9 +299,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
-  }, undefined, poolStore, healthStore);
+  }, undefined, poolStore, healthStore, resolveSnapshot);
 
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
+  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
 
   sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
@@ -466,7 +536,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // Seeding MUST wait for the settings namespace (ctx.inject is async) — in
   // the synchronous apply() body readConfig() would only return defaults.
   configHandle.onMounted(() => {
-    const braveCache = readConfig().braveQuotaCache ?? {};
+    const cfg = readConfig();
+    syncGlobalOutboundAuthorizations();
+    const braveCache = cfg.braveQuotaCache ?? {};
     braveQuotaPersist.seed(braveCache);
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
@@ -487,7 +559,17 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // provider service is enabled with a chain provider. Messages use the
   // OFFICIAL @deepseek-ai/dsh-llm createUserMessage ({ content, source }):
   // required = durable snapshot section, correction = one-shot notice.
-  const searchModeMessages = createSearchModeMessages((input) => createUserMessage(input as never));
+  const searchModeMessages = createSearchModeMessages(
+    (input) => createUserMessage(input as never),
+    () => {
+      // The platform-routing lines only make sense while a platform source can
+      // actually serve a routed query; otherwise the model is taught a prefix
+      // that silently does nothing.
+      const cfg = readConfig();
+      const platforms = cfg.platformEnabled ?? {};
+      return platforms.xiaohongshu !== false || platforms.x !== false;
+    },
+  );
   const searchModeRuntime = new SearchModeRuntime(() => routedSearchProvider.available());
   ctx.effect(
     () =>
@@ -503,18 +585,240 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   // The routes expose the same runtime map to the button / slash commands.
   const searchMode = {
     view: (sessionId: string) => searchModeRuntime.view(sessionId),
-    set: (sessionId: string, mode: "auto" | "required") => {
+    set: (sessionId: string, mode: "auto" | "required" | "off") => {
       searchModeRuntime.setMode(sessionId, mode);
       return searchModeRuntime.view(sessionId);
     },
   };
+
+  // ---- Issue #9: custom source lifecycle helpers --------------------------
+  /**
+   * Publish operator outbound-authorization entries into the shared network
+   * gate. Called on boot and after every config write, so authorization edits
+   * apply live.
+   */
+  function syncGlobalOutboundAuthorizations() {
+    const cfg = readConfig();
+    setGlobalOutboundAuthorizations(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []);
+  }
+
+  /**
+   * Drop runtime state for ONE source.
+   *
+   * Scoped to a single source on purpose: clearing every cooldown on an edit
+   * would discard still-valid state for unrelated sources (an unrelated
+   * provider's active 429 backoff would be forgotten and re-hit immediately).
+   */
+  function forgetSource(sourceId: string) {
+    healthStore.deleteCooldown(sourceId);
+    poolStore.forget(sourceId);
+  }
+
+  /** Remove every credential ref a deleted source owned. */
+  async function revokeSourceCredentials(sourceId: string): Promise<{ removed: string[]; failed: string[] }> {
+    const removed: string[] = [];
+    const failed: string[] = [];
+    for (const ref of allCredentialRefsOf(sourceId)) {
+      try {
+        const cred = await readCredential(ctx, ref);
+        if (!cred.configured) continue;
+        await writeCredential(ctx, ref, "");
+        removed.push(ref);
+      } catch {
+        failed.push(ref);
+      }
+    }
+    return { removed, failed };
+  }
+
+  /**
+   * Run a bounded search through a custom source WITHOUT touching live state.
+   *
+   * Used by `sources/test` for both saved sources and unsaved drafts. It never
+   * consults or mutates the shared pool or health store, so a failed probe of a
+   * draft cannot mark a real provider's key unhealthy or start a cooldown.
+   */
+  async function testSource(input: {
+    draft?: unknown;
+    sourceId?: string;
+    credential?: {
+      mode?: "stored" | "candidate";
+      value?: string;
+      username?: string;
+      password?: string;
+    };
+    confirmTarget?: boolean;
+    query: string;
+  }): Promise<CustomSourceTestView> {
+    const TEST_TIMEOUT_MS = 15_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error("test timed out")), TEST_TIMEOUT_MS);
+    timer.unref?.();
+
+    try {
+      let config: CustomProviderConfig;
+      if (input.draft !== undefined && input.draft !== null) {
+        // If a draft is supplied, always test the current draft configuration.
+        // If an existing sourceId is also present, retain that sourceId.
+        const draft: CustomProviderDraft = validateDraft(input.draft);
+        const id = input.sourceId ?? `custom_${"0".repeat(16)}`;
+        config = { schemaVersion: 1, id, revision: 1, ...draft };
+      } else if (input.sourceId !== undefined) {
+        const sourceId = validateSourceId(input.sourceId);
+        const stored = loadCustomProviders(readConfig().customProviders).find((entry) => entry.id === sourceId);
+        if (!stored) return { ok: false, error: { code: "not-found", message: `Unknown custom source "${sourceId}"` } };
+        config = stored;
+      } else {
+        return { ok: false, error: { code: "config", message: "draft or sourceId required" } };
+      }
+
+      const refs = credentialRefsOf(config.id, config.auth.mode);
+      const credInput = input.credential;
+
+      const credential: CredentialSource = {
+        read: async (ref) => {
+          if (credInput?.mode === "candidate") {
+            if (ref === refs.key && typeof credInput.value === "string") return credInput.value;
+            if (ref === refs.username && typeof credInput.username === "string") return credInput.username;
+            if (ref === refs.password && typeof credInput.password === "string") return credInput.password;
+          }
+          // Stored mode or fallback:
+          if (input.sourceId !== undefined) {
+            return credentialSource.read(ref);
+          }
+          if (ref === refs.key && typeof credInput?.value === "string") return credInput.value;
+          if (ref === refs.username && typeof credInput?.username === "string") return credInput.username;
+          if (ref === refs.password && typeof credInput?.password === "string") return credInput.password;
+          return "";
+        },
+      };
+
+      const cfg = readConfig();
+      const existingAuths = [
+        ...OUTBOUND_AUTHORIZATIONS,
+        ...(Array.isArray(cfg.outboundAuthorizations) ? cfg.outboundAuthorizations : []),
+      ];
+      const endpointUrl = new URL(config.endpoint.baseUrl);
+      const endpointPort = endpointUrl.port
+        ? Number(endpointUrl.port)
+        : (endpointUrl.protocol === "https:" ? 443 : 80);
+      const isPrivateOrLoopback =
+        isLocalOrPrivateHost(endpointUrl.hostname) ||
+        (await resolvesToPrivateIp(endpointUrl.hostname));
+      const isHttp = endpointUrl.protocol === "http:";
+
+      const isAlreadyAuthorized = existingAuths.some(
+        (a) =>
+          (a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() ||
+            (a.host.startsWith(".") && endpointUrl.hostname.toLowerCase().endsWith(a.host.toLowerCase()))) &&
+          (a.port === undefined || a.port === endpointPort) &&
+          (!isPrivateOrLoopback || a.allowPrivate) &&
+          (!isHttp || a.allowHttp),
+      );
+
+      const candidateAuth: OutboundAuthorization[] = [];
+      if ((isPrivateOrLoopback || isHttp) && !isAlreadyAuthorized) {
+        if (input.confirmTarget !== true) {
+          const targetStr = `${endpointUrl.hostname}:${endpointPort}`;
+          return {
+            ok: false,
+            error: {
+              code: "conflict",
+              message: `此搜索服务位于本地网络或使用未加密 HTTP 连接。是否允许访问 ${targetStr}？若配置了 API Key，对应凭证将发送给该服务。`,
+            },
+          };
+        }
+        candidateAuth.push({
+          host: endpointUrl.hostname,
+          port: endpointPort,
+          allowPrivate: isPrivateOrLoopback,
+          allowHttp: isHttp,
+          allowProxy: !isPrivateOrLoopback,
+          sourceId: input.sourceId,
+          managedBy: "custom-source",
+          note: `Operator-confirmed: ${config.name}`,
+        });
+      }
+
+      const authorizations = [...existingAuths, ...candidateAuth];
+      const { policy, trust } = policyForCustomSource(config, authorizations);
+      const adapter = createCustomAdapter(config, {
+        transport: secureTransport,
+        credentials: credential,
+        refs,
+        policy,
+        trust,
+      });
+
+      const started = Date.now();
+      try {
+        const outcome = await adapter.search(input.query, 3, "", undefined, { signal: controller.signal });
+        return {
+          ok: true,
+          status: "connected",
+          latencyMs: Date.now() - started,
+          resultCount: outcome.sources.length,
+          results: outcome.sources.slice(0, 3).map((s) => ({
+            title: s.title ?? s.url,
+            url: s.url,
+            ...(s.snippet ? { snippet: s.snippet } : {}),
+          })),
+        };
+      } catch (err) {
+        if (
+          err instanceof TransportError &&
+          err.code === "destination-blocked" &&
+          err.message.includes("private, loopback, or link-local") &&
+          input.confirmTarget !== true
+        ) {
+          const targetStr = `${endpointUrl.hostname}:${endpointPort}`;
+          return {
+            ok: false,
+            latencyMs: Date.now() - started,
+            error: {
+              code: "conflict",
+              message: `此搜索服务位于本地网络或解析到内网私有地址。是否允许访问 ${targetStr}？若配置了 API Key，对应凭证将发送给该服务。`,
+            },
+          };
+        }
+        const classified = toProviderError(err);
+        return {
+          ok: false,
+          latencyMs: Date.now() - started,
+          error: {
+            code: mapProviderErrorToSourceCode(classified.code),
+            // The message is built by our own adapters from a label + status;
+            // upstream response bodies, headers and credentials are never
+            // included, so nothing sensitive can reach the browser here.
+            message: classified.message,
+          },
+        };
+      }
+    } catch (err) {
+      if (err instanceof CustomProviderValidationError) {
+        return { ok: false, error: { code: "config", message: err.message } };
+      }
+      return {
+        ok: false,
+        error: { code: "config", message: err instanceof Error ? err.message : String(err) },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   // ---- fenced HTTP routes for the card ------------------------------------
   ctx.effect(
     () =>
       registerRoutes(ctx, {
         readConfig: () => readConfig() as unknown as Record<string, unknown>,
-        writeConfig: (patch) => configHandle.write(patch as Partial<WebToolsSettings>),
+        writeConfig: async (patch) => {
+          await configHandle.write(patch as Partial<WebToolsSettings>);
+          // Publish the (possibly updated) operator outbound-authorization list
+          // to the shared network gate immediately, so a just-saved intranet
+          // gateway starts working without a plugin reload.
+          syncGlobalOutboundAuthorizations();
+        },
         readCredential: (ref) => readCredential(ctx, ref),
         writeCredential: (ref, value) => writeCredential(ctx, ref, value),
         testProviderSearch,
@@ -526,9 +830,37 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,
         searchMode,
+        sourceRefs: sourceRefsOf,
+        testSource,
+        revokeSourceCredentials: (sourceId) => revokeSourceCredentials(sourceId),
+        forgetSource: (sourceId) => forgetSource(sourceId),
       }),
     "dsh-web-tools: /web-tools/api routes",
   );
+}
+
+/**
+ * Translate the executor's error vocabulary into the stable, UI-facing source
+ * codes the editor switches on. Kept as an explicit mapping so adding a new
+ * provider code forces a decision here instead of silently becoming "network".
+ */
+function mapProviderErrorToSourceCode(code: ProviderError["code"]): CustomSourceErrorCode {
+  switch (code) {
+    case "auth":
+      return "auth";
+    case "timeout":
+      return "timeout";
+    case "invalid-response":
+      return "invalid-response";
+    case "config":
+      return "config";
+    case "bad-request":
+      return "invalid-url";
+    case "aborted":
+      return "timeout";
+    default:
+      return "network";
+  }
 }
 
 function toProviderError(error: unknown): ProviderError {

@@ -30,6 +30,8 @@ export type { SearchMode };
 export interface TurnState {
     turn: number;
     required: boolean;
+    /** True when this turn runs with web search switched OFF (tools withheld). */
+    disabled: boolean;
     webSearchCompleted: boolean;
     webSearchSucceeded: boolean;
     webFetchCompleted: boolean;
@@ -42,8 +44,17 @@ export declare function webResearchCompleted(state: TurnState): boolean;
  * Compact: one hard requirement (complete an appropriate web tool), concrete
  * routing (URL → web_fetch, otherwise web_search), honest disclosure on
  * failure. General query-quality guidance belongs to DSH's own tool-web
- * prompt, not this per-turn policy. */
+ * prompt, not this per-turn policy. This default DOES advertise platform
+ * routing; use {@link requiredSearchText} to decide per live config. */
 export declare const REQUIRED_SEARCH_TEXT: string;
+/** Same policy with the platform-routing lines dropped (both platforms off). */
+export declare const REQUIRED_SEARCH_TEXT_NO_PLATFORMS: string;
+/**
+ * Pick the policy text for the live configuration.
+ * @param platformsEnabled - true when at least one platform source may serve a
+ *   routed query. Omitted (or true) keeps the full text.
+ */
+export declare function requiredSearchText(platformsEnabled?: boolean): string;
 /** One-shot steer used when the model tries to end without researching. */
 export declare const REQUIRED_SEARCH_CORRECTION_TEXT = "Web Search is required for this turn. Call web_search or web_fetch before finalizing.";
 /**
@@ -57,6 +68,8 @@ export declare class SearchModeRuntime {
     constructor(searchAvailable?: () => boolean);
     getMode(sessionId: string): SearchMode;
     setMode(sessionId: string, mode: SearchMode): void;
+    /** True when this session has web search switched OFF. */
+    isOff(sessionId: string): boolean;
     /** Whether a usable search provider currently exists (drives `available`). */
     available(): boolean;
     /**
@@ -89,8 +102,9 @@ export interface SearchModeRuntimeDeps {
 /**
  * The UserMessages the runtime injects. Constructed with the OFFICIAL
  * `@deepseek-ai/dsh-llm` `createUserMessage` ({ content, source }) — never an
- * ad-hoc shape. Only TWO messages exist:
+ * ad-hoc shape. THREE messages exist:
  *  - required(): the one-shot step-1 policy snapshot.
+ *  - disabled(): the one-shot step-1 "web search is OFF" notice.
  *  - correction(): the one-shot turn-stopping steer (form: "notice").
  * Later-step reminder/grounding/failure re-injection is intentionally gone:
  * tool results already become the freshest context of the next model request.
@@ -98,25 +112,37 @@ export interface SearchModeRuntimeDeps {
 export interface SearchModeMessages {
     /** Step 1 (once per turn): the compact research policy. */
     required(): unknown;
+    /** Step 1 (once per turn): web search is switched off for this session. */
+    disabled(): unknown;
     /** turn-stopping steer (one-shot notice). */
     correction(): unknown;
 }
+/** One-shot notice injected on step 1 of an `off` turn. */
+export declare const SEARCH_DISABLED_TEXT = "Web search is switched OFF for this session. Do not call web_search or web_fetch; answer from the context you already have. If a question truly requires fresh web data, say what could not be verified.";
 /**
  * Build the injected messages with the official `createUserMessage`
  * ({ content, source }). Extracted so tests can assert the exact wire shape
  * without booting the host.
  * @param createUserMessage - the official `@deepseek-ai/dsh-llm` factory.
+ * @param platformsEnabled - live predicate for the platform-routing lines. Read
+ *   on every `required()` call so toggling a platform source in settings takes
+ *   effect on the NEXT turn without re-wiring the runtime. Omitted keeps the
+ *   full text.
  */
-export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown): SearchModeMessages;
+export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown, platformsEnabled?: () => boolean): SearchModeMessages;
 /**
  * Decide which pre-step Search Mode message (if any) to inject for one step.
- * Pure and one-shot: ONLY step 1 in a required turn injects the policy
- * snapshot. Later steps inject NOTHING — the web tool result(s) are already
- * the freshest context, and enforcement happens in turn-stopping, not by
- * re-reminding the model every step.
- * @returns undefined (no injection) unless `state.required && step === 1`.
+ * Pure and one-shot: ONLY step 1 injects — either the research policy (required
+ * turns) or the "switched off" notice (off turns). Later steps inject NOTHING:
+ * the web tool result(s) are the freshest context, and enforcement happens at
+ * the tool gate, not by re-reminding the model every step.
+ * @returns undefined (no injection) unless step 1 of a required/off turn.
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
+/** The two model-facing web tools this plugin owns the policy for. */
+export declare const WEB_TOOL_NAMES: readonly string[];
+/** Denial reason shown to the model when it calls a web tool while OFF. */
+export declare const WEB_DISABLED_DENIAL = "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";
 /**
  * Wire the Search Mode runtime into a host context. All agent-scoped listeners
  * register per created agent (the scope-filtered dispatch seam), and every

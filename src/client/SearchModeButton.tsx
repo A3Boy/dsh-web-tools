@@ -1,52 +1,76 @@
-/**
- * dsh-web-tools — "联网搜索" toggle button mounted in `conversation.input.left`.
+﻿/**
+ * dsh-web-tools — web-search mode selector mounted in `conversation.input.left`.
  *
- * A small always-visible per-session control: click toggles the session's
- * Search Mode between `auto` and `required`. The mode lives in the HOST (single
- * source of truth, shared by the `/search` command and this button); this is a
- * thin read/write over `/web-tools/api/search-mode`.
+ * One compact trigger plus a popover menu (the composer tool-picker pattern),
+ * not three differently-shaped buttons. The mode lives in the HOST (single
+ * source of truth, shared with the `/search` command); this control is a thin
+ * read/write over `/web-tools/api/search-mode`.
  *
- * The button revalidates against the Host so a change made elsewhere (e.g. the
- * `/search` slash command, another tab) shows up here:
+ * It revalidates against the Host so a change made elsewhere (slash command,
+ * another tab) shows up here:
  *  - on mount / session change
  *  - every ~1s while the page is visible (paused when hidden)
  *  - immediately on window focus / visibility restore
- *  - never while an optimistic toggle is in flight (don't yank the UI back)
+ *  - never while an optimistic write is in flight (don't yank the UI back)
  *  - never overlapping the previous request (inFlight guard)
  *  - on a failed GET keep the last known state — a network error is NOT "auto"
  *
- * Interaction mirrors the DSH composer toolbar: `onMouseDown` keeps the
- * textarea caret, and clicks are optimistic. No extra state store, no settings
- * write, no DSH event-allowlist change, no poll of the command registry.
+ * Picking a mode writes once and only updates the label: no toast, no extra
+ * confirmation, and `onMouseDown` on the trigger keeps the composer caret.
  * @module
  */
 import { useEffect, useRef, useState } from "react";
-import { IconGlobeOutline14 } from "./icons.ts";
+import { GlobeIcon, WifiOffIcon, EarthIcon, ChevronDownIcon, CheckIcon } from "./lucide-icons.tsx";
 import { api, type SearchMode } from "./api.ts";
 import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 
 /** Props the session-scoped seat supplies plus localized copy. */
 interface Props {
   sessionId: string;
-  label?: string;
+  /** Copy for one mode: the row name and the one-line explanation. */
+  labels?: Record<SearchMode, string>;
+  descriptions?: Record<SearchMode, string>;
+  /** Heading inside the menu. */
+  menuLabel?: string;
+  /** Shown instead of a mode name when no search provider is usable. */
   unavailableLabel?: string;
-  autoTooltip?: string;
-  requiredTooltip?: string;
 }
+
+/** The three modes in menu order: default, forced, disabled. */
+const MODES: readonly SearchMode[] = ["auto", "required", "off"];
 
 /** Revalidation cadence while the page is visible. */
 const REVALIDATE_MS = 1000;
 
+const DEFAULT_LABELS: Record<SearchMode, string> = {
+  auto: "智能联网",
+  required: "始终联网",
+  off: "关闭联网",
+};
+
+const DEFAULT_DESCRIPTIONS: Record<SearchMode, string> = {
+  auto: "根据问题需要自动决定是否搜索",
+  required: "每轮对话至少进行一次联网查询",
+  off: "不使用联网搜索和网页读取工具",
+};
+
+function ModeIcon(props: { mode: SearchMode }) {
+  if (props.mode === "required") return <EarthIcon size={16} />;
+  if (props.mode === "off") return <WifiOffIcon size={16} />;
+  return <GlobeIcon size={16} />;
+}
+
 export function SearchModeButton({
   sessionId,
-  label = "联网搜索",
+  labels = DEFAULT_LABELS,
+  descriptions = DEFAULT_DESCRIPTIONS,
+  menuLabel = "联网模式",
   unavailableLabel = "没有可用的搜索源",
-  autoTooltip = "自动联网：Agent 会在需要时使用联网搜索",
-  requiredTooltip = "已要求联网：回答前必须完成一次联网搜索",
 }: Props) {
   const [mode, setMode] = useState<SearchMode>();
   const [available, setAvailable] = useState(true);
   const [pending, setPending] = useState(false);
+  const [open, setOpen] = useState(false);
 
   // Mount/session-change guard: a stale session's async response must never
   // write into the current session's UI.
@@ -55,6 +79,7 @@ export function SearchModeButton({
   const pendingRef = useRef(false);
   // One GET at a time.
   const inFlight = useRef(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   // Inject the one-time stylesheet so the class names in the JSX resolve.
   useEffect(() => {
@@ -65,38 +90,35 @@ export function SearchModeButton({
   // the last known state (a network error is not "auto"/"unavailable").
   const refresh = () => {
     if (inFlight.current) return;
-    if (pendingRef.current) return; // don't clobber an optimistic toggle
+    if (pendingRef.current) return; // don't clobber an optimistic write
     inFlight.current = true;
     const current = generation.current;
-    api
+    void api
       .searchModeGet(sessionId)
       .then((view) => {
         if (generation.current !== current) return;
-        if (pendingRef.current) return;
         setMode(view.mode);
         setAvailable(view.available);
       })
       .catch(() => {
-        /* keep last known state on transient host/network hiccup */
+        /* keep last known state */
       })
       .finally(() => {
         if (generation.current === current) inFlight.current = false;
       });
   };
 
-  // Mount / session change: reset, read immediately, then keep revalidating.
   useEffect(() => {
     generation.current += 1;
     setMode(undefined);
-    setPending(false);
-    pendingRef.current = false;
-    inFlight.current = false;
+    setOpen(false);
     refresh();
 
-    // Lightweight revalidation: only while the page is visible.
-    const interval = setInterval(refresh, REVALIDATE_MS);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, REVALIDATE_MS);
     const onVisible = () => {
-      if (!document.hidden) refresh();
+      if (document.visibilityState === "visible") refresh();
     };
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
@@ -108,67 +130,119 @@ export function SearchModeButton({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  const required = mode === "required";
+  // Close on outside pointer / Escape while the menu is open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      const node = wrapRef.current;
+      if (node !== null && event.target instanceof Node && !node.contains(event.target)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   const loading = mode === undefined;
+  const current: SearchMode = mode ?? "auto";
 
-  const toggle = async () => {
-    if (mode === undefined || pending || !available) return;
-    const current = generation.current;
+  const choose = async (next: SearchMode) => {
+    setOpen(false);
+    if (mode === undefined || pending || !available || next === mode) return;
+    const currentGeneration = generation.current;
     const previous = mode;
-    const next: SearchMode = previous === "required" ? "auto" : "required";
 
-    // Optimistic flip: no visible round-trip delay, no second click while pending.
+    // Optimistic switch: the label flips immediately (no toast, no spinner).
     setPending(true);
     pendingRef.current = true;
     setMode(next);
 
     try {
       const view = await api.searchModeSet(sessionId, next);
-      if (generation.current !== current) return;
+      if (generation.current !== currentGeneration) return;
       setMode(view.mode);
       setAvailable(view.available);
     } catch {
-      if (generation.current !== current) return;
+      if (generation.current !== currentGeneration) return;
       setMode(previous); // rollback on failure
     } finally {
-      if (generation.current === current) {
+      if (generation.current === currentGeneration) {
         setPending(false);
         pendingRef.current = false;
       }
     }
   };
 
-  const tooltip = !available
-    ? unavailableLabel
-    : required
-      ? requiredTooltip
-      : autoTooltip;
+  const shownLabel = !available ? unavailableLabel : labels[current];
 
   return (
-    <button
-      type="button"
-      className={searchModeCss.trigger}
-      data-active={required || undefined}
-      data-loading={loading || undefined}
-      data-pending={pending || undefined}
-      data-unavailable={!available || undefined}
-      aria-busy={loading || pending || undefined}
-      aria-pressed={required}
-      aria-label={label}
-      title={tooltip}
-      disabled={!available || loading || pending}
-      onMouseDown={(event) => {
-        // Keep the textarea caret: toggling a mode must not steal compose focus.
-        event.preventDefault();
-      }}
-      onClick={() => {
-        void toggle();
-      }}
-    >
-      <span className={searchModeCss.icon} aria-hidden>
-        <IconGlobeOutline14 size={14} />
-      </span>
-      <span className={searchModeCss.label}>{label}</span>
-    </button>
+    <div className={searchModeCss.wrap} ref={wrapRef}>
+      <button
+        type="button"
+        className={searchModeCss.trigger}
+        data-mode={current}
+        data-open={open || undefined}
+        data-loading={loading || undefined}
+        data-pending={pending || undefined}
+        data-unavailable={!available || undefined}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-busy={loading || pending || undefined}
+        aria-label={shownLabel}
+        title={open ? undefined : shownLabel}
+        disabled={!available || loading || pending}
+        onMouseDown={(event) => {
+          // Keep the textarea caret: opening the menu must not steal compose focus.
+          event.preventDefault();
+        }}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className={searchModeCss.icon} aria-hidden>
+          <ModeIcon mode={current} />
+        </span>
+        <span className={searchModeCss.label}>{shownLabel}</span>
+        <span className={searchModeCss.chevron} aria-hidden>
+          <ChevronDownIcon size={16} />
+        </span>
+      </button>
+
+      {open && (
+        <div className={searchModeCss.menu} role="menu" aria-label={menuLabel}>
+          <div className={searchModeCss.menuTitle}>{menuLabel}</div>
+          {MODES.map((candidate) => {
+            const selected = candidate === current;
+            return (
+              <button
+                key={candidate}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                className={searchModeCss.item}
+                data-mode={candidate}
+                onClick={() => void choose(candidate)}
+              >
+                <span className={searchModeCss.itemIcon} aria-hidden>
+                  <ModeIcon mode={candidate} />
+                </span>
+                <span className={searchModeCss.itemText}>
+                  <span className={searchModeCss.itemLabel}>{labels[candidate]}</span>
+                  <span className={searchModeCss.itemDescription}>{descriptions[candidate]}</span>
+                </span>
+                <span className={searchModeCss.itemCheck} aria-hidden>
+                  {selected ? <CheckIcon size={16} /> : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
+
+
