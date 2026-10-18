@@ -112,6 +112,8 @@ export interface SearchModeRuntimeDeps {
 export interface SearchModeMessages {
     /** Step 1 (once per turn): the compact research policy. */
     required(): unknown;
+    /** Step 1 (once per turn): search is allowed on demand (default mode). */
+    auto(): unknown;
     /** Step 1 (once per turn): web search is switched off for this session. */
     disabled(): unknown;
     /** turn-stopping steer (one-shot notice). */
@@ -119,6 +121,15 @@ export interface SearchModeMessages {
 }
 /** One-shot notice injected on step 1 of an `off` turn. */
 export declare const SEARCH_DISABLED_TEXT = "Web search is switched OFF for this session. Do not call web_search or web_fetch; answer from the context you already have. If a question truly requires fresh web data, say what could not be verified.";
+/**
+ * One-shot policy injected on step 1 of an `auto` turn.
+ *
+ * Auto used to inject NOTHING, and the observed result was that the model never
+ * reached for the tools: DSH's own tool-web guidance only covers how to treat a
+ * result once you have one, not when to search. One sentence of criterion is
+ * enough — and it stays a permission, not a requirement.
+ */
+export declare const SEARCH_AUTO_TEXT = "Web search is available but not required. Call web_search (or web_fetch for a specific URL) when the answer needs current, external, or verifiable information; otherwise answer directly from the context you already have.";
 /**
  * Build the injected messages with the official `createUserMessage`
  * ({ content, source }). Extracted so tests can assert the exact wire shape
@@ -132,11 +143,12 @@ export declare const SEARCH_DISABLED_TEXT = "Web search is switched OFF for this
 export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown, platformsEnabled?: () => boolean): SearchModeMessages;
 /**
  * Decide which pre-step Search Mode message (if any) to inject for one step.
- * Pure and one-shot: ONLY step 1 injects — either the research policy (required
- * turns) or the "switched off" notice (off turns). Later steps inject NOTHING:
- * the web tool result(s) are the freshest context, and enforcement happens at
- * the tool gate, not by re-reminding the model every step.
- * @returns undefined (no injection) unless step 1 of a required/off turn.
+ * Pure and one-shot: ONLY step 1 injects — the research policy (required
+ * turns), the optional-use criterion (auto turns), or the "switched off" notice
+ * (off turns). Later steps inject NOTHING: the web tool result(s) are the
+ * freshest context, and enforcement happens at the tool gate, not by
+ * re-reminding the model every step.
+ * @returns undefined (no injection) outside step 1 or without a turn state.
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
 /** The two model-facing web tools this plugin owns the policy for. */

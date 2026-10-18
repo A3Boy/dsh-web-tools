@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — Search Mode runtime state model tests (pure, no DSH/pnpm).
  *
  * Covers the behavior table demanded by the "联网搜索" feature: auto leaves the
@@ -16,6 +16,7 @@ import {
   searchModeStepMessage,
   webResearchCompleted,
   requiredSearchText,
+  SEARCH_AUTO_TEXT,
   SEARCH_DISABLED_TEXT,
   REQUIRED_SEARCH_TEXT,
   REQUIRED_SEARCH_TEXT_NO_PLATFORMS,
@@ -369,9 +370,19 @@ test("webResearchCompleted is true when EITHER search or fetch completed", () =>
   assert.equal(webResearchCompleted(turnState({ webSearchCompleted: true, webFetchCompleted: true })), true);
 });
 
-test("pre-step injects nothing when the turn is not in required mode", () => {
-  const messages = createSearchModeMessages(() => "M");
-  assert.equal(searchModeStepMessage(turnState({ required: false }), 1, messages), undefined);
+test("auto turns get the optional-use criterion, never the requirement", () => {
+  const { calls, createUserMessage } = captureFactory();
+  const messages = createSearchModeMessages(createUserMessage);
+
+  const first = searchModeStepMessage(turnState({ required: false }), 1, messages) as {
+    __built: { content: Array<{ text: string }> };
+  };
+  assert.equal(first.__built.content[0].text, SEARCH_AUTO_TEXT);
+  assert.ok(SEARCH_AUTO_TEXT.includes("web_search"), "the criterion must name the tool");
+  assert.ok(SEARCH_AUTO_TEXT.includes("not required"), "auto must not read as a requirement");
+  assert.ok(SEARCH_AUTO_TEXT.includes("otherwise answer directly"), "the default must be stated");
+
+  // Later steps stay silent, and a missing turn state injects nothing.
   assert.equal(searchModeStepMessage(turnState({ required: false, webSearchCompleted: true }), 2, messages), undefined);
   assert.equal(searchModeStepMessage(undefined, 1, messages), undefined);
 });
@@ -401,3 +412,5 @@ test("slash /search and the UI button write the same runtime", () => {
   r.setMode(id, r.getMode(id) === "required" ? "auto" : "required");
   assert.equal(r.getMode(id), "auto");
 });
+
+

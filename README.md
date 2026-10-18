@@ -169,11 +169,37 @@ In addition to the 8 built-in search adapters and social platforms, dsh-web-tool
 * **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
 * **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately.
 * **Configurable Routing Policies**: `web_search` supports Ordered, Round-Robin, and Random starting-provider selection. `web_fetch` always follows the deterministic fetch-capable chain.
-* **Session-Level Search Mode**: one compact picker in the composer (button + menu), three modes, defaulting to Smart.
-  * **Smart (智能联网)**: the agent decides whether a question needs the web.
-  * **Always (始终联网)**: at least one completed `web_search` / `web_fetch` per turn. A failed call still counts as an attempt, and the agent must disclose what could not be verified.
-  * **Off (关闭联网)**: actually off. `web_search` / `web_fetch` are withheld from that agent's tool surface, any call still emitted from history is denied by a monotonic guard before it runs, and a one-shot notice explains the state. The host decides — not the model's memory of past turns.
-* **Proxy Support**: Supports the Windows system proxy, `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. Loopback bypasses the proxy, and **so does any self-hosted source that resolves to private address space** — a LAN SearXNG/gateway keeps working on a machine with a system proxy configured.
+* **Session-Level Search Mode**: A refined, compact picker in the composer offering three deterministic retrieval behaviors (defaults to Smart):
+  * **Smart (智能联网)**: Elastic semantic dispatch. The agent autonomously determines whether real-time web retrieval is needed based on conversational intent.
+  * **Always (始终联网)**: Strong-consistency knowledge verification. Mandates at least one completed `web_search` or `web_fetch` per turn to ensure claims are grounded in external sources.
+  * **Off (关闭联网)**: Deterministic physical isolation. Replaces fragile prompt-only requests with a **three-tier runtime enforcement barrier** (dynamically withholds tools from the agent's schema, blocks model inertia via a monotonic guard before execution, and injects a single-turn explanation), ensuring zero outbound network leakage regardless of historical context.
+
+<div align="center">
+  <table>
+    <thead>
+      <tr>
+        <th align="center">Dropdown Picker Menu</th>
+        <th align="center">Active Trigger States</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td align="center" width="55%">
+          <img src="assets/search-mode-menu.png" width="290" alt="Search Mode Picker Menu" />
+        </td>
+        <td align="center" width="45%">
+          <img src="assets/search-mode-smart.png" height="28" alt="Smart Mode" /><br/>
+          <sub><b>Smart</b>: Adaptive autonomous dispatch (Default)</sub><br/><br/>
+          <img src="assets/search-mode-always.png" height="28" alt="Always Mode" /><br/>
+          <sub><b>Always</b>: Enforced verification highlight</sub><br/><br/>
+          <img src="assets/search-mode-off.png" height="28" alt="Off Mode" /><br/>
+          <sub><b>Off</b>: Runtime physical guard</sub>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+* **Intelligent Proxy Routing & Intranet Bypass**: Seamlessly integrates with Windows system proxy settings and `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` environment variables. Equipped with **DNS preflight routing**: public traffic follows configured proxies, while loopback addresses and private subnets (RFC 1918) automatically bypass the proxy gate with direct dialing — completely eliminating connectivity drops for LAN-hosted SearXNG or custom private gateways when system proxies are active.
 
 ---
 
