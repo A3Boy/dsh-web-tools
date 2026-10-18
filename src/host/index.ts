@@ -58,7 +58,7 @@ import type { SourceFetchOutcome } from "./sources/types.ts";
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "webRuntime", "settings", "credentials", "web", "agents", "commands"];
+export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.

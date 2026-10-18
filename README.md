@@ -176,6 +176,8 @@ In addition to the 8 built-in search adapters and social platforms, dsh-web-tool
 
 ## Installation & Updates
 
+**DSH version support**: `0.1.0-rc.6` and later, including the `0.2.0-rc.x` and `0.2.1-rc.x` lines (both the `latest` and `next` channels are verified). The requirement lives in `peerDependencies`, which DSH uses to decide whether the plugin may activate; if the plugin stays inactive after a DSH upgrade, run `dsh plugin --profile web update dsh-web-tools` once.
+
 ```bash
 # Install
 dsh plugin --profile web add github:A3Boy/dsh-web-tools

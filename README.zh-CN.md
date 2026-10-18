@@ -176,6 +176,8 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 
 ## 安装与更新
 
+**DSH 版本支持**：`0.1.0-rc.6` 起，包含 `0.2.0-rc.x` 与 `0.2.1-rc.x`（`latest` / `next` 两条线均已验证）。版本要求写在 `peerDependencies` 中，DSH 会据此判断插件能否激活；升级 DSH 后若插件未激活，先执行一次 `dsh plugin --profile web update dsh-web-tools`。
+
 ```bash
 # 安装插件
 dsh plugin --profile web add github:A3Boy/dsh-web-tools

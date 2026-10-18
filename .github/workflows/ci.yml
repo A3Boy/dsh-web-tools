@@ -9,6 +9,16 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The plugin supports every DSH line it declares in peerDependencies.
+        # Pinning the peer set here is the only way to catch API drift: the
+        # resolved version in the lockfile is a single point in time, and a
+        # prerelease tuple bump (0.2.0-rc.x -> 0.2.1-rc.x) is invisible to a
+        # plain `npm install`.
+        dsh: ["0.1.0-rc.6", "0.2.0-rc.2", "0.2.1-rc.2"]
+    name: dsh ${{ matrix.dsh }}
     steps:
       - uses: actions/checkout@v4
 
@@ -17,10 +27,31 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Type-checking and build need the DSH peer deps resolvable. CI installs
-      # the full peer set as dev deps so tsc can resolve them.
+      # Type-checking and build need the DSH peer deps resolvable.
       - name: Install (incl. peers for type resolution)
         run: npm install --no-audit --no-fund
+
+      # Overlay one exact DSH peer set. `--save-dev` (not --no-save) keeps npm's
+      # arborist on its supported path; the manifest edit is throwaway in CI.
+      - name: Pin DSH peer set to ${{ matrix.dsh }}
+        run: |
+          npm install --no-audit --no-fund --save-dev --legacy-peer-deps \
+            @deepseek-ai/dsh-web@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-settings@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-credentials@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-llm@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-api-remotes@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-client-connection@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-client-locale@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-client-ui-primitives@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-client-ui-settings@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-client-ui-slots@${{ matrix.dsh }}
+
+      - name: Report resolved peer versions
+        run: |
+          for p in dsh-web dsh-client-ui-primitives dsh-llm; do
+            node -p "require('@deepseek-ai/$p/package.json').version + '  @deepseek-ai/$p'"
+          done
 
       - name: Type-check
         run: npm run typecheck
