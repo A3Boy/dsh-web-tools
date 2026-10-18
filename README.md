@@ -199,6 +199,7 @@ In addition to the 8 built-in search adapters and social platforms, dsh-web-tool
     </tbody>
   </table>
 </div>
+
 * **Intelligent Proxy Routing & Intranet Bypass**: Seamlessly integrates with Windows system proxy settings and `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` environment variables. Equipped with **DNS preflight routing**: public traffic follows configured proxies, while loopback addresses and private subnets (RFC 1918) automatically bypass the proxy gate with direct dialing — completely eliminating connectivity drops for LAN-hosted SearXNG or custom private gateways when system proxies are active.
 
 ---
