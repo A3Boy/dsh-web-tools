@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dsh-web-tools — web-search mode selector mounted in `conversation.input.left`.
  *
  * One compact trigger plus a popover menu (the composer tool-picker pattern),
@@ -20,7 +20,7 @@
  * @module
  */
 import { useEffect, useRef, useState } from "react";
-import { IconGlobeOutline14, IconRefreshOutline16, IconCloseOutline16, IconChevronDownOutline14 } from "./icons.ts";
+import { GlobeIcon, WifiOffIcon, RefreshCwIcon, ChevronDownIcon, CheckIcon } from "./lucide-icons.tsx";
 import { api, type SearchMode } from "./api.ts";
 import { searchModeCss, adoptSearchModeStyles } from "./SearchModeButton.css.ts";
 
@@ -55,25 +55,9 @@ const DEFAULT_DESCRIPTIONS: Record<SearchMode, string> = {
 };
 
 function ModeIcon(props: { mode: SearchMode }) {
-  if (props.mode === "required") return <IconRefreshOutline16 size={15} />;
-  if (props.mode === "off") return <IconCloseOutline16 size={15} />;
-  return <IconGlobeOutline14 size={15} />;
-}
-
-/** Local check glyph: the primitives package has no 16px check export. */
-function CheckGlyph(props: { size?: number }) {
-  const size = props.size ?? 15;
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden focusable="false">
-      <path
-        d="M3.5 8.6l3 3 6-6.8"
-        stroke="currentColor"
-        strokeWidth={1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  if (props.mode === "required") return <RefreshCwIcon size={16} />;
+  if (props.mode === "off") return <WifiOffIcon size={16} />;
+  return <GlobeIcon size={16} />;
 }
 
 export function SearchModeButton({
@@ -223,7 +207,7 @@ export function SearchModeButton({
         </span>
         <span className={searchModeCss.label}>{shownLabel}</span>
         <span className={searchModeCss.chevron} aria-hidden>
-          <IconChevronDownOutline14 size={14} />
+          <ChevronDownIcon size={16} />
         </span>
       </button>
 
@@ -250,7 +234,7 @@ export function SearchModeButton({
                   <span className={searchModeCss.itemDescription}>{descriptions[candidate]}</span>
                 </span>
                 <span className={searchModeCss.itemCheck} aria-hidden>
-                  {selected ? <CheckGlyph size={15} /> : null}
+                  {selected ? <CheckIcon size={16} /> : null}
                 </span>
               </button>
             );
@@ -260,3 +244,4 @@ export function SearchModeButton({
     </div>
   );
 }
+
