@@ -1,7 +1,8 @@
 {
   "name": "dsh-web-tools",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Multi-provider Web Search & Fetch for DeepSeek Harness — 8 deeply adapted providers, SearchHints, resilient fallback, and native X / Xiaohongshu retrieval",
+  "icon": "assets/logo-icon.png",
   "author": "A3Boy",
   "license": "MIT",
   "type": "module",
@@ -15,10 +16,13 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "assets/logo-icon.png",
+    "locale",
     "cordis.patch.yml",
     "screenshots.json",
     "README.md",
@@ -27,6 +31,7 @@
     "CONTRIBUTING.md"
   ],
   "dsh": {
+    "manifestVersion": 1,
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
