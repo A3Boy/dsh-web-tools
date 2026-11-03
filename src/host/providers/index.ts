@@ -6,6 +6,7 @@ import { BraveProvider, braveQuota } from "./brave.ts";
 import { ExaProvider } from "./exa.ts";
 import { FirecrawlProvider } from "./firecrawl.ts";
 import { JinaProvider, jinaQuota } from "./jina.ts";
+import { KeenableProvider } from "./keenable.ts";
 import { ParallelProvider } from "./parallel.ts";
 import { SearxngProvider } from "./searxng.ts";
 import { TavilyProvider } from "./tavily.ts";
@@ -31,6 +32,7 @@ export const PROVIDERS: Record<string, ProviderWithQuota> = {
   brave: { ...BraveProvider, quota: (key, _base, signal) => braveQuota(key, _base, signal) },
   you: { ...YouProvider, quota: (key, _base, signal) => youQuota(key, signal) },
   jina: { ...JinaProvider, quota: (key, _base, signal) => jinaQuota(key, signal) },
+  keenable: KeenableProvider,
   searxng: SearxngProvider,
 };
 
@@ -43,6 +45,7 @@ export const PROVIDER_LIST: ProviderWithQuota[] = [
   BraveProvider,
   YouProvider,
   JinaProvider,
+  KeenableProvider,
   SearxngProvider,
 ];
 
