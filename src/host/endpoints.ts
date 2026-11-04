@@ -85,6 +85,9 @@ export const PROVIDER_ENDPOINTS: Record<string, { search: ProviderEndpoint; extr
     search: { defaultBaseUrl: "https://s.jina.ai", path: "/", url: "https://s.jina.ai/", host: "s.jina.ai", overridable: true, dynamicPath: true },
     extra: { reader: { defaultBaseUrl: "https://r.jina.ai", path: "/", url: "https://r.jina.ai/", host: "r.jina.ai", overridable: false, dynamicPath: true } },
   },
+  keenable: {
+    search: { defaultBaseUrl: "https://api.keenable.ai", path: "/v1/search", url: "https://api.keenable.ai/v1/search", host: "api.keenable.ai", overridable: true },
+  },
   searxng: {
     search: { defaultBaseUrl: "http://127.0.0.1:8080", path: "/search", url: "http://127.0.0.1:8080/search", host: "127.0.0.1", overridable: true },
   },

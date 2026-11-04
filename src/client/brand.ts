@@ -69,6 +69,7 @@ const FALLBACK_COLORS: Record<string, { bg: string; letter: string; label: strin
   firecrawl: { bg: "#F97316", letter: "F", label: "Firecrawl" },
   parallel:  { bg: "#8B5CF6", letter: "P", label: "Parallel" },
   jina:      { bg: "#10B981", letter: "J", label: "Jina" },
+  keenable:  { bg: "#4F46E5", letter: "K", label: "Keenable" },
   searxng:   { bg: "#6B7280", letter: "S", label: "SearXNG" },
 };
 
