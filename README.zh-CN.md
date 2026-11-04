@@ -96,6 +96,7 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
 * **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
 * **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
 * **SearXNG**：自建元搜索支持 `categories` (it/science/news) 与 `time_range`。
+* **Keenable**：Web 搜索，支持 `site` 域名限定与 `published_after` / `published_before` 日期过滤。
 * **原生与通用正文提取 (`web_fetch`)**：配置 Tavily、Exa、Firecrawl、Parallel、You.com、Jina 时自动优先调用其原生云端提取接口；未配置或失败时，以及使用 SearXNG / Brave 时，自动平滑回退至**插件内置通用 HTTP 抓取器**（基于 Defuddle 纯本地 Markdown 解析与 SSRF / DNS 安全防护），无需额外配置或购买第三方 Fetch Key。
 
 ---
@@ -236,6 +237,7 @@ dsh plugin --profile web remove dsh-web-tools
 | [You.com](https://you.com) | 支持 | 支持，`/v1/contents` | 搜索高亮片段提取、原生 **`boost_domains`** 软加权、时效与国家过滤、Markdown 正文接口 | 官方 API |
 | [Jina](https://jina.ai) | 支持 | 支持，Reader | 搜索关键词降噪、ReaderLM-v2 高精度 Markdown 转换、Token 预算控制 | 尽力解析 |
 | [SearXNG](https://docs.searxng.org) | 支持 | — | 开源自托管元搜索引擎，映射 `categories` (it/science/news) 与受支持的 `time_range`，适配器无需 API Key | 由自建实例决定 |
+| [Keenable](https://keenable.ai) | 支持 | — | Web 搜索 API（`X-API-Key`），将首个限定域名映射为 `site`，时效日期映射为 `published_after` / `published_before`，返回 `published_at`；`web_fetch` 使用内置通用抓取器 | 仅控制台 |
 
 ### 快速选型指南
 

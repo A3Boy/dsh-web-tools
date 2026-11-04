@@ -96,6 +96,7 @@ All adaptations run through deterministic code without invoking an extra LLM cal
 * **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
 * **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
 * **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
+* **Keenable**: Web search with `site` domain scoping and `published_after` / `published_before` date filters.
 * **Native & Generic Page Extraction (`web_fetch`)**: Automatically routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader) when available; seamlessly falls back to the **built-in generic HTTP fetcher** (powered by local Defuddle Markdown parsing with SSRF/DNS protection) for SearXNG-only / Brave-only setups or when native extractors fail.
 
 ---
@@ -236,6 +237,7 @@ Restart `dsh web` and navigate to `Settings` → `Web Search`.
 | [You.com](https://you.com) | Yes | Yes, `/v1/contents` | Snippet highlights, native **`boost_domains`** soft-weighting, freshness and country/lang filters, markdown endpoint | Official API |
 | [Jina](https://jina.ai) | Yes | Yes, Reader | Search query noise filtering, ReaderLM-v2 high-precision markdown, token budget and truncation control | Best-effort |
 | [SearXNG](https://docs.searxng.org) | Yes | — | Open-source self-hosted metasearch with `categories` and supported `time_range` values; the adapter requires no API key | Instance-defined |
+| [Keenable](https://keenable.ai) | Yes | — | Web search API (`X-API-Key`); maps the first included domain to `site` and freshness dates to `published_after` / `published_before`; returns `published_at`. `web_fetch` uses the built-in generic fetcher | Dashboard only |
 
 ### Quick Recommendation Guide
 
