@@ -1,7 +1,7 @@
 {
   "name": "dsh-web-tools",
   "version": "0.3.8",
-  "description": "Multi-provider Web Search & Fetch for DeepSeek Harness — 8 deeply adapted providers, SearchHints, resilient fallback, and native X / Xiaohongshu retrieval",
+  "description": "Multi-provider Web Search & Fetch for DeepSeek Harness — 9 deeply adapted providers, SearchHints, resilient fallback, and native X / Xiaohongshu retrieval",
   "icon": "assets/logo-icon.png",
   "author": "A3Boy",
   "license": "MIT",

@@ -8,7 +8,7 @@
 
 让 DeepSeek Harness 拥有直连全网与社媒平台的搜索与抓取能力。
 
-**8 大 Web Provider 原生能力适配 · SearchHints 语义编译 · 多源自动容灾 · 小红书 / Twitter X 平台检索**
+**9 大 Web Provider 原生能力适配 · SearchHints 语义编译 · 多源自动容灾 · 小红书 / Twitter X 平台检索**
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -31,7 +31,7 @@
 
 当联网能力只依赖一个 Web Provider 时，额度耗尽、限流或服务异常都可能直接中断检索；而简单接入多个搜索 API，往往又只能使用它们共同支持的基础能力，没有真正发挥不同搜索源各自擅长的搜索模式、分类、时效、域名策略和正文提取能力。
 
-dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG，以及小红书、Twitter / X 接入 DSH 标准 `web_search` / `web_fetch`。
+dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、SearXNG，以及小红书、Twitter / X 接入 DSH 标准 `web_search` / `web_fetch`。
 
 在统一 DSH 工具接口的同时，dsh-web-tools 通过 SearchHints 归一化查询意图，再针对不同 Provider 分别编译为其支持的原生参数，尽可能使用各家的分类、时效、域名、地区、深度搜索与正文提取能力；同时通过多 API Key、Provider Fallback 和平台专用浏览器会话，提高整个联网链路的可用性。
 
@@ -39,7 +39,7 @@ dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina�
 
 **核心亮点**：
 
-- **8 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
+- **9 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
 - **SearchHints → Provider-specific 参数编译**：将 Query 中的技术 / 论文 / 新闻、时效、域名、地区与语言等搜索意图归一化，再按不同 Provider 的能力映射为各自原生参数；整个过程由确定性代码完成，不增加额外 LLM 调用。
 - **小红书与 Twitter / X 平台来源**：两个平台均通过独立的本地浏览器 Profile 提供已登录站内搜索、详情抓取，以及页面实际返回的评论或回复。
 - **多搜索源调度与自动容灾**：支持多 API Key 分配、鉴权失败切换、429 冷却、Ordered / Round-Robin / Random 路由，以及可配置 Provider Fallback。
@@ -72,7 +72,7 @@ dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina�
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools 搜索策略与多源调度" />
 </p>
 
-## 8 大 Web Provider 原生能力深度适配
+## 9 大 Web Provider 原生能力深度适配
 
 统一的是 DSH 的工具接口和搜索语义，不统一的是各家 Provider 的能力。
 
@@ -133,10 +133,10 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 
 ## 自定义搜索源与地址覆盖 (Issue #9)
 
-除了内置的 8 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
+除了内置的 9 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
 
 * **内置源地址覆盖与恢复**：
-  * 全部 8 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
+  * 全部 9 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、Keenable、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
   * 精确保留路径前缀（如 `/v1`、`/v2`），并在跨域名变更时进行凭证保护提示，支持随时一键恢复官方默认地址。
 * **三条并列接入路径（单弹窗渐进式配置）**：
   * **兼容已有搜索接口**：遵循标准 Tavily JSON POST 规范，免配任何字段映射，适合快速接入各开源代理镜像或兼容网关。
@@ -252,6 +252,7 @@ dsh plugin --profile web remove dsh-web-tools
 | **正文转 Markdown** | **Firecrawl** / **Jina** | 支持正文提取、主内容过滤或 Reader 转换 |
 | **时效、地区与域名偏好** | **You.com** | 支持 freshness、地区语言和 `boost_domains` 参数 |
 | **自托管元搜索** | **SearXNG** | 使用用户自己的 SearXNG 地址，适配器不要求 API Key |
+| **Agent 检索 / 精炼摘要提取** | **Keenable** | 支持原生 `site` 域名限定与 `published_after` / `published_before` 发布日期过滤，高质量网页摘要抽取 |
 
 ---
 
