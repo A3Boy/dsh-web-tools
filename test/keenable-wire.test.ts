@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { KeenableProvider, parseKeenableSearchJson } from "../src/host/providers/keenable.ts";
+import { KeenableProvider, buildKeenableSearchBody, parseKeenableSearchJson } from "../src/host/providers/keenable.ts";
 
 test("KeenableProvider search posts query + max_results with x-api-key", async () => {
   let capturedUrl = "";
@@ -17,7 +17,7 @@ test("KeenableProvider search posts query + max_results with x-api-key", async (
       ok: true,
       json: async () => ({
         results: [
-          { url: "https://example.com/a", title: "A", description: "Desc A", snippet: "s" },
+          { url: "https://example.com/a", title: "A", description: "Desc A", snippet: "s", published_at: "2026-10-01T00:00:00Z" },
           { url: "https://example.com/b", title: "B", description: "", snippet: "x".repeat(900) },
           { title: "no url" },
         ],
@@ -34,6 +34,8 @@ test("KeenableProvider search posts query + max_results with x-api-key", async (
     assert.equal(outcome.sources.length, 2);
     assert.equal(outcome.sources[0].snippet, "Desc A");
     assert.equal(outcome.sources[1].snippet, "x".repeat(600) + "…");
+    assert.equal(outcome.sources[0].publishedAt, "2026-10-01T00:00:00Z");
+    assert.equal(outcome.sources[1].publishedAt, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -48,4 +50,26 @@ test("KeenableProvider requires an API key and is search-only", async () => {
 test("parseKeenableSearchJson tolerates malformed bodies", () => {
   assert.deepEqual(parseKeenableSearchJson(null, 5), []);
   assert.deepEqual(parseKeenableSearchJson({ results: "nope" }, 5), []);
+});
+
+test("parseKeenableSearchJson caps long descriptions too", () => {
+  const out = parseKeenableSearchJson({ results: [{ url: "https://e.com", description: "d".repeat(900) }] }, 5);
+  assert.equal(out[0].snippet, "d".repeat(600) + "…");
+});
+
+test("buildKeenableSearchBody forwards site and freshness hints", () => {
+  const hints = {
+    cleanQuery: "release notes",
+    rawQuery: "site:foo.com release notes",
+    domains: { include: ["foo.com", "bar.com"] },
+    freshness: { after: "2026-10-01", before: "2026-10-31" },
+  } as any;
+  assert.deepEqual(buildKeenableSearchBody("release notes", 5, hints), {
+    query: "release notes",
+    max_results: 5,
+    site: "foo.com",
+    published_after: "2026-10-01",
+    published_before: "2026-10-31",
+  });
+  assert.deepEqual(buildKeenableSearchBody("q", 3), { query: "q", max_results: 3 });
 });

@@ -2,15 +2,18 @@
  * dsh-web-tools — Keenable provider adapter.
  *
  * Search: POST https://api.keenable.ai/v1/search (X-API-Key) with
- *   `{ query, max_results }`; results live at `results[]` with
- *   `{ title, url, description, snippet }`. The snippet prefers
- *   `description` and falls back to a truncated `snippet`.
+ *   `{ query, max_results, site?, published_after?, published_before? }`;
+ *   results live at `results[]` with
+ *   `{ title, url, description, snippet, published_at }`. The snippet prefers
+ *   `description`, falls back to `snippet`, and is capped either way.
+ * API reference: https://docs.keenable.ai/api-reference/search
  * Search-only: web_fetch falls back to the built-in generic fetcher.
  * @module
  */
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
+import type { SearchHints } from "../search-hints.ts";
 
 const KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search";
 const KEENABLE_MAX_RESULTS = 20;
@@ -35,17 +38,39 @@ export function parseKeenableSearchJson(body: unknown, limit: number): Source[] 
     if (!url) continue;
     const s: Source = { url };
     if (typeof r.title === "string" && r.title) s.title = r.title;
-    if (typeof r.description === "string" && r.description) {
-      s.snippet = r.description;
-    } else if (typeof r.snippet === "string" && r.snippet) {
-      s.snippet = r.snippet.length > KEENABLE_SNIPPET_MAX_CHARS
-        ? r.snippet.slice(0, KEENABLE_SNIPPET_MAX_CHARS) + "…"
-        : r.snippet;
+    const rawSnippet =
+      typeof r.description === "string" && r.description
+        ? r.description
+        : typeof r.snippet === "string" && r.snippet
+          ? r.snippet
+          : undefined;
+    if (rawSnippet) {
+      s.snippet = rawSnippet.length > KEENABLE_SNIPPET_MAX_CHARS
+        ? rawSnippet.slice(0, KEENABLE_SNIPPET_MAX_CHARS) + "…"
+        : rawSnippet;
+    }
+    if (typeof r.published_at === "string" && r.published_at) {
+      s.publishedAt = r.published_at;
     }
     sources.push(s);
     if (sources.length >= limit) break;
   }
   return sources;
+}
+
+/** Build the `/v1/search` request body, forwarding site and date hints. Pure, for tests. */
+export function buildKeenableSearchBody(
+  query: string,
+  limit: number,
+  hints?: SearchHints,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { query, max_results: limit };
+  // Keenable takes a single `site`; use the first included domain.
+  const site = hints?.domains?.include?.[0];
+  if (site) body.site = site;
+  if (hints?.freshness?.after) body.published_after = hints.freshness.after;
+  if (hints?.freshness?.before) body.published_before = hints.freshness.before;
+  return body;
 }
 
 export const KeenableProvider: ProviderAdapter = {
@@ -66,7 +91,7 @@ export const KeenableProvider: ProviderAdapter = {
         "x-api-key": token,
         "x-keenable-title": "dsh-web-tools",
       },
-      body: JSON.stringify({ query: cleanQ, max_results: limit }),
+      body: JSON.stringify(buildKeenableSearchBody(cleanQ, limit, hints)),
       signal,
     }, { provider: "keenable" });
     throwIfHttp("Keenable", res);
