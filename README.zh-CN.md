@@ -8,7 +8,7 @@
 
 让 DeepSeek Harness 拥有直连全网与社媒平台的搜索与抓取能力。
 
-**9 大 Web Provider 原生能力适配 · SearchHints 语义编译 · 多源自动容灾 · 小红书 / Twitter X 平台检索**
+**10 大 Web Provider 原生能力适配 · SearchHints 语义编译 · 多源自动容灾 · 小红书 / Twitter X 平台检索**
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -26,6 +26,16 @@
 [English](README.md) | **简体中文**
 
 </div>
+
+## 版本历史 (Release History)
+
+| 版本 | 发布日期 | 核心更新说明 |
+| :--- | :--- | :--- |
+| **v0.4.0** | 2026-11-09 | 新增 Serper (Google 搜索) 原生适配器；Keenable 支持原生网页抓取 (`/v1/fetch`) 与响应头配额监控；新增自定义源一键预设（Serper、SearXNG、Elasticsearch、Tavily）；超长文档自动生成并前置 Markdown 目录大纲 (TOC)；输入框支持 `Alt+S` 模式切换快捷键；上线故障熔断器与短周期结果缓存。 |
+| **v0.3.9** | 2026-11-07 | 接入 Keenable 搜索引擎，支持 `site` 域名限定与 `published_after` / `published_before` 发布日期过滤。 |
+| **v0.3.5** | 2026-11-01 | 支持自定义搜索源（三条并列接入路径、JSON 请求体模板与分级出站防护）；支持小红书与 Twitter / X 专用浏览器会话原生检索。 |
+
+完整版本历史与更新细节请参阅 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 它解决什么问题
 

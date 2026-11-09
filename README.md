@@ -8,7 +8,7 @@
 
 Empower DeepSeek Harness with unified search and deep content extraction across the open web and social platforms.
 
-**Native-Capability Adaptation Across 9 Web Providers · SearchHints Semantic Compilation · Multi-Source Resilience · Xiaohongshu & Twitter / X Retrieval**
+**Native-Capability Adaptation Across 10 Web Providers · SearchHints Semantic Compilation · Multi-Source Resilience · Xiaohongshu & Twitter / X Retrieval**
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -26,6 +26,16 @@ Empower DeepSeek Harness with unified search and deep content extraction across 
 **English** | [简体中文](README.zh-CN.md)
 
 </div>
+
+## Release History
+
+| Version | Date | Highlights |
+| :--- | :--- | :--- |
+| **v0.4.0** | 2026-11-09 | Serper (Google Search) adapter, Keenable native fetch (`/v1/fetch`) and quota tracking, custom provider presets, long-document TOC outline, `Alt+S` composer shortcut, circuit breaker, and result cache. |
+| **v0.3.9** | 2026-11-07 | Keenable search provider integration with `site` domain scoping and date range filtering. |
+| **v0.3.5** | 2026-11-01 | Custom search providers with 3 access paths and SSRF guard; native Xiaohongshu and Twitter / X browser session retrieval. |
+
+For detailed change logs, see [CHANGELOG.md](CHANGELOG.md).
 
 ## What problem does it solve?
 
