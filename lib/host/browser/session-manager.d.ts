@@ -31,17 +31,14 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
-    /** Targets another operation currently holds — never handed out twice. */
-    private leasedTargets;
     /**
-     * Pick an existing page to drive instead of opening a new tab.
+     * Drop the browser's blank start page after we created our own tab.
      *
-     * Preference: a single page already on the platform origin (no navigation
-     * cost), then a blank/internal page, then (if several tabs exist) a
-     * platform page that nobody else holds. Concurrent operations therefore
-     * never share a tab.
+     * A cold Chromium window always contains one internal new-tab page; without
+     * this cleanup every operation showed two tabs. Best-effort: only a single
+     * blank/chrome:// page is closed, so a tab with real content is never lost.
      */
-    private findReusablePage;
+    private closeLeftoverBlankPage;
     private retainLease;
     private releaseLease;
     private scheduleIdleTimer;

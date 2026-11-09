@@ -47,20 +47,25 @@ export const verifyLiveBrowserSession: LiveSessionVerifier = async ({ platform, 
       .sort((a, b) => xiaohongshuPagePriority(a.url) - xiaohongshuPagePriority(b.url));
 
     if (xiaohongshuPages.length === 0) {
-      const target = pages[0];
-      if (!target) return false;
+      // Verify in a TEMPORARY tab. Navigating the browser's own start page used
+      // to turn it into a permanent Xiaohongshu tab, so every later search
+      // showed two of them.
+      const created = await cdp.send<{ targetId: string }>(
+        "Target.createTarget",
+        { url: "about:blank" },
+        undefined,
+        signal,
+      );
       let attachedSessionId: string | undefined;
       try {
         const attached = await cdp.send<{ sessionId: string }>(
           "Target.attachToTarget",
-          { targetId: target.targetId, flatten: true },
+          { targetId: created.targetId, flatten: true },
           undefined,
           signal,
         );
         attachedSessionId = attached.sessionId;
-        const page = new CdpPage(target.targetId, attached.sessionId, cdp, async () => {});
-        // A cold browser starts on its internal new-tab page. Reuse that target
-        // instead of creating a second visible tab.
+        const page = new CdpPage(created.targetId, attached.sessionId, cdp, async () => {});
         await page.navigate("https://www.xiaohongshu.com/explore", signal);
         return await waitForStableXhsPageState(page, signal) === "ready";
       } finally {
@@ -69,6 +74,9 @@ export const verifyLiveBrowserSession: LiveSessionVerifier = async ({ platform, 
             await cdp.send("Target.detachFromTarget", { sessionId: attachedSessionId }, undefined, undefined, 2000);
           } catch {}
         }
+        try {
+          await cdp.send("Target.closeTarget", { targetId: created.targetId }, undefined, undefined, 2000);
+        } catch {}
       }
     }
 

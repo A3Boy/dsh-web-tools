@@ -536,22 +536,18 @@ export class SessionManager implements NativeBrowserRuntime {
     try {
       const session = await this.acquireSession(platform, mode, undefined, signal);
 
-      // Reuse a page we already own instead of stacking a second visible tab.
-      // A cold browser starts on its internal new-tab page, and the live auth
-      // verifier navigates that same page to the platform origin; creating a
-      // fresh target afterwards left TWO platform tabs open per search.
-      const reusable = await this.findReusablePage(session, platform);
-      const targetId = reusable
-        ? reusable.targetId
-        : (
-            await session.cdp.send<{ targetId: string }>(
-              "Target.createTarget",
-              { url: "about:blank" },
-              undefined,
-              signal,
-            )
-          ).targetId;
-      if (reusable) this.leasedTargets.add(targetId);
+      const createRes = await session.cdp.send<{ targetId: string }>(
+        "Target.createTarget",
+        { url: "about:blank" },
+        undefined,
+        signal,
+      );
+      const targetId = createRes.targetId;
+
+      // Close the browser's leftover internal new-tab page, but ONLY when it is
+      // the sole other page and it is blank/internal. That keeps the window to
+      // one visible tab without ever touching a page that holds real content.
+      void this.closeLeftoverBlankPage(session.cdp, targetId, signal);
 
       const attachRes = await session.cdp.send<{ sessionId: string }>(
         "Target.attachToTarget",
@@ -569,17 +565,10 @@ export class SessionManager implements NativeBrowserRuntime {
         async () => {
           if (closed) return;
           closed = true;
-          this.leasedTargets.delete(targetId);
           try {
-            if (reusable) {
-              // Our own persistent tab: keep it (the next operation reuses it)
-              // and only release the CDP session.
-              await session.cdp.send("Target.detachFromTarget", { sessionId });
-            } else {
-              await session.cdp.send("Target.closeTarget", { targetId });
-            }
+            await session.cdp.send("Target.closeTarget", { targetId });
           } catch {
-            // Ignore close/detach failure
+            // Ignore closeTarget failure
           } finally {
             this.releaseLease(rec);
           }
@@ -596,49 +585,31 @@ export class SessionManager implements NativeBrowserRuntime {
     }
   }
 
-  /** Targets another operation currently holds — never handed out twice. */
-  private leasedTargets = new Set<string>();
-
   /**
-   * Pick an existing page to drive instead of opening a new tab.
+   * Drop the browser's blank start page after we created our own tab.
    *
-   * Preference: a single page already on the platform origin (no navigation
-   * cost), then a blank/internal page, then (if several tabs exist) a
-   * platform page that nobody else holds. Concurrent operations therefore
-   * never share a tab.
+   * A cold Chromium window always contains one internal new-tab page; without
+   * this cleanup every operation showed two tabs. Best-effort: only a single
+   * blank/chrome:// page is closed, so a tab with real content is never lost.
    */
-  private async findReusablePage(
-    session: { cdp: { send: Function } },
-    platform: BrowserPlatform,
-  ): Promise<{ targetId: string } | undefined> {
+  private async closeLeftoverBlankPage(
+    cdp: { send: Function },
+    keepTargetId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
     try {
-      const res = (await session.cdp.send("Target.getTargets", {}, undefined, undefined)) as {
+      const res = (await cdp.send("Target.getTargets", {}, undefined, signal)) as {
         targetInfos?: Array<{ targetId: string; type: string; url?: string }>;
       };
-      const pages = (res.targetInfos ?? []).filter(
-        (t) => t.type === "page" && !this.leasedTargets.has(t.targetId),
+      const others = (res.targetInfos ?? []).filter(
+        (t) => t.type === "page" && t.targetId !== keepTargetId,
       );
-      if (pages.length === 0) return undefined;
-
-      const onPlatform = pages.filter((p) => {
-        try {
-          const host = new URL(p.url ?? "").hostname.toLowerCase();
-          return PLATFORM_AUTH_CONFIG[platform].domains.some((d) => host === d || host.endsWith(`.${d}`));
-        } catch {
-          return false;
-        }
-      });
-      if (onPlatform.length === 1 && pages.length === 1) return { targetId: onPlatform[0].targetId };
-
-      const blank = pages.find(
-        (p) => !p.url || p.url === "about:blank" || p.url.startsWith("chrome://"),
-      );
-      if (blank) return { targetId: blank.targetId };
-
-      if (onPlatform.length === 1) return { targetId: onPlatform[0].targetId };
-      return undefined;
+      if (others.length !== 1) return;
+      const url = others[0].url ?? "";
+      if (url && url !== "about:blank" && !url.startsWith("chrome://")) return;
+      await cdp.send("Target.closeTarget", { targetId: others[0].targetId }, undefined, signal);
     } catch {
-      return undefined;
+      // Never let tab hygiene fail a search.
     }
   }
 
