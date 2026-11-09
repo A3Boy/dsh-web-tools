@@ -90,3 +90,51 @@ test("reciprocalRankFusion keeps the first-seen original URL for display", () =>
   assert.equal(fused.length, 1);
   assert.equal(fused[0].url, "https://www.example.com/page/");
 });
+
+test("reciprocalRankFusion merges cache-buster variants sharing host+path+title", () => {
+  const fused = reciprocalRankFusion([
+    { provider: "tavily", sources: [{ url: "https://www.deepseek.com/harness/en", title: "DeepSeek Harness | Explore the limits of intelligence" }] },
+    {
+      provider: "firecrawl",
+      sources: [
+        { url: "https://www.deepseek.com/harness/en?cb=20260915tick", title: "DeepSeek Harness | Explore the limits of intelligence" },
+        { url: "https://www.deepseek.com/harness/en?cb=20260915tick", title: "DeepSeek Harness | Explore the limits of intelligence" },
+      ],
+    },
+  ]);
+
+  assert.equal(fused.length, 1, "the cache-buster duplicate must collapse into one entry");
+  assert.equal(fused[0].url, "https://www.deepseek.com/harness/en", "the first-seen URL is kept");
+  assert.equal(fused[0].matchedProviders.length, 2);
+  // Both providers' scores are summed onto the surviving entry.
+  assert.ok(fused[0].rrfScore > 1 / 61 + 1 / 61);
+});
+
+test("reciprocalRankFusion does NOT merge same path with different titles", () => {
+  const fused = reciprocalRankFusion([
+    {
+      provider: "a",
+      sources: [
+        { url: "https://example.com/list?page=1", title: "Results — page 1" },
+        { url: "https://example.com/list?page=2", title: "Results — page 2" },
+      ],
+    },
+  ]);
+  assert.equal(fused.length, 2, "pagination must not be collapsed");
+});
+
+test("reciprocalRankFusion does NOT merge identical titles on different hosts", () => {
+  const fused = reciprocalRankFusion([
+    { provider: "a", sources: [{ url: "https://alpha.example/docs", title: "Getting started" }] },
+    { provider: "b", sources: [{ url: "https://beta.example/docs", title: "Getting started" }] },
+  ]);
+  assert.equal(fused.length, 2);
+});
+
+test("reciprocalRankFusion falls back to URL-only dedupe when the title is missing", () => {
+  const fused = reciprocalRankFusion([
+    { provider: "a", sources: [{ url: "https://example.com/x" }, { url: "https://example.com/x?cb=1" }] },
+  ]);
+  // Without a title there is no evidence the two URLs are the same document.
+  assert.equal(fused.length, 2);
+});

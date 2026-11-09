@@ -109,7 +109,36 @@ export interface FusedSource extends Source {
 }
 
 /**
+ * Secondary dedupe key: same host + path + byte-identical title.
+ *
+ * Search APIs sometimes return the same document under cache-buster URLs
+ * (`?cb=20260915tick`, `?_=1731555…`). Those query params are NOT safe to strip
+ * globally (many sites use real query params), but an identical title on the
+ * same host+path is strong evidence of the same document.
+ *
+ * Protocol and `www.` are ignored so an http/https pair of the same page also
+ * collapses; the first-seen original URL is still what gets displayed.
+ */
+function pathTitleKey(rawUrl: string, title?: string): string | undefined {
+  const normalizedTitle = title?.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalizedTitle) return undefined;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${host}${path}|${normalizedTitle}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Fuse results from multiple search providers using Reciprocal Rank Fusion (RRF).
+ *
+ * Deduplication runs on two keys, in order:
+ *  1. the canonical URL (tracking params, `www.`, trailing slash, param order);
+ *  2. host+path with an identical title, which catches cache-buster variants
+ *     that carry no meaningful URL-level difference.
  *
  * @param resultSets array of provider outcomes with their ranked sources.
  * @param k RRF smoothing constant (default: 60).
@@ -132,6 +161,10 @@ export function reciprocalRankFusion(
       matchedProviders: Set<string>;
     }
   >();
+  /** canonical URL → the entry key it was folded into. */
+  const urlAlias = new Map<string, string>();
+  /** host+path+title → the entry key it was folded into. */
+  const titleAlias = new Map<string, string>();
 
   for (const set of resultSets) {
     const { provider, sources } = set;
@@ -139,10 +172,13 @@ export function reciprocalRankFusion(
       const item = sources[rank];
       if (!item || !item.url) continue;
 
-      const canon = canonicalizeUrl(item.url);
+      const canonicalUrl = canonicalizeUrl(item.url);
+      const byUrl = urlAlias.get(canonicalUrl) ?? canonicalUrl;
+      const byTitle = pathTitleKey(item.url, item.title);
+      const target = (byTitle ? titleAlias.get(byTitle) : undefined) ?? byUrl;
       const score = 1 / (k + rank + 1); // 1-based rank
 
-      const existing = mergedMap.get(canon);
+      const existing = mergedMap.get(target);
       if (existing) {
         existing.rrfScore += score;
         existing.matchedProviders.add(provider);
@@ -159,7 +195,7 @@ export function reciprocalRankFusion(
           existing.publishedAt = item.publishedAt;
         }
       } else {
-        mergedMap.set(canon, {
+        mergedMap.set(target, {
           originalUrl: item.url,
           title: item.title,
           snippet: item.snippet,
@@ -168,6 +204,10 @@ export function reciprocalRankFusion(
           matchedProviders: new Set([provider]),
         });
       }
+
+      // Remember both keys so a later provider's variant folds into this entry.
+      if (byUrl !== target) urlAlias.set(canonicalUrl, target);
+      if (byTitle && !titleAlias.has(byTitle)) titleAlias.set(byTitle, target);
     }
   }
 

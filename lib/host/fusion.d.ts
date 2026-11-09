@@ -35,6 +35,11 @@ export interface FusedSource extends Source {
 /**
  * Fuse results from multiple search providers using Reciprocal Rank Fusion (RRF).
  *
+ * Deduplication runs on two keys, in order:
+ *  1. the canonical URL (tracking params, `www.`, trailing slash, param order);
+ *  2. host+path with an identical title, which catches cache-buster variants
+ *     that carry no meaningful URL-level difference.
+ *
  * @param resultSets array of provider outcomes with their ranked sources.
  * @param k RRF smoothing constant (default: 60).
  * @param maxResults optional cap on returned results.
