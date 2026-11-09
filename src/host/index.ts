@@ -390,6 +390,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         // site:-filtered web results as if they were in-app posts is how a
         // search looks successful while being much worse.
         ...(outcome.degraded ? { content: describeDegradation(outcome.degraded), degraded: outcome.degraded } : {}),
+        ...(outcome.diagnostics ? { diagnostics: outcome.diagnostics } : {}),
         sources: outcome.items.map((item) => ({
           url: item.url,
           title: item.title,
@@ -507,6 +508,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         fused: (result as unknown as { fused?: boolean }).fused === true,
         degraded: (result as unknown as { degraded?: { code: string; message: string; platform?: string } }).degraded,
         hints: { platform: hints.platform, cleanQuery: hints.cleanQuery },
+        diagnostics: (result as unknown as { diagnostics?: string[] }).diagnostics,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),

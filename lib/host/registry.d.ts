@@ -39,6 +39,8 @@ export interface WebSearchProviderLike {
             message: string;
             platform?: string;
         };
+        /** Channel diagnostics (why a platform fast path was skipped). */
+        diagnostics?: string[];
     }>;
 }
 /** Structural mirror of the seam's WebFetchProvider contract. */

@@ -81,6 +81,8 @@ export interface SourceSearchOutcome {
     }>;
     /** True when the fallback merged two providers with RRF. */
     fused?: boolean;
+    /** Human-readable channel diagnostics (why a fast path was skipped). */
+    diagnostics?: string[];
 }
 /** Why a platform search was served by a web-search fallback instead. */
 export interface SourceDegradation {

@@ -31,6 +31,17 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
+    /** Targets another operation currently holds — never handed out twice. */
+    private leasedTargets;
+    /**
+     * Pick an existing page to drive instead of opening a new tab.
+     *
+     * Preference: a single page already on the platform origin (no navigation
+     * cost), then a blank/internal page, then (if several tabs exist) a
+     * platform page that nobody else holds. Concurrent operations therefore
+     * never share a tab.
+     */
+    private findReusablePage;
     private retainLease;
     private releaseLease;
     private scheduleIdleTimer;

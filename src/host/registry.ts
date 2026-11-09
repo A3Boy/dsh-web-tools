@@ -50,6 +50,8 @@ export interface WebSearchProviderLike {
     fused?: boolean;
     /** Set when a platform query was served by a general web fallback. */
     degraded?: { code: string; message: string; platform?: string };
+    /** Channel diagnostics (why a platform fast path was skipped). */
+    diagnostics?: string[];
   }>;
 }
 

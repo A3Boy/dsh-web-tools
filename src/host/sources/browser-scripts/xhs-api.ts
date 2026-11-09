@@ -28,6 +28,8 @@ export interface XhsApiSearchResult {
   status?: number;
   /** `signer-unavailable` | `sign-failed` | `http-error` | `bad-payload` | `network` */
   error?: string;
+  /** Site-level code from the JSON envelope (e.g. -100 = risk control). */
+  code?: number;
   items: Array<Record<string, any>>;
   searchId?: string;
   hasMore?: boolean;
@@ -35,7 +37,13 @@ export interface XhsApiSearchResult {
 
 export async function xhsSearchNotesViaApi(options: XhsApiSearchOptions): Promise<XhsApiSearchResult> {
   const w = window as any;
-  const signer = w._webmsxyw;
+  let signer = w._webmsxyw;
+  // The signer lives in the site's app bundle; on a cold page it can appear a
+  // few seconds after readyState=complete. Poll briefly instead of failing.
+  for (let i = 0; typeof signer !== "function" && i < 25; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    signer = (window as any)._webmsxyw;
+  }
   if (typeof signer !== "function") {
     return { ok: false, error: "signer-unavailable", items: [] };
   }
@@ -103,6 +111,7 @@ export async function xhsSearchNotesViaApi(options: XhsApiSearchOptions): Promis
   return {
     ok: json?.success !== false && response.ok,
     status: response.status,
+    ...(typeof json?.code === "number" ? { code: json.code } : {}),
     items,
     searchId,
     hasMore: data?.has_more === true,

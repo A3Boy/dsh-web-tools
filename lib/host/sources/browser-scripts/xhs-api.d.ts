@@ -26,6 +26,8 @@ export interface XhsApiSearchResult {
     status?: number;
     /** `signer-unavailable` | `sign-failed` | `http-error` | `bad-payload` | `network` */
     error?: string;
+    /** Site-level code from the JSON envelope (e.g. -100 = risk control). */
+    code?: number;
     items: Array<Record<string, any>>;
     searchId?: string;
     hasMore?: boolean;

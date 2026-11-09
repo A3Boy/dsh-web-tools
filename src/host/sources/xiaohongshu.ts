@@ -163,7 +163,7 @@ export class XiaohongshuSource implements SpecializedSource {
     req: SourceSearchRequest | undefined,
     maxResults: number,
     signal?: AbortSignal,
-  ): Promise<SourceSearchOutcome | null> {
+  ): Promise<{ outcome: SourceSearchOutcome | null; reason?: string }> {
     try {
       // The API is same-origin, so the page must be on xiaohongshu.com first.
       // `navigate` already waits for a usable readyState, so no extra wait.
@@ -183,7 +183,18 @@ export class XiaohongshuSource implements SpecializedSource {
         [{ keyword: query, pageSize: Math.max(20, maxResults), sort, noteType }],
         signal,
       );
-      if (!result?.ok || !Array.isArray(result.items) || result.items.length === 0) return null;
+      if (!result) return { outcome: null, reason: "xhs-api: no result" };
+      if (!result.ok) {
+        return {
+          outcome: null,
+          reason: `xhs-api: ${result.error ?? "rejected"}${result.status ? ` status=${result.status}` : ""}${
+            result.code !== undefined ? ` code=${result.code}` : ""
+          }`,
+        };
+      }
+      if (!Array.isArray(result.items) || result.items.length === 0) {
+        return { outcome: null, reason: "xhs-api: 0 items" };
+      }
 
       const items: SourceItem[] = [];
       const seen = new Set<string>();
@@ -194,12 +205,12 @@ export class XiaohongshuSource implements SpecializedSource {
         items.push(mapped);
         if (items.length >= maxResults) break;
       }
-      if (items.length === 0) return null;
+      if (items.length === 0) return { outcome: null, reason: "xhs-api: unmappable items" };
 
       for (const item of items) this.rememberNoteUrl(item.id, item.url);
-      return { items, retrievalMode: "native-browser" };
-    } catch {
-      return null;
+      return { outcome: { items, retrievalMode: "native-browser" } };
+    } catch (err: any) {
+      return { outcome: null, reason: `xhs-api: ${err?.message ?? "threw"}` };
     }
   }
 
@@ -232,8 +243,8 @@ export class XiaohongshuSource implements SpecializedSource {
       // page. No paid API, no key: it reuses the session cookies and the
       // `_webmsxyw` signer the site installs, and returns full JSON (including
       // the xsec_token a later note fetch needs). ~0.3-1s instead of 15-25s.
-      const apiOutcome = await this.searchViaApi(page, query, req, maxResults, signal);
-      if (apiOutcome) return apiOutcome;
+      const api = await this.searchViaApi(page, query, req, maxResults, signal);
+      if (api.outcome) return api.outcome;
 
       // FALLBACK: drive the search UI (survives a signer rename or a
       // risk-control payload on the JSON channel).
@@ -335,7 +346,9 @@ export class XiaohongshuSource implements SpecializedSource {
 
       const items = Array.from(collectedMap.values()).slice(0, maxResults);
       for (const item of items) this.rememberNoteUrl(item.id, item.url);
-      return { items };
+      // Keep the fast-path failure reason: without it a 20s UI search looks
+      // identical to one where the API channel was never attempted.
+      return { items, ...(api.reason ? { diagnostics: [api.reason] } : {}) };
     } catch (err: any) {
       if (signal?.aborted) {
         return { items: [], error: { code: "aborted", message: "Search operation was aborted", retryable: false } };

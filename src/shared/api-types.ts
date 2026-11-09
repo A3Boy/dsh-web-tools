@@ -149,6 +149,8 @@ export interface TestSearchView {
   degraded?: TextSearchDegradation;
   /** How the query was interpreted (routing diagnostics for the card). */
   hints?: { platform?: string; cleanQuery?: string };
+  /** Channel diagnostics (e.g. why the 小红书 fast path was skipped). */
+  diagnostics?: string[];
   latencyMs?: number;
   resultCount?: number;
   results?: Array<{ title: string; url: string; snippet: string }>;
