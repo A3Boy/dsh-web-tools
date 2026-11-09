@@ -34,15 +34,23 @@ const LOGIN_REDIRECT_RE = /\/i\/flow\/login|\/account\/access|challenge/i;
  * whose SPA never issued the SearchTimeline request. This records the facts
  * that distinguish them.
  */
-async function readXPageDiagnostics(page: CdpPageLease, signal?: AbortSignal): Promise<string | undefined> {
+interface XPageSnapshot {
+  href: string;
+  title: string;
+  text: string;
+  tweets: number;
+  graphql: number;
+  /** Logged-in side navigation present. */
+  loggedIn: boolean;
+  /** A "Log in / Sign up" call-to-action is on screen. */
+  loginCta: boolean;
+  readyState: string;
+}
+
+/** Snapshot of what the search page actually shows, for a failed capture. */
+async function readXPageSnapshot(page: CdpPageLease, signal?: AbortSignal): Promise<XPageSnapshot | undefined> {
   try {
-    const info = await page.evaluate<{
-      href: string;
-      title: string;
-      text: string;
-      tweets: number;
-      graphql: number;
-    }>(
+    return await page.evaluate<XPageSnapshot>(
       `(() => {
         const text = (document.body && document.body.innerText ? document.body.innerText : "")
           .replace(/\\s+/g, " ")
@@ -52,24 +60,44 @@ async function readXPageDiagnostics(page: CdpPageLease, signal?: AbortSignal): P
           graphql = performance.getEntriesByType("resource")
             .filter((e) => e.name.indexOf("/i/api/graphql/") !== -1).length;
         } catch {}
+        const loggedIn = !!document.querySelector(
+          '[data-testid="SideNav_AccountSwitcher_Button"], [data-testid="AppTabBar_Profile_Link"], a[href="/logout"]'
+        );
+        const bodyText = (document.body && document.body.innerText ? document.body.innerText : "").toLowerCase();
+        const loginCta = !!document.querySelector('a[href="/login"], a[href="/i/flow/login"]')
+          || bodyText.indexOf("sign in to x") !== -1
+          || bodyText.indexOf("log in to x") !== -1
+          || bodyText.indexOf("登录") !== -1;
         return {
           href: location.href,
           title: document.title || "",
           text,
           tweets: document.querySelectorAll("article[data-testid='tweet']").length,
           graphql,
+          loggedIn,
+          loginCta,
+          readyState: document.readyState,
         };
       })()`,
       signal,
     );
-    if (!info) return undefined;
-    const bits = [`href=${info.href}`, `tweets=${info.tweets}`, `graphql=${info.graphql}`];
-    if (info.title) bits.push(`title=${info.title.slice(0, 60)}`);
-    if (info.text) bits.push(`text=${info.text.slice(0, 120)}`);
-    return bits.join(", ");
   } catch {
     return undefined;
   }
+}
+
+function describeXPageSnapshot(info: XPageSnapshot): string {
+  const bits = [
+    `href=${info.href}`,
+    `ready=${info.readyState}`,
+    `tweets=${info.tweets}`,
+    `graphql=${info.graphql}`,
+    `loggedIn=${info.loggedIn}`,
+    `loginCta=${info.loginCta}`,
+  ];
+  if (info.title) bits.push(`title=${info.title.slice(0, 60)}`);
+  if (info.text) bits.push(`text=${info.text.slice(0, 120)}`);
+  return bits.join(", ");
 }
 
 async function collectTweetsViaDom(
@@ -323,7 +351,35 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         signal,
       });
       await page.navigate(searchUrl, signal);
-      const outcome = await capture.wait();
+      const capturePromise = capture.wait();
+
+      // Early auth sniff: a logged-out shell never fires SearchTimeline, so
+      // waiting the full 15s window just delays the inevitable. Give the SPA a
+      // short start-up grace, then inspect the page instead of the clock.
+      const early = await Promise.race([
+        capturePromise.then((o) => ({ kind: "captured" as const, outcome: o })),
+        new Promise<{ kind: "early" }>((resolve) =>
+          setTimeout(() => resolve({ kind: "early" as const }), 2500),
+        ),
+      ]);
+      let outcome;
+      if (early.kind === "captured") {
+        outcome = early.outcome;
+      } else {
+        const earlySnapshot = await readXPageSnapshot(page, signal);
+        if (earlySnapshot && earlySnapshot.loginCta && !earlySnapshot.loggedIn) {
+          capture.cancel();
+          return {
+            items: [],
+            error: {
+              code: "auth-expired",
+              message: `x.com showed the logged-out shell instead of search results [${describeXPageSnapshot(earlySnapshot)}]`,
+              retryable: false,
+            },
+          };
+        }
+        outcome = await capturePromise;
+      }
 
       if (signal?.aborted || outcome.state === "aborted") {
         return {
@@ -386,14 +442,27 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       if (domItems.length > 0) {
         return { items: domItems, retrievalMode: "native-browser" };
       }
-      const diagnostics = await readXPageDiagnostics(page, signal);
+      const snapshot = await readXPageSnapshot(page, signal);
+      // A logged-out shell never loads the timeline. Report it as an auth
+      // problem (non-retryable) instead of a parse failure: the caller skips
+      // the second tab and the user is told to sign in again.
+      if (snapshot && snapshot.loginCta && !snapshot.loggedIn) {
+        return {
+          items: [],
+          error: {
+            code: "auth-expired",
+            message: `x.com showed the logged-out shell instead of search results [${describeXPageSnapshot(snapshot)}]`,
+            retryable: false,
+          },
+        };
+      }
       return {
         items: [],
         error: {
           code: "parse-failed",
           message:
             "X search produced no GraphQL response and no DOM tweets" +
-            (diagnostics ? ` [${diagnostics}]` : ""),
+            (snapshot ? ` [${describeXPageSnapshot(snapshot)}]` : ""),
           retryable: true,
         },
       };
