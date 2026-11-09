@@ -500,11 +500,13 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           undefined, // no caller signal for a manual card test
         ),
       );
+      const hints = extractSearchHints(query);
       return {
         ok: true,
         backend: (result as unknown as { backend?: string }).backend,
         fused: (result as unknown as { fused?: boolean }).fused === true,
         degraded: (result as unknown as { degraded?: { code: string; message: string; platform?: string } }).degraded,
+        hints: { platform: hints.platform, cleanQuery: hints.cleanQuery },
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),

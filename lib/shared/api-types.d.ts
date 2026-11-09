@@ -129,6 +129,11 @@ export interface TestSearchView {
     fused?: boolean;
     /** Set when a platform query was served by a general web fallback. */
     degraded?: TextSearchDegradation;
+    /** How the query was interpreted (routing diagnostics for the card). */
+    hints?: {
+        platform?: string;
+        cleanQuery?: string;
+    };
     latencyMs?: number;
     resultCount?: number;
     results?: Array<{
