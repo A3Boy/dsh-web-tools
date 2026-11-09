@@ -64,10 +64,12 @@ async function readXPageSnapshot(page: CdpPageLease, signal?: AbortSignal): Prom
           '[data-testid="SideNav_AccountSwitcher_Button"], [data-testid="AppTabBar_Profile_Link"], a[href="/logout"]'
         );
         const bodyText = (document.body && document.body.innerText ? document.body.innerText : "").toLowerCase();
+        // Conservative: a login LINK exists on the site chrome even when signed
+        // in, so the CTA flag is only a hint. The authoritative signal is the
+        // URL (login redirect) combined with "nothing loaded at all".
         const loginCta = !!document.querySelector('a[href="/login"], a[href="/i/flow/login"]')
           || bodyText.indexOf("sign in to x") !== -1
-          || bodyText.indexOf("log in to x") !== -1
-          || bodyText.indexOf("登录") !== -1;
+          || bodyText.indexOf("log in to x") !== -1;
         return {
           href: location.href,
           title: document.title || "",
@@ -86,8 +88,25 @@ async function readXPageSnapshot(page: CdpPageLease, signal?: AbortSignal): Prom
   }
 }
 
-function describeXPageSnapshot(info: XPageSnapshot): string {
-  const bits = [
+/**
+ * Only treat the page as a logged-out shell on STRONG evidence.
+ *
+ * A cold SPA boot renders the site chrome (which contains a "Log in" link)
+ * before hydration, so linkage alone proves nothing — that false positive is
+ * exactly what made a valid session look signed out.
+ */
+function isLoggedOutShell(snap: XPageSnapshot | undefined): boolean {
+  if (!snap) return false;
+  if (/\/login\b|\/i\/flow\/login/.test(snap.href)) return true;
+  return (
+    !snap.loggedIn &&
+    snap.graphql === 0 &&
+    snap.tweets === 0 &&
+    /sign in to x|log in to x/.test(snap.text.toLowerCase())
+  );
+}
+
+function describeXPageSnapshot(info: XPageSnapshot): string {  const bits = [
     `href=${info.href}`,
     `ready=${info.readyState}`,
     `tweets=${info.tweets}`,
@@ -350,6 +369,15 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         timeoutMs: 15000,
         signal,
       });
+      // Warm the SPA on /home first. A cold direct navigation straight to
+      // /search can leave the app shell unhydrated (graphql=0, zero tweets)
+      // even with a valid session; /home boots the same bundle and hydrates it.
+      try {
+        await page.navigate("https://x.com/home", signal);
+        await page.waitForSelector('[data-testid="SideNav_AccountSwitcher_Button"]', 6000, signal);
+      } catch {
+        // Best effort — fall through to the search URL anyway.
+      }
       await page.navigate(searchUrl, signal);
       const capturePromise = capture.wait();
 
@@ -367,7 +395,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         outcome = early.outcome;
       } else {
         const earlySnapshot = await readXPageSnapshot(page, signal);
-        if (earlySnapshot && earlySnapshot.loginCta && !earlySnapshot.loggedIn) {
+        if (earlySnapshot && isLoggedOutShell(earlySnapshot)) {
           capture.cancel();
           return {
             items: [],
@@ -446,7 +474,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       // A logged-out shell never loads the timeline. Report it as an auth
       // problem (non-retryable) instead of a parse failure: the caller skips
       // the second tab and the user is told to sign in again.
-      if (snapshot && snapshot.loginCta && !snapshot.loggedIn) {
+      if (snapshot && isLoggedOutShell(snapshot)) {
         return {
           items: [],
           error: {

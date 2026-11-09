@@ -512,9 +512,10 @@ test("XSource: retries the Latest tab when Top yields no tweets", async () => {
   assert.equal(res.error, undefined);
   assert.equal(res.items.length, 1);
   assert.equal(res.items[0].id, "999");
-  assert.equal(navigations.length, 2, "both tabs must be attempted");
-  assert.ok(!navigations[0].includes("f=live"), "first pass is the Top tab");
-  assert.ok(navigations[1].includes("f=live"), "second pass is the Latest tab");
+  const searchNavigations = navigations.filter((u) => u.includes("/search?q="));
+  assert.equal(searchNavigations.length, 2, "both tabs must be attempted");
+  assert.ok(!searchNavigations[0].includes("f=live"), "first pass is the Top tab");
+  assert.ok(searchNavigations[1].includes("f=live"), "second pass is the Latest tab");
 });
 
 test("XSource: search URL excludes reply noise and honors media intent", () => {
