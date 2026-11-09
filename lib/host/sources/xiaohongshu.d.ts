@@ -7,6 +7,12 @@ export declare function parseXhsCount(value: unknown): number | undefined;
 /**
  * Map one `/search/notes` item into a SourceItem.
  *
+ * The real payload wraps each hit as
+ * `{ id, model_type, note_card: { display_title, desc, user, interact_info,
+ *    cover, xsec_token, type } }` — the note fields live under `note_card`, so
+ * unwrap it before reading. Some responses (and older fixtures) are already
+ * flat; both shapes are accepted.
+ *
  * The URL keeps `xsec_token`: without it a later note fetch is redirected to
  * the login wall, which is why the UI-scraped path lost details whenever the
  * DOM link dropped the token.

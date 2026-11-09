@@ -342,3 +342,27 @@ test("XHS API mapping: keeps xsec_token, metrics and author", () => {
   assert.equal(parseXhsCount(88), 88);
   assert.equal(mapXhsApiNote({}), null);
 });
+
+test("XHS API mapping: unwraps the real note_card envelope", () => {
+  const item = mapXhsApiNote({
+    id: "outer-id",
+    model_type: "note",
+    note_card: {
+      note_id: "6a15b99b000000000803df01",
+      type: "normal",
+      display_title: "ChatGPT Plus 重点是它适不适合你",
+      desc: "正文",
+      xsec_token: "ABwSzXwo6MZSBWNO0IlhUf8nJL9M",
+      user: { nickname: "作者A", user_id: "user123" },
+      interact_info: { liked_count: "2.3万", collected_count: "1200", comment_count: "88" },
+      cover: { url_default: "https://sns-img.example/cover.jpg" },
+    },
+  });
+  assert.ok(item);
+  assert.equal(item!.id, "6a15b99b000000000803df01");
+  assert.equal(item!.title, "ChatGPT Plus 重点是它适不适合你");
+  assert.ok(item!.url.includes("xsec_token=ABwSzXwo6MZSBWNO0IlhUf8nJL9M"));
+  assert.equal(item!.likes, 23000);
+  assert.equal(item!.collects, 1200);
+  assert.equal(item!.author?.name, "作者A");
+});
