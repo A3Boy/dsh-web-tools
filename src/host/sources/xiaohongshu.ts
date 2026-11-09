@@ -96,8 +96,26 @@ export function mapXhsApiNote(note: Record<string, any>): SourceItem | null {
   };
 }
 
-export class XiaohongshuSource implements SpecializedSource {
-  readonly id = "xiaohongshu" as const;
+/** Build the site's own search-results URL (the page then fetches the JSON). */
+export function buildXhsSearchUrl(query: string, req?: SourceSearchRequest): string {
+  const params = new URLSearchParams();
+  params.set("keyword", query);
+  params.set("source", "web_search_result_notes");
+  const preset = req?.hints?.freshness?.preset;
+  if (preset === "day" || preset === "week") params.set("sort", "time_descending");
+  return `https://www.xiaohongshu.com/search_result?${params.toString()}`;
+}
+
+/** Pull note entries out of a captured `/search/notes` response payload. */
+export function extractXhsNotesFromSearchPayload(json: unknown): Array<Record<string, any>> {
+  const root = json as any;
+  const data = root?.data ?? root;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.notes)) return data.notes;
+  return [];
+}
+
+export class XiaohongshuSource implements SpecializedSource {  readonly id = "xiaohongshu" as const;
   readonly name = "小红书";
   private runtime: NativeBrowserRuntime;
   private readonly noteUrlCache = new Map<string, string>();
@@ -148,6 +166,61 @@ export class XiaohongshuSource implements SpecializedSource {
         retryable: false,
       },
     };
+  }
+
+  /**
+   * Fastest path: open the site's own search URL and CAPTURE the JSON the page
+   * itself requests.
+   *
+   * Forging the request requires the site's full signature header set
+   * (`X-S`, `X-T`, `x-S-Common`, `X-B3-Traceid`); with only the first two the
+   * endpoint answers 500. Letting the page issue its own signed request avoids
+   * that entirely — no headers to fake, no paid API — and still yields the JSON
+   * (with note_card + xsec_token) instead of DOM scraping.
+   */
+  private async searchViaDirectUrl(
+    page: CdpPageLease,
+    query: string,
+    req: SourceSearchRequest | undefined,
+    maxResults: number,
+    signal?: AbortSignal,
+  ): Promise<{ outcome: SourceSearchOutcome | null; reason?: string }> {
+    let capture: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
+    try {
+      capture = await page.beginJsonCapture({
+        urlIncludes: "/api/sns/web/v1/search/notes",
+        timeoutMs: 12000,
+        signal,
+      });
+      await page.navigate(buildXhsSearchUrl(query, req), signal);
+      const outcome = await capture.wait();
+      if (!outcome || outcome.state !== "captured") {
+        return { outcome: null, reason: `xhs-url: ${outcome?.state ?? "no-response"}` };
+      }
+      if (typeof outcome.status === "number" && (outcome.status < 200 || outcome.status >= 300)) {
+        return { outcome: null, reason: `xhs-url: status=${outcome.status}` };
+      }
+      const notes = extractXhsNotesFromSearchPayload(outcome.json);
+      if (notes.length === 0) return { outcome: null, reason: "xhs-url: 0 items" };
+
+      const items: SourceItem[] = [];
+      const seen = new Set<string>();
+      for (const note of notes) {
+        const mapped = mapXhsApiNote(note);
+        if (!mapped || seen.has(mapped.id)) continue;
+        seen.add(mapped.id);
+        items.push(mapped);
+        if (items.length >= maxResults) break;
+      }
+      if (items.length === 0) return { outcome: null, reason: "xhs-url: unmappable items" };
+
+      for (const item of items) this.rememberNoteUrl(item.id, item.url);
+      return { outcome: { items, retrievalMode: "native-browser" } };
+    } catch (err: any) {
+      return { outcome: null, reason: `xhs-url: ${err?.message ?? "threw"}` };
+    } finally {
+      capture?.cancel();
+    }
   }
 
   /**
@@ -238,13 +311,20 @@ export class XiaohongshuSource implements SpecializedSource {
       return { items: [], error: { code: "runtime-unavailable", message: err.message, retryable: true } };
     }
 
+    const channelReasons: string[] = [];
     try {
-      // PRIMARY: the site's own signed JSON API, called inside the signed-in
-      // page. No paid API, no key: it reuses the session cookies and the
-      // `_webmsxyw` signer the site installs, and returns full JSON (including
-      // the xsec_token a later note fetch needs). ~0.3-1s instead of 15-25s.
+      // PRIMARY: open the site's own search URL and capture the JSON its client
+      // requests. No forged headers, no paid API, ~4-6s instead of 15-25s.
+      const direct = await this.searchViaDirectUrl(page, query, req, maxResults, signal);
+      if (direct.outcome) return direct.outcome;
+      if (direct.reason) channelReasons.push(direct.reason);
+
+      // SECOND: call the endpoint from inside the page with the site's signer.
+      // Needs the full signature header set to be accepted; kept as a cheap
+      // attempt because it is the fastest when it works.
       const api = await this.searchViaApi(page, query, req, maxResults, signal);
       if (api.outcome) return api.outcome;
+      if (api.reason) channelReasons.push(api.reason);
 
       // FALLBACK: drive the search UI (survives a signer rename or a
       // risk-control payload on the JSON channel).
@@ -348,18 +428,30 @@ export class XiaohongshuSource implements SpecializedSource {
       for (const item of items) this.rememberNoteUrl(item.id, item.url);
       // Keep the fast-path failure reason: without it a 20s UI search looks
       // identical to one where the API channel was never attempted.
-      return { items, ...(api.reason ? { diagnostics: [api.reason] } : {}) };
+      return { items, ...(channelReasons.length ? { diagnostics: channelReasons } : {}) };
     } catch (err: any) {
       if (signal?.aborted) {
         return { items: [], error: { code: "aborted", message: "Search operation was aborted", retryable: false } };
       }
       if (err.name === "UrlDisallowedError") {
-        return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
+        return {
+          items: [],
+          error: { code: "blocked", message: err.message, retryable: false },
+          ...(channelReasons.length ? { diagnostics: channelReasons } : {}),
+        };
       }
       if (err.name === "NavigationTimeoutError" || err.name === "SelectorTimeoutError") {
-        return { items: [], error: { code: "navigation-timeout", message: err.message, retryable: true } };
+        return {
+          items: [],
+          error: { code: "navigation-timeout", message: err.message, retryable: true },
+          ...(channelReasons.length ? { diagnostics: channelReasons } : {}),
+        };
       }
-      return { items: [], error: { code: "parse-failed", message: err.message, retryable: true } };
+      return {
+        items: [],
+        error: { code: "parse-failed", message: err.message, retryable: true },
+        ...(channelReasons.length ? { diagnostics: channelReasons } : {}),
+      };
     } finally {
       await page.close();
     }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { XiaohongshuSource, setXhsNativeSearchEnabled, mapXhsApiNote, parseXhsCount } from "../src/host/sources/xiaohongshu.ts";
+import { XiaohongshuSource, setXhsNativeSearchEnabled, mapXhsApiNote, parseXhsCount, buildXhsSearchUrl, extractXhsNotesFromSearchPayload } from "../src/host/sources/xiaohongshu.ts";
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
@@ -365,4 +365,20 @@ test("XHS API mapping: unwraps the real note_card envelope", () => {
   assert.equal(item!.likes, 23000);
   assert.equal(item!.collects, 1200);
   assert.equal(item!.author?.name, "作者A");
+});
+
+test("XHS direct-URL channel: builds the search URL and reads captured payloads", () => {
+  const url = buildXhsSearchUrl("GPTPLus 值得开吗", {
+    hints: { platform: "xiaohongshu", cleanQuery: "GPTPLus", rawQuery: "小红书 GPTPLus 本周", freshness: { preset: "week" } },
+  });
+  assert.ok(url.startsWith("https://www.xiaohongshu.com/search_result?"));
+  assert.ok(url.includes("keyword=GPTPLus+%E5%80%BC%E5%BE%97%E5%BC%80%E5%90%97"));
+  assert.ok(url.includes("sort=time_descending"));
+
+  const notes = [{ id: "a", note_card: { note_id: "a" } }];
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ data: { items: notes } }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ items: notes }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ data: { notes } }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({}), []);
+  assert.deepEqual(extractXhsNotesFromSearchPayload(null), []);
 });
