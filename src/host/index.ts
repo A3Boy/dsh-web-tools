@@ -20,6 +20,11 @@ import type { VersionCheckView } from "../shared/api-types.ts";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
+import {
+  seedKeenableUsageCache,
+  setKeenableUsagePersist,
+  type KeenableUsageBucket,
+} from "./providers/keenable-usage.ts";
 import { createQuotaPersistScheduler } from "./quota-persist.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -215,6 +220,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   /** Coalesced writer for Brave's header-derived, display-only quota cache. */
   const braveQuotaPersist = createQuotaPersistScheduler((cache) => {
     void configHandle.write({ braveQuotaCache: cache }).catch(() => {});
+  });
+
+  /** Coalesced writer for the Keenable per-call usage ledger. */
+  const keenableUsagePersist = createQuotaPersistScheduler<KeenableUsageBucket>((cache) => {
+    void configHandle.write({ keenableUsageCache: cache }).catch(() => {});
   });
 
   // ---- ctx.web search + fetch providers ----------------------------------
@@ -556,6 +566,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
     }
+    const keenableCache = (cfg.keenableUsageCache ?? {}) as Record<string, KeenableUsageBucket>;
+    seedKeenableUsageCache(keenableCache);
+    keenableUsagePersist.seed(keenableCache);
   });
   // Coalesced: a settings write costs ~2.5s on DSH 0.1.7 (profile patch +
   // Loader reconciliation under hmr.runExclusive), and Brave reports quota in
@@ -565,6 +578,14 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   ctx.effect(
     () => () => braveQuotaPersist.dispose(),
     "dsh-web-tools: brave quota persistence",
+  );
+  // Keenable reports the charge of every call in the response body; the
+  // ledger that accumulates those numbers is display-only and persisted the
+  // same coalesced way as Brave's header snapshots.
+  setKeenableUsagePersist((apiKey, bucket) => keenableUsagePersist.record(apiKey, bucket));
+  ctx.effect(
+    () => () => keenableUsagePersist.dispose(),
+    "dsh-web-tools: keenable usage persistence",
   );
 
   // ---- Search Mode (per-session "required web search" turn policy) ---------

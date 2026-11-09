@@ -5,6 +5,20 @@ All notable changes to `dsh-web-tools` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Keenable Usage Accounting**:
+  - Parses the per-call `usage` object (`sku`, `credits`, `paid`) that billed `/v1/search` and `/v1/fetch` responses return, and accumulates it per key into a persisted monthly ledger (`keenableUsageCache`).
+  - Optional console balance: reads `GET https://api.keenable.ai/bff/organization/balance` with a Supabase session from `KEENABLE_REFRESH_TOKEN` (auto-refreshed) or `KEENABLE_SESSION_TOKEN`. The route is undocumented, so every failure falls back silently to the local ledger.
+  - The quota card now shows "credits used" for the current UTC month when no console session is configured.
+- **Pool Merge Dedupes Organization Balances**: `QuotaSnapshot.group` lets a key pool count one organization-level balance once instead of once per API key.
+
+### Changed
+- `createQuotaPersistScheduler` is generic over the stored record type, so Brave snapshots and the Keenable ledger share the same coalesced settings writer.
+
+---
+
 ## [0.4.0] - 2026-11-09
 
 ### Added

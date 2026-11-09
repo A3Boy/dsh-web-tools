@@ -6,7 +6,7 @@
  * by default.
  * @module
  */
-import { useState, useRef, type CSSProperties } from "react";
+import { useState, useRef, useEffect, type CSSProperties } from "react";
 import { Button, Modal, StateDot } from "@deepseek-ai/dsh-client-ui-primitives";
 import {
   IconChevronRightOutline14,
@@ -20,6 +20,7 @@ import { text, surface, state as stateColor } from "./theme.ts";
 import { Switch, type TFunc } from "./WebToolsSection.tsx";
 import { providerStatusOf, testOutcomeStatus } from "./logic.ts";
 import { ProviderPreferencesSection } from "./provider-preferences/ProviderPreferencesSection.tsx";
+import { hasProviderPreferences } from "./provider-preferences/contracts.ts";
 import { PROVIDER_BRAND } from "./brand.ts";
 import { SettingsGroup, SettingsRow } from "./ui/SettingsGroup.tsx";
 import { QuotaCard } from "./ui/QuotaInline.tsx";
@@ -40,6 +41,8 @@ interface Props {
   onTest: () => Promise<void>;
   onRefreshQuota: () => void;
   onConfigChanged: () => Promise<void> | void;
+  onAddToChain?: () => void;
+  onRemoveFromChain?: () => void;
 }
 
 /** Developer layer: raw provider-native parameters. Effective values are
@@ -406,10 +409,37 @@ function ConnectionSettingsDisclosure(props: {
 
 export function ProviderModal(props: Props) {
   adoptWebToolsStyles();
-  const { t, p, quota, testResult, busy, showPreferred, inChain, onClose, onToggle, onBaseUrl, onTest, onRefreshQuota, onConfigChanged } = props;
+  const {
+    t,
+    p,
+    quota,
+    testResult,
+    busy,
+    showPreferred,
+    inChain,
+    onClose,
+    onToggle,
+    onBaseUrl,
+    onTest,
+    onRefreshQuota,
+    onConfigChanged,
+    onAddToChain,
+  } = props;
   const [localError, setLocalError] = useState("");
   const [draftBaseUrl, setDraftBaseUrl] = useState(p.baseUrlConfigured ? (p.baseUrl ?? "") : "");
-  const base = providerStatusOf(p, quota, inChain);
+
+  // Optimistic enabled state for immediate UI feedback on toggle
+  const [enabled, setEnabled] = useState(p.enabled);
+  useEffect(() => {
+    setEnabled(p.enabled);
+  }, [p.enabled]);
+
+  const handleToggle = (next: boolean) => {
+    setEnabled(next);
+    onToggle(next);
+  };
+
+  const base = providerStatusOf({ ...p, enabled }, quota, inChain);
   const status = base === "ready" ? (testOutcomeStatus(testResult) ?? base) : base;
   const statusText = {
     ready: t("ready"), "rate-limited": t("rateLimited"), "auth-error": t("authError"),
@@ -460,8 +490,14 @@ export function ProviderModal(props: Props) {
               </div>
             </div>
           </div>
-          <div className="dswt-provider-actions">
-            {status !== "ready" && (
+          <div className="dswt-provider-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {enabled && inChain && status === "ready" && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <StateDot state="done" size={8} />
+                <span style={{ color: stateColor.success, fontWeight: 500, fontSize: 12 }}>{statusText || t("ready")}</span>
+              </span>
+            )}
+            {status !== "ready" && status !== "disabled" && (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                 {statusState === "hollow" ? (
                   <span aria-hidden style={{ width: 8, height: 8, borderRadius: "50%", border: `1.5px solid ${text.tertiary}`, flex: "none", boxSizing: "border-box" }} />
@@ -471,7 +507,23 @@ export function ProviderModal(props: Props) {
                 <span style={{ color: statusColor, fontWeight: 500, fontSize: 12 }}>{statusText}</span>
               </span>
             )}
-            <Switch checked={p.enabled} onChange={onToggle} label={p.enabled ? t("enabledLabel") : t("disabledLabel")} />
+            {enabled && !inChain && onAddToChain && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onAddToChain}
+                style={{ padding: "0 8px", height: 22, fontSize: 12, flex: "none" }}
+              >
+                + {t("addToChain")}
+              </Button>
+            )}
+            <span style={{ width: 1, height: 14, background: surface.border, opacity: 0.6 }} />
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: enabled ? text.secondary : text.tertiary, fontWeight: 500 }}>
+                {enabled ? t("enabledLabel") : t("disabledLabel")}
+              </span>
+              <Switch checked={enabled} onChange={handleToggle} label={enabled ? t("enabledLabel") : t("disabledLabel")} />
+            </div>
             <button
               type="button"
               onClick={onClose}
@@ -509,7 +561,7 @@ export function ProviderModal(props: Props) {
         </SettingsGroup>
 
         {/* 搜索设置 / 网页读取: provider-native preferences */}
-        {p.options && p.name !== "searxng" && (
+        {hasProviderPreferences(p.name) && p.options && (
           <SettingsGroup
             title={sectionTitle}
             dividers="none"

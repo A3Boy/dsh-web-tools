@@ -254,7 +254,7 @@ Restart `dsh web` and navigate to `Settings` → `Web Search`.
 | [You.com](https://you.com) | Yes | Yes, `/v1/contents` | Snippet highlights, native **`boost_domains`** soft-weighting, freshness and country/lang filters, markdown endpoint | Official API |
 | [Jina](https://jina.ai) | Yes | Yes, Reader | Search query noise filtering, ReaderLM-v2 high-precision markdown, token budget and truncation control | Best-effort |
 | [SearXNG](https://docs.searxng.org) | Yes | — | Open-source self-hosted metasearch with `categories` and supported `time_range` values; the adapter requires no API key | Instance-defined |
-| [Keenable](https://keenable.ai) | Yes | — | Web search API (`X-API-Key`); maps the first included domain to `site` and freshness dates to `published_after` / `published_before`; returns `published_at`. `web_fetch` uses the built-in generic fetcher | Dashboard only |
+| [Keenable](https://keenable.ai) | Yes | Yes, `/v1/fetch` | Web search API (`X-API-Key`); maps the first included domain to `site` and freshness dates to `published_after` / `published_before`; returns `published_at`; native Markdown extraction via `/v1/fetch` | Per-call usage + console |
 
 ### Quick Recommendation Guide
 
@@ -311,6 +311,17 @@ cd ~/.dsh/profiles/web && pnpm install
 ```
 
 Exa and Parallel balances are checked in their provider dashboards; Brave quota information comes from actual search response headers. Quota display is informational and does not affect routing or fallback.
+
+Keenable exposes no public balance endpoint. Every billed `/v1/search` and `/v1/fetch` response carries a `usage` object (`sku`, `credits`, `paid`), and the plugin accumulates those charges per key into a monthly ledger shown as **credits used**. For the organization balance itself, the card can read the same BFF route the web console uses, provided a console session is available:
+
+```bash
+# Long-lived: refreshed automatically against Supabase
+export KEENABLE_REFRESH_TOKEN="<supabase refresh token>"
+# Short-lived alternative (~1h)
+export KEENABLE_SESSION_TOKEN="<supabase access token>"
+```
+
+`https://api.keenable.ai/bff/organization/balance` is an **undocumented** console route (it rejects API keys), so the integration is best-effort: when it fails or the session expires, the card silently falls back to the local ledger.
 
 Xiaohongshu and Twitter / X each use a dedicated local browser profile. The plugin does not export raw cookies to configuration, logs, or third-party relays; the browser sends them through normal authenticated requests to the corresponding platform domains.
 

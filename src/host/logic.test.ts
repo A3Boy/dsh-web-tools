@@ -20,7 +20,7 @@ import { mergePoolQuota } from "./quota.ts";
 import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
 import { extractSearchHints } from "./search-hints.ts";
 import { buildFirecrawlSearchBody } from "./providers/firecrawl.ts";
-import { buildTavilySearchBody } from "./providers/tavily.ts";
+import { buildTavilySearchBody, tavilyCountryName } from "./providers/tavily.ts";
 import { buildYouSearchBody } from "./providers/you.ts";
 import { buildBraveLlmContextBody } from "./providers/brave.ts";
 import { buildExaSearchBody } from "./providers/exa.ts";
@@ -389,6 +389,37 @@ test("buildTavilySearchBody forwards explicit date filters without time_range", 
   assert.equal(body.time_range, undefined);
   assert.equal(body.start_date, "2026-08-01");
   assert.equal(body.end_date, "2026-08-20");
+});
+
+test("buildTavilySearchBody sends a Tavily country NAME, never an ISO code", () => {
+  // Regression: Tavily's `country` enum only accepts lowercase country names.
+  // Sending "US"/"CN" produced 400 "Invalid country. Must be a valid country
+  // name from the list of supported countries" and killed the whole search
+  // (bad-request is non-retryable, so no fallback).
+  const cn = extractSearchHints("国内 A股 最新行情");
+  assert.equal(buildTavilySearchBody("国内 A股 最新行情", 5, undefined, cn).country, "china");
+
+  const us = extractSearchHints("美国 2026 年 AI 监管政策");
+  assert.equal(buildTavilySearchBody("美国 2026 年 AI 监管政策", 5, undefined, us).country, "united states");
+
+  // No country in the query -> no country param at all.
+  const plain = extractSearchHints("React 19 新特性");
+  assert.equal(buildTavilySearchBody("React 19 新特性", 5, undefined, plain).country, undefined);
+
+  // A valid name passes through; an unsupported code is dropped instead of 400.
+  assert.equal(tavilyCountryName("united kingdom"), "united kingdom");
+  assert.equal(tavilyCountryName("GB"), "united kingdom");
+  assert.equal(tavilyCountryName("HK"), undefined);
+  assert.equal(tavilyCountryName(undefined), undefined);
+});
+
+test("buildTavilySearchBody omits country when topic is not general", () => {
+  // Tavily: country is "available only if topic is general".
+  const hints = extractSearchHints("美股 财报");
+  assert.equal(hints.topic, "finance");
+  const body = buildTavilySearchBody("美股 财报", 5, undefined, hints);
+  assert.equal(body.topic, "finance");
+  assert.equal(body.country, undefined);
 });
 
 // ---- You.com deep adaptation tests ----

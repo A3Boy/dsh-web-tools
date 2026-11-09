@@ -64,3 +64,18 @@ export const FIRECRAWL_FETCH_OPTIONS = { onlyMainContent: true, maxAgeMs: 172800
 
 /** Jina engine options. */
 export const JINA_ENGINE_OPTIONS = ["auto", "curl", "browser"] as const;
+
+/** Providers that have configurable search / fetch preferences in the UI. */
+export const PROVIDERS_WITH_PREFERENCES = new Set<string>([
+  "exa",
+  "tavily",
+  "brave",
+  "you",
+  "firecrawl",
+  "parallel",
+  "jina",
+]);
+
+export function hasProviderPreferences(providerName?: string): boolean {
+  return providerName ? PROVIDERS_WITH_PREFERENCES.has(providerName) : false;
+}

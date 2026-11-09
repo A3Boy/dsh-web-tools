@@ -14,7 +14,15 @@ import { api } from "../api.ts";
 import { text, surface, state as stateColor } from "../theme.ts";
 import { Switch } from "../WebToolsSection.tsx";
 import { SegmentedControl } from "../ui/SegmentedControl.tsx";
-import { tavilyChunksVisible, PARALLEL_PRIMARY_MODES, PARALLEL_EXPERIMENTAL_MODES, EXA_SEARCH_TYPE_OPTIONS, exaPrimaryMode, exaPrimaryApplyable } from "./contracts.ts";
+import {
+  tavilyChunksVisible,
+  PARALLEL_PRIMARY_MODES,
+  PARALLEL_EXPERIMENTAL_MODES,
+  EXA_SEARCH_TYPE_OPTIONS,
+  exaPrimaryMode,
+  exaPrimaryApplyable,
+  hasProviderPreferences,
+} from "./contracts.ts";
 import { adoptWebToolsStyles } from "../ui/styles.ts";
 
 type TFunc = (key: string, ...args: unknown[]) => string;
@@ -107,7 +115,7 @@ function DropdownSelect(props: {
 export function ProviderPreferencesSection(props: Props) {
   adoptWebToolsStyles();
   const { t, p, onConfigChanged, onRestoreDraft, onCustomizedChange } = props;
-  if (p.name === "searxng" || !p.options) return null;
+  if (!hasProviderPreferences(p.name) || !p.options) return null;
   return (
     <PreferencesBody
       key={p.name}

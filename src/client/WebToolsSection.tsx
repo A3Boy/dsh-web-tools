@@ -627,7 +627,13 @@ export function WebToolsSection(props: SectionProps) {
     }
   };
   const toggleProvider = (name: string, enabled: boolean) => {
-    const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
+    setConfig((prev) => (prev ? {
+      ...prev,
+      providers: prev.providers.map((p) => (p.name === name ? { ...p, enabled } : p)),
+    } : prev));
+    const providerEnabled = Object.fromEntries(
+      (config?.providers ?? []).map((p) => [p.name, p.name === name ? enabled : p.enabled]),
+    );
     void save({ providerEnabled });
   };
   const togglePlatform = (name: "xiaohongshu" | "x", enabled: boolean) => {
@@ -1213,6 +1219,14 @@ export function WebToolsSection(props: SectionProps) {
           onBaseUrl={(url) => setBaseUrl(detailProvider.name, url)}
           onTest={() => testProvider(detailProvider.name)}
           onRefreshQuota={() => void loadQuotas(true)}
+          onAddToChain={() => {
+            const current = liveOrder();
+            if (!current.includes(detailProvider.name)) saveOrder([...current, detailProvider.name]);
+          }}
+          onRemoveFromChain={() => {
+            const next = liveOrder().filter((n) => n !== detailProvider.name);
+            if (next.length > 0) saveOrder(next);
+          }}
           onConfigChanged={async () => {
             // Credentials or preferences changed: drop the stale probe so a
             // previous "no key" / auth error does not linger after the edit.

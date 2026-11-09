@@ -5,7 +5,9 @@ import {
   buildKeenableSearchBody,
   parseKeenableSearchJson,
   keenableQuotaFromHeaders,
+  keenableQuota,
 } from "../src/host/providers/keenable.ts";
+import { resetKeenableBffSession } from "../src/host/providers/keenable-bff.ts";
 
 test("KeenableProvider search posts query + max_results with x-api-key", async () => {
   let capturedUrl = "";
@@ -137,4 +139,58 @@ test("buildKeenableSearchBody forwards site and freshness hints", () => {
     published_before: "2026-10-31",
   });
   assert.deepEqual(buildKeenableSearchBody("q", 3), { query: "q", max_results: 3 });
+});
+
+test("a search with a usage object feeds the local quota ledger", async () => {
+  delete process.env.KEENABLE_SESSION_TOKEN;
+  delete process.env.KEENABLE_REFRESH_TOKEN;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({
+    status: 200,
+    ok: true,
+    headers: { get: () => null },
+    json: async () => ({
+      results: [{ url: "https://example.com/a", title: "A" }],
+      usage: { sku: "search.pro", amount: 1, credits: 2, paid: false },
+    }),
+  })) as unknown as typeof globalThis.fetch;
+  try {
+    await KeenableProvider.search("ledger query", 3, "kn-ledger-key", undefined);
+    const quota = await keenableQuota("kn-ledger-key");
+    assert.equal(quota.source, "local_estimate");
+    assert.equal(quota.authoritative, false);
+    assert.equal(quota.unit, "credits");
+    assert.equal(quota.used, 2);
+    assert.equal(quota.remaining, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("keenableQuota prefers the console balance when a session is configured", async () => {
+  process.env.KEENABLE_SESSION_TOKEN = "session-token-xyz";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => {
+    if (String(url).includes("/bff/organization/balance")) {
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => "application/json" },
+        json: async () => ({ free_credits: 1000, search_spendings: 250 }),
+      };
+    }
+    throw new Error("unexpected url " + String(url));
+  }) as unknown as typeof globalThis.fetch;
+  try {
+    const quota = await keenableQuota("kn-ledger-key");
+    assert.equal(quota.source, "api");
+    assert.equal(quota.authoritative, true);
+    assert.equal(quota.limit, 1000);
+    assert.equal(quota.used, 250);
+    assert.equal(quota.remaining, 750);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.KEENABLE_SESSION_TOKEN;
+    resetKeenableBffSession();
+  }
 });

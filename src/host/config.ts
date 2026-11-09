@@ -10,6 +10,7 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { KeenableUsageBucket } from "./providers/keenable-usage.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { SearchRoutingPolicy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
@@ -50,6 +51,10 @@ export const DEFAULT_SETTINGS = {
   // response header captured during a real search. Persisted here so a
   // restart does not forget the last known balance (keyed by API key).
   braveQuotaCache: {} as Record<string, QuotaSnapshot>,
+  // Keenable bills per call and reports the charge in the response body; the
+  // per-key monthly ledger derived from those `usage` objects lives here so a
+  // restart does not reset the "spent this month" figure.
+  keenableUsageCache: {} as Record<string, KeenableUsageBucket>,
   // Search routing policy: how the runtime picks the starting provider per
   // search query. "ordered" = always from the first available; "round-robin"
   // and "random" rotate the start offset (see routing-policy.ts).
@@ -78,6 +83,8 @@ export interface WebToolsSettings {
   providerOptions: StoredProviderOptions;
   /** Brave per-key quota snapshots captured from search response headers. */
   braveQuotaCache: Record<string, QuotaSnapshot>;
+  /** Keenable per-key, per-month credit ledger (from per-call `usage` objects). */
+  keenableUsageCache: Record<string, KeenableUsageBucket>;
   /** Search routing policy (see shared api-types). */
   searchRoutingPolicy: ToolSearchRoutingPolicy;
   /** Operator-defined custom search sources (Issue #9). */
@@ -97,6 +104,7 @@ export const Config: z<WebToolsSettings> = z.object({
   platformEnabled: z.dict(z.boolean()),
   providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
+  keenableUsageCache: z.dict(z.any()),
   searchRoutingPolicy: z.union([z.const("ordered"), z.const("round-robin"), z.const("random")]),
   // Validated structurally on load; a bad entry is dropped, never thrown, so a
   // hand-edited profile cannot make the plugin fail to register.

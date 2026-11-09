@@ -56,6 +56,11 @@ export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; un
     const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
     return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaCreditsUnit") : "credits" };
   }
+  // Local ledger (Keenable): the authoritative balance is the console's, so
+  // show what this install was charged instead of inventing a remaining figure.
+  if (q.unit === "credits" && q.used !== undefined) {
+    return { main: fmt(q.used), unit: t ? t("quotaCreditsUsed") : "credits used" };
+  }
   if (q.unit === "requests" && q.remaining !== undefined) {
     const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
     return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaRequestsUnit") : "" };

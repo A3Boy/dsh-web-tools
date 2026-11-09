@@ -15,6 +15,8 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { SearchHints } from "../search-hints.ts";
 import type { QuotaSnapshot } from "../quota.ts";
+import { keenableLocalQuota, recordKeenableUsageFromBody } from "./keenable-usage.ts";
+import { fetchKeenableBalance } from "./keenable-bff.ts";
 
 const KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search";
 const KEENABLE_FETCH_URL = "https://api.keenable.ai/v1/fetch";
@@ -97,16 +99,29 @@ export function recordKeenableQuota(apiKey: string, headers?: Headers | Record<s
   return undefined;
 }
 
-export async function keenableQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
-  const cached = keenableQuotaCache.get(apiKey);
-  if (cached) return cached;
+export async function keenableQuota(
+  apiKey: string,
+  _baseUrl?: string,
+  signal?: AbortSignal,
+): Promise<QuotaSnapshot> {
+  // 1) Console balance — the only authoritative number Keenable reports. It is
+  //    an undocumented BFF route that needs a console session token
+  //    (KEENABLE_REFRESH_TOKEN / KEENABLE_SESSION_TOKEN); null when absent.
+  const balance = await fetchKeenableBalance(signal);
+  if (balance) return balance;
+  // 2) Rate-limit headers captured from the last real call, when present.
+  const header = keenableQuotaCache.get(apiKey);
+  if (header) return header;
+  // 3) This install's own per-call `usage` ledger (display-only).
+  const local = keenableLocalQuota(apiKey);
+  if (local) return local;
   return {
     supported: false,
     authoritative: false,
-    unit: "requests",
+    unit: "credits",
     source: "dashboard",
     fetchedAt: Date.now(),
-    note: "Run a search or fetch first — Keenable reports quota in response headers",
+    note: "Run a search or fetch first — Keenable reports per-call usage in the response body; the real balance is in the console",
   };
 }
 
@@ -184,6 +199,8 @@ export const KeenableProvider: ProviderAdapter = {
     } catch {
       throw providerError("invalid-response", "Keenable returned a non-JSON search response");
     }
+    // The billed charge rides in the body (`usage.credits`), not in a header.
+    recordKeenableUsageFromBody(token, body);
     return { sources: parseKeenableSearchJson(body, limit) };
   },
 
@@ -214,6 +231,7 @@ export const KeenableProvider: ProviderAdapter = {
       try {
         const body = (await res.json()) as Record<string, unknown>;
         content = String(body.markdown ?? body.content ?? body.text ?? "").trim();
+        recordKeenableUsageFromBody(token, body);
         if (typeof body.title === "string" && body.title) title = body.title;
         if (typeof body.author === "string" && body.author) author = body.author;
         if (typeof body.published_at === "string" && body.published_at) publishedAt = body.published_at;

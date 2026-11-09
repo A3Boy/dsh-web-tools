@@ -25,6 +25,87 @@ const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
 /**
+ * Tavily's `country` parameter is an enum of lowercase English country *names*
+ * ("united states", "china", ...), NOT ISO 3166-1 alpha-2 codes. Sending "US"
+ * makes Tavily answer 400 "Invalid country. Must be a valid country name from
+ * the list of supported countries".
+ *
+ * SearchHints emits ISO alpha-2 codes, so translate them here. Only names that
+ * appear in Tavily's enum are listed (e.g. no "hong kong").
+ * @see https://docs.tavily.com/documentation/api-reference/endpoint/search
+ */
+const TAVILY_COUNTRY_NAMES: Readonly<Record<string, string>> = {
+  US: "united states",
+  CN: "china",
+  JP: "japan",
+  GB: "united kingdom",
+  SG: "singapore",
+  DE: "germany",
+  FR: "france",
+  CA: "canada",
+  AU: "australia",
+  NZ: "new zealand",
+  IN: "india",
+  KR: "south korea",
+  TW: "taiwan",
+  BR: "brazil",
+  MX: "mexico",
+  RU: "russia",
+  IT: "italy",
+  ES: "spain",
+  NL: "netherlands",
+  CH: "switzerland",
+  SE: "sweden",
+  NO: "norway",
+  DK: "denmark",
+  FI: "finland",
+  AT: "austria",
+  BE: "belgium",
+  IE: "ireland",
+  PL: "poland",
+  PT: "portugal",
+  GR: "greece",
+  CZ: "czech republic",
+  RO: "romania",
+  UA: "ukraine",
+  TR: "turkey",
+  IL: "israel",
+  SA: "saudi arabia",
+  AE: "united arab emirates",
+  ZA: "south africa",
+  NG: "nigeria",
+  KE: "kenya",
+  EG: "egypt",
+  ID: "indonesia",
+  MY: "malaysia",
+  TH: "thailand",
+  VN: "vietnam",
+  PH: "philippines",
+  PK: "pakistan",
+  AR: "argentina",
+  CL: "chile",
+  CO: "colombia",
+  PE: "peru",
+};
+
+/** Every country name Tavily currently accepts. */
+const TAVILY_VALID_COUNTRY_NAMES: ReadonlySet<string> = new Set(Object.values(TAVILY_COUNTRY_NAMES));
+
+/**
+ * Normalize a locale country into a value Tavily accepts.
+ * Accepts an ISO 3166-1 alpha-2 code or an already-valid country name.
+ * Returns undefined for anything else, so that an unknown/unsupported country
+ * is dropped (geo boost only) instead of failing the whole search with 400.
+ */
+export function tavilyCountryName(country: string | undefined): string | undefined {
+  const raw = (country ?? "").trim().toLowerCase();
+  if (!raw) return undefined;
+  const mapped = TAVILY_COUNTRY_NAMES[raw.toUpperCase()];
+  if (mapped) return mapped;
+  return TAVILY_VALID_COUNTRY_NAMES.has(raw) ? raw : undefined;
+}
+
+/**
  * Build the POST request body for Tavily's /search endpoint.
  * Supports:
  *  - search_depth: "basic" | "advanced" | "fast" | "ultra-fast"
@@ -33,6 +114,7 @@ const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
  *  - time_range: "day" | "week" | "month" | "year"
  *  - start_date: RFC3339 / YYYY-MM-DD from hints
  *  - include_domains / exclude_domains
+ *  - country: lowercase country NAME, only when topic stays "general"
  */
 export function buildTavilySearchBody(
   query: string,
@@ -61,8 +143,9 @@ export function buildTavilySearchBody(
   }
 
   // 1. Topic mapping: Tavily accepts general, news, and finance.
-  if (hints?.topic === "news" || hints?.topic === "finance") {
-    requestBody.topic = hints.topic;
+  const topic = hints?.topic === "news" || hints?.topic === "finance" ? hints.topic : undefined;
+  if (topic) {
+    requestBody.topic = topic;
   }
 
   // 2. Freshness & date filtering
@@ -86,9 +169,11 @@ export function buildTavilySearchBody(
     requestBody.exclude_domains = hints.domains.exclude;
   }
 
-  // 4. Country
-  if (hints?.locale?.country) {
-    requestBody.country = hints.locale.country;
+  // 4. Country — Tavily only supports it for the "general" topic and expects a
+  //    lowercase country NAME, so translate the ISO code from SearchHints.
+  if (!topic) {
+    const country = tavilyCountryName(hints?.locale?.country);
+    if (country) requestBody.country = country;
   }
 
   return requestBody;

@@ -10,6 +10,7 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { KeenableUsageBucket } from "./providers/keenable-usage.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { SearchRoutingPolicy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
@@ -39,6 +40,7 @@ export declare const DEFAULT_SETTINGS: {
     platformEnabled: Record<string, boolean>;
     providerOptions: StoredProviderOptions;
     braveQuotaCache: Record<string, QuotaSnapshot>;
+    keenableUsageCache: Record<string, KeenableUsageBucket>;
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     customProviders: CustomProviderConfig[];
     /** Operator-granted outbound destinations for internal gateways / private IPs. */
@@ -56,6 +58,8 @@ export interface WebToolsSettings {
     providerOptions: StoredProviderOptions;
     /** Brave per-key quota snapshots captured from search response headers. */
     braveQuotaCache: Record<string, QuotaSnapshot>;
+    /** Keenable per-key, per-month credit ledger (from per-call `usage` objects). */
+    keenableUsageCache: Record<string, KeenableUsageBucket>;
     /** Search routing policy (see shared api-types). */
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     /** Operator-defined custom search sources (Issue #9). */

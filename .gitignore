@@ -34,3 +34,7 @@ pnpm-lock.yaml
 
 # local test SearXNG deployment data
 searxng-data/
+
+# probe & verification reports
+.tmp-probe/
+reports/

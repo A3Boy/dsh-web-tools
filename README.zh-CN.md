@@ -254,7 +254,7 @@ dsh plugin --profile web remove dsh-web-tools
 | [You.com](https://you.com) | 支持 | 支持，`/v1/contents` | 搜索高亮片段提取、原生 **`boost_domains`** 软加权、时效与国家过滤、Markdown 正文接口 | 官方 API |
 | [Jina](https://jina.ai) | 支持 | 支持，Reader | 搜索关键词降噪、ReaderLM-v2 高精度 Markdown 转换、Token 预算控制 | 尽力解析 |
 | [SearXNG](https://docs.searxng.org) | 支持 | — | 开源自托管元搜索引擎，映射 `categories` (it/science/news) 与受支持的 `time_range`，适配器无需 API Key | 由自建实例决定 |
-| [Keenable](https://keenable.ai) | 支持 | — | Web 搜索 API（`X-API-Key`），将首个限定域名映射为 `site`，时效日期映射为 `published_after` / `published_before`，返回 `published_at`；`web_fetch` 使用内置通用抓取器 | 仅控制台 |
+| [Keenable](https://keenable.ai) | 支持 | 支持，`/v1/fetch` | Web 搜索 API（`X-API-Key`），将首个限定域名映射为 `site`，时效日期映射为 `published_after` / `published_before`，返回 `published_at`；原生 Markdown 正文提取 (`/v1/fetch`) | 每次调用用量 + 控制台余额 |
 
 ### 快速选型指南
 
@@ -311,6 +311,17 @@ cd ~/.dsh/profiles/web && pnpm install
 ```
 
 Exa 和 Parallel 的余额需要在 Provider 控制台查看；Brave 的配额信息来自实际搜索响应头。配额展示仅用于状态说明，不影响正常检索与降级。
+
+Keenable 没有公开的余额查询接口。但每次计费的 `/v1/search`、`/v1/fetch` 响应都带 `usage` 对象（`sku`、`credits`、`paid`），插件按 Key 把这些消耗累加成本月台账，显示为 **已消耗积分**。若想直接显示组织余额，可以复用控制台使用的 BFF 接口（需要控制台会话）：
+
+```bash
+# 长期有效：自动向 Supabase 刷新
+export KEENABLE_REFRESH_TOKEN="<supabase refresh token>"
+# 或短期（约 1 小时）
+export KEENABLE_SESSION_TOKEN="<supabase access token>"
+```
+
+`https://api.keenable.ai/bff/organization/balance` 是**未公开**的控制台接口（不接受 API Key），因此该接入属于尽力而为：会话过期或接口变动时，卡片会自动回退到本地台账。
 
 小红书和 Twitter / X 分别使用独立的本地浏览器 Profile。插件不会把原始 Cookie 导出到配置、日志或第三方中转服务；浏览器会按正常登录与访问流程将 Cookie 发送给对应的平台域名。
 

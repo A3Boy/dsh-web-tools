@@ -24,7 +24,7 @@ export declare const KEENABLE_META: {
 /** Parse rate limit quota headers from Keenable response. */
 export declare function keenableQuotaFromHeaders(headers?: Headers | Record<string, string> | null): QuotaSnapshot;
 export declare function recordKeenableQuota(apiKey: string, headers?: Headers | Record<string, string> | null): QuotaSnapshot | undefined;
-export declare function keenableQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot>;
+export declare function keenableQuota(apiKey: string, _baseUrl?: string, signal?: AbortSignal): Promise<QuotaSnapshot>;
 /** Normalize a Keenable `/v1/search` JSON body into sources. Pure, for tests. */
 export declare function parseKeenableSearchJson(body: unknown, limit: number): Source[];
 /** Build the `/v1/search` request body, forwarding site and date hints. Pure, for tests. */

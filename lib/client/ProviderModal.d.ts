@@ -15,6 +15,8 @@ interface Props {
     onTest: () => Promise<void>;
     onRefreshQuota: () => void;
     onConfigChanged: () => Promise<void> | void;
+    onAddToChain?: () => void;
+    onRemoveFromChain?: () => void;
 }
 export declare function ProviderModal(props: Props): import("react").JSX.Element;
 export {};

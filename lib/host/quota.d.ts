@@ -35,6 +35,12 @@ export interface QuotaSnapshot {
     resetAt?: string;
     /** Extra per-feature usage breakdown (Tavily) when available. */
     breakdown?: Record<string, number>;
+    /**
+     * Optional pool-group id. Snapshots sharing a group describe ONE upstream
+     * balance (an organization-level bill, for instance), so merging a key pool
+     * must count them once instead of once per key.
+     */
+    group?: string;
     source: QuotaSource;
     /** Epoch ms when the snapshot was fetched. */
     fetchedAt: number;
