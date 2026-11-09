@@ -90,6 +90,16 @@ test("routing-policy: adaptive promotes high success rate and low latency backen
   assert.equal(res[0], "reliable_moderate");
 });
 
+test("routing-policy: metric policies keep the configured order when no metrics exist", () => {
+  const base = ["exa", "brave", "tavily"];
+  // Regression: adaptive/fastest used to fall through to the rotation branch,
+  // silently turning a deterministic policy into a random one.
+  assert.deepEqual(resolveSearchChain(base, "adaptive", undefined, () => 0.9), base);
+  assert.deepEqual(resolveSearchChain(base, "fastest", undefined, () => 0.9), base);
+  assert.deepEqual(resolveSearchChain(base, "adaptive", undefined, () => 0.9, {}), base);
+  assert.deepEqual(resolveSearchChain(base, "fastest", undefined, () => 0.9, {}), base);
+});
+
 test("routing-policy: handles empty and single-element base chains", () => {
   assert.deepEqual(resolveSearchChain([], "ordered"), []);
   assert.deepEqual(resolveSearchChain([], "round-robin"), []);

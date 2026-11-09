@@ -11,7 +11,7 @@
  *    newer read may itself be discarded, leaving the page stale until reopened.
  * @module
  */
-import type { ConfigView, SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { ConfigView, RetrievalStrategy, SearchRoutingPolicy } from "../shared/api-types.ts";
 
 /** The authoritative result a routing write returns. */
 export interface RoutingWriteResult {
@@ -19,6 +19,7 @@ export interface RoutingWriteResult {
   policy: SearchRoutingPolicy;
   defaultProvider: string;
   fallbackOrder: string[];
+  retrievalStrategy: RetrievalStrategy;
 }
 
 /**
@@ -37,6 +38,7 @@ export function applyRoutingResult(
     searchRoutingPolicy: result.policy,
     defaultProvider: result.defaultProvider,
     fallbackOrder: result.fallbackOrder,
+    retrievalStrategy: result.retrievalStrategy,
   };
 }
 
@@ -48,11 +50,13 @@ export function applyRoutingResult(
  * for the response makes the control feel dead.
  * @param ordered - The intended order; duplicates are dropped, keeping first.
  * @param policy - The routing policy to persist alongside it.
+ * @param retrievalStrategy - The cross-provider retrieval strategy to persist.
  * @returns The routing fields, shaped like the write response.
  */
 export function routingFields(
   ordered: readonly string[],
   policy: SearchRoutingPolicy,
+  retrievalStrategy: RetrievalStrategy = "single",
 ): RoutingWriteResult {
   const next = ordered.filter((name, index) => ordered.indexOf(name) === index);
   return {
@@ -60,6 +64,7 @@ export function routingFields(
     policy,
     defaultProvider: next[0],
     fallbackOrder: next.slice(1),
+    retrievalStrategy,
   };
 }
 

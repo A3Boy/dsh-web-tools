@@ -15,7 +15,8 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, RetrievalStrategy, VersionCheckView } from "../shared/api-types.ts";
+import { isRetrievalStrategy, isSearchRoutingPolicy } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 import { endpointViewOf, isForeignOverride, PROVIDER_ENDPOINTS } from "./endpoints.ts";
@@ -421,6 +422,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
+    retrievalStrategy: (cfg.retrievalStrategy as RetrievalStrategy) ?? "single",
     platformEnabled,
     providers,
     outboundAuthorizations: (cfg.outboundAuthorizations as OutboundAuthorization[]) ?? [],
@@ -446,16 +448,26 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   }
   if (Array.isArray(p.outboundAuthorizations)) patch.outboundAuthorizations = p.outboundAuthorizations;
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
+  // Routing fields are validated against the shared policy lists so a typo
+  // can never be persisted into the settings document.
+  if (isSearchRoutingPolicy(p.searchRoutingPolicy)) patch.searchRoutingPolicy = p.searchRoutingPolicy;
+  if (isRetrievalStrategy(p.retrievalStrategy)) patch.retrievalStrategy = p.retrievalStrategy;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
 }
 
-/** Dedicated routing edit: policy + ordered provider list in ONE atomic write. */
+/** Dedicated routing edit: policy + ordered provider list + retrieval strategy in ONE atomic write. */
 async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
-  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown };
+  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown; retrievalStrategy?: unknown };
   const policy = p.policy;
-  if (policy !== "ordered" && policy !== "round-robin" && policy !== "random") {
+  // Validated against the shared policy list: the previous hand-written
+  // equality check silently rejected adaptive/fastest/cheapest, which made the
+  // new strategies unreachable from the product.
+  if (!isSearchRoutingPolicy(policy)) {
     throw new RouteError("config", "invalid routing policy", 400);
+  }
+  if (p.retrievalStrategy !== undefined && !isRetrievalStrategy(p.retrievalStrategy)) {
+    throw new RouteError("config", "invalid retrieval strategy", 400);
   }
   if (!Array.isArray(p.orderedProviders) || p.orderedProviders.length === 0) {
     throw new RouteError("config", "orderedProviders required", 400);
@@ -477,12 +489,26 @@ async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
   }
   if (ordered.length === 0) throw new RouteError("config", "no valid providers", 400);
 
+  const currentStrategy = (deps.readConfig() as { retrievalStrategy?: unknown }).retrievalStrategy;
+  const retrievalStrategy: RetrievalStrategy = isRetrievalStrategy(p.retrievalStrategy)
+    ? p.retrievalStrategy
+    : isRetrievalStrategy(currentStrategy)
+      ? currentStrategy
+      : "single";
+
   await deps.writeConfig({
     searchRoutingPolicy: policy,
     defaultProvider: ordered[0],
     fallbackOrder: ordered.slice(1),
+    retrievalStrategy,
   });
-  return { saved: true, policy, defaultProvider: ordered[0], fallbackOrder: ordered.slice(1) };
+  return {
+    saved: true,
+    policy,
+    defaultProvider: ordered[0],
+    fallbackOrder: ordered.slice(1),
+    retrievalStrategy,
+  };
 }
 
 function resolveProviderRef(deps: RouteDeps, provider: string): string {

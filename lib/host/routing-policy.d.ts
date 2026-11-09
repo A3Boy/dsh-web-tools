@@ -1,18 +1,26 @@
 /**
  * dsh-web-tools — Search routing policy helpers.
  *
- * Three policies control which provider the runtime tries first for each
- * search query while keeping the deterministic fallback chain intact:
+ * Six policies control which order the runtime tries providers for each search
+ * query while keeping the deterministic fallback chain intact:
  *
  *  - ordered (default): always start from the first available provider.
  *  - round-robin: rotate the start offset by 1 per query.
  *  - random: pick a random start offset per query.
+ *  - adaptive: rank by a 24h success-rate / latency score.
+ *  - fastest: rank by measured average latency.
+ *  - cheapest: rank by the provider's cost tier.
+ *
+ * The metric-driven policies (adaptive/fastest) are ORDERING HINTS over the
+ * configured chain, so a chain with no measurements must keep the operator's
+ * order — never fall through to random rotation.
  *
  * web_fetch does NOT participate in routing — it follows the deterministic
  * fetch-capable chain because not every provider supports page extraction.
  * @module
  */
-export type SearchRoutingPolicy = "ordered" | "round-robin" | "random" | "adaptive" | "fastest" | "cheapest";
+import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+export type { SearchRoutingPolicy } from "../shared/api-types.ts";
 export interface ProviderMetrics {
     success: number;
     failed: number;

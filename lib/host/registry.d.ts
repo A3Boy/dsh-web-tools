@@ -1,4 +1,5 @@
 import { type SearchRoutingPolicy } from "./routing-policy.ts";
+import { type RetrievalStrategy } from "../shared/api-types.ts";
 import { PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
@@ -22,6 +23,16 @@ export interface WebSearchProviderLike {
             publishedAt?: string;
         }>;
         truncated: boolean;
+        /** Which provider(s) served the answer (`a+b` for a fused answer). */
+        backend?: string;
+        /** Per-provider attempt ledger (diagnostics / settings card). */
+        attempts?: Array<{
+            provider: string;
+            outcome: string;
+            latencyMs?: number;
+        }>;
+        /** True when the result merged two providers with RRF. */
+        fused?: boolean;
     }>;
 }
 /** Structural mirror of the seam's WebFetchProvider contract. */
@@ -65,6 +76,10 @@ export interface WebToolsRuntimeConfig {
     fallbackOrder: string[];
     /** Search routing policy — how the runtime picks the starting provider per query. */
     searchRoutingPolicy?: SearchRoutingPolicy;
+    /** Cross-provider retrieval strategy (single/hedged/fused). */
+    retrievalStrategy?: RetrievalStrategy;
+    /** Hedged mode only: delay before the second lane starts. Default 1200ms. */
+    hedgeDelayMs?: number;
     providerBaseUrls: Record<string, string>;
     enabledProviders: Record<string, boolean>;
     providerOptions?: StoredProviderOptions;
@@ -143,3 +158,12 @@ export declare function createFetchProvider(resolveConfig: () => WebToolsRuntime
         latencyMs: number;
     }) => void;
 }): WebFetchProviderLike;
+/**
+ * Best-effort page title from provider-extracted Markdown.
+ *
+ * Native extraction endpoints (Tavily/Exa/Firecrawl/Parallel/Jina) return a
+ * Markdown body with no metadata block. The first ATX heading is the only
+ * reliable signal; when there is none we return undefined rather than guessing
+ * a title from prose (a first paragraph makes a terrible title).
+ */
+export declare function inferTitleFromMarkdown(text: string): string | undefined;

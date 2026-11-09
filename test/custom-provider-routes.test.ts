@@ -645,3 +645,74 @@ test("Routes: shared endpoint authorization is preserved while any source uses i
   assert.equal(storedConfig.outboundAuthorizations[0].host, "127.0.0.1");
   assert.equal(storedConfig.outboundAuthorizations[0].note, "Built-in SearXNG default");
 });
+
+test("Routes: routing/set accepts the metric policies and persists the retrieval strategy", async () => {
+  const { server, getHandler } = mockServer();
+
+  let storedConfig: any = {
+    searchRoutingPolicy: "ordered",
+    retrievalStrategy: "single",
+    defaultProvider: "exa",
+    fallbackOrder: ["tavily"],
+    customProviders: [],
+  };
+
+  const deps: RouteDeps = {
+    readConfig: () => storedConfig,
+    writeConfig: async (patch) => {
+      storedConfig = { ...storedConfig, ...patch };
+    },
+    readCredential: async () => ({ configured: false, writable: true }),
+    writeCredential: async () => {},
+    testProviderSearch: async () => ({ ok: true }),
+    testFullSearch: async () => ({ ok: true }),
+    describeQuotas: async () => ({}),
+    nativeRuntime: {} as any,
+    sourceRegistry: new SpecializedSourceRegistry(),
+  };
+
+  registerRoutes({ webServer: server } as any, deps);
+  const handler = getHandler();
+
+  // The three metric policies used to be rejected by a hand-written whitelist.
+  for (const policy of ["adaptive", "fastest", "cheapest"]) {
+    const { req, res } = fakeReqRes("POST", `${API_PREFIX}/routing/set`, {
+      policy,
+      orderedProviders: ["exa", "tavily"],
+      retrievalStrategy: "fused",
+    });
+    await handler(req, res);
+    assert.equal(res.statusCode, 200, `policy ${policy} must be accepted`);
+    assert.equal(storedConfig.searchRoutingPolicy, policy);
+    assert.equal(storedConfig.retrievalStrategy, "fused");
+    assert.equal(JSON.parse(res.body).value.policy, policy);
+  }
+
+  // A strategy-only edit keeps the current policy.
+  const { req: req2, res: res2 } = fakeReqRes("POST", `${API_PREFIX}/routing/set`, {
+    policy: "cheapest",
+    orderedProviders: ["exa", "tavily"],
+    retrievalStrategy: "hedged",
+  });
+  await handler(req2, res2);
+  assert.equal(res2.statusCode, 200);
+  assert.equal(JSON.parse(res2.body).value.retrievalStrategy, "hedged");
+
+  // Unknown values are rejected and never persisted.
+  const { req: req3, res: res3 } = fakeReqRes("POST", `${API_PREFIX}/routing/set`, {
+    policy: "turbo",
+    orderedProviders: ["exa"],
+  });
+  await handler(req3, res3);
+  assert.equal(res3.statusCode, 400);
+  assert.equal(storedConfig.searchRoutingPolicy, "cheapest");
+
+  const { req: req4, res: res4 } = fakeReqRes("POST", `${API_PREFIX}/routing/set`, {
+    policy: "cheapest",
+    orderedProviders: ["exa"],
+    retrievalStrategy: "telepathy",
+  });
+  await handler(req4, res4);
+  assert.equal(res4.statusCode, 400);
+  assert.equal(storedConfig.retrievalStrategy, "hedged");
+});

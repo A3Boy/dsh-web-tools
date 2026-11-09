@@ -1,5 +1,5 @@
 /**
- * dsh-web-tools — in-memory rolling stats (diagnostics only, no persistence).
+ * dsh-web-tools — in-memory rolling stats (diagnostics + adaptive routing).
  * @module
  */
 
@@ -10,12 +10,39 @@ export interface StatEntry {
   at: number;
 }
 
+/** How one recorded outcome counts toward a provider's health score. */
+type OutcomeClass = "success" | "empty" | "failed" | "skip";
+
+/**
+ * Classify a recorded outcome.
+ *
+ *  - `success`  : the provider answered with results.
+ *  - `empty`    : the provider answered, but with zero results. This is NOT a
+ *                 provider fault: one obscure query used to demote that source
+ *                 for 24h in the adaptive ranking.
+ *  - `failed:*` : a real provider fault (auth/network/timeout/rate-limit/...).
+ *  - anything else (`skipped-*`) is a routing decision, not evidence about the
+ *                 provider, and is ignored by the score.
+ */
+function classifyOutcome(outcome: string): OutcomeClass {
+  if (outcome === "success") return "success";
+  if (outcome === "empty") return "empty";
+  if (outcome.startsWith("failed")) return "failed";
+  return "skip";
+}
+
 /** Simple bounded in-memory ring of recent search attempts. */
 export class Stats {
   private entries: StatEntry[] = [];
   private readonly max: number;
 
-  constructor(max = 200) {
+  /**
+   * @param max ring capacity. Sized so a busy multi-provider day still keeps a
+   *   usable per-provider sample: at 200 the ring evicted one provider's whole
+   *   history within minutes, so `adaptive` kept falling back to its neutral
+   *   prior and the order jittered.
+   */
+  constructor(max = 1000) {
     this.max = max;
   }
 
@@ -26,56 +53,70 @@ export class Stats {
 
   /**
    * Aggregate view for the diagnostics area (last `hours` window).
-   * `fallback` counts searches that failed at least once and then succeeded
-   * (i.e. real fallback events), not raw failed attempts.
+   * `fallback` counts searches that hit an empty/failed provider and then
+   * succeeded (i.e. real fallback events), not raw failed attempts.
    */
   summary(hours = 24): {
     total: number;
     success: number;
     failed: number;
+    empty: number;
     fallback: number;
-    byProvider: Record<string, { success: number; failed: number; avgLatencyMs: number }>;
+    byProvider: Record<string, { success: number; failed: number; empty: number; avgLatencyMs: number }>;
   } {
     const cutoff = Date.now() - hours * 3600 * 1000;
     const recent = this.entries.filter((e) => e.at >= cutoff);
-    const byProvider: Record<string, { success: number; failed: number; sumLatencyMs: number; latencyCount: number }> = {};
+    const byProvider: Record<
+      string,
+      { success: number; failed: number; empty: number; sumLatencyMs: number; latencyCount: number }
+    > = {};
     let success = 0;
     let failed = 0;
+    let empty = 0;
     let fallback = 0;
-    let runHasFailure = false;
+    let runHasSetback = false;
 
     for (const e of recent) {
-      const isSuccess = e.outcome === "success";
-      // Chain grouping: a "failed:*" attempt starts/continues a run; a
-      // success ends it. Success after any failure = a real fallback.
-      if (!isSuccess) {
-        runHasFailure = true;
-        failed += 1;
-      } else {
+      const kind = classifyOutcome(e.outcome);
+      if (kind === "skip") continue;
+
+      // Chain grouping: a failed/empty attempt starts or continues a run; a
+      // success ends it. Success after any setback = a real fallback.
+      if (kind === "success") {
         success += 1;
-        if (runHasFailure) fallback += 1;
-        runHasFailure = false;
+        if (runHasSetback) fallback += 1;
+        runHasSetback = false;
+      } else {
+        runHasSetback = true;
+        if (kind === "empty") empty += 1;
+        else failed += 1;
       }
 
-      const agg = (byProvider[e.provider] ??= { success: 0, failed: 0, sumLatencyMs: 0, latencyCount: 0 });
-      if (isSuccess) {
+      const agg = (byProvider[e.provider] ??= { success: 0, failed: 0, empty: 0, sumLatencyMs: 0, latencyCount: 0 });
+      if (kind === "success") {
         agg.success += 1;
         agg.sumLatencyMs += e.latencyMs;
         agg.latencyCount += 1;
+      } else if (kind === "empty") {
+        agg.empty += 1;
       } else {
         agg.failed += 1;
       }
     }
 
-    const byProviderOut: Record<string, { success: number; failed: number; avgLatencyMs: number }> = {};
+    const byProviderOut: Record<
+      string,
+      { success: number; failed: number; empty: number; avgLatencyMs: number }
+    > = {};
     for (const [name, agg] of Object.entries(byProvider)) {
       byProviderOut[name] = {
         success: agg.success,
         failed: agg.failed,
+        empty: agg.empty,
         avgLatencyMs: agg.latencyCount > 0 ? Math.round(agg.sumLatencyMs / agg.latencyCount) : 0,
       };
     }
 
-    return { total: recent.length, success, failed, fallback, byProvider: byProviderOut };
+    return { total: recent.length, success, failed, empty, fallback, byProvider: byProviderOut };
   }
 }

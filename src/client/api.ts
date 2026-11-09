@@ -58,6 +58,7 @@ import type {
   TestProviderView,
   TestSearchView,
   SearchRoutingPolicy,
+  RetrievalStrategy,
   VersionCheckView,
 } from "../shared/api-types.ts";
 import type {
@@ -80,6 +81,7 @@ export type {
   TestProviderView,
   TestSearchView,
   SearchRoutingPolicy,
+  RetrievalStrategy,
   VersionCheckView,
 } from "../shared/api-types.ts";
 export type {
@@ -114,8 +116,11 @@ export const api = {
     call<{ reset: true; options: any }>("provider-options/reset", { provider }),
   providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) =>
     call<Record<string, any>>("provider-options/batch", { providers }),
-  routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
-    call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
+  routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[], retrievalStrategy?: RetrievalStrategy) =>
+    call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[]; retrievalStrategy: RetrievalStrategy }>(
+      "routing/set",
+      { policy, orderedProviders, ...(retrievalStrategy ? { retrievalStrategy } : {}) },
+    ),
   platformStatus: () =>
     call<PlatformStatusResponse>("platform/status"),
   platformLogin: (platform: BrowserPlatform) =>

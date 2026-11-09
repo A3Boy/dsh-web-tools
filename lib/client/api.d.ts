@@ -15,10 +15,10 @@ export declare class WebToolsApiError extends Error {
 }
 /** Call one API method; throws WebToolsApiError on failure. */
 export declare function call<T>(method: string, payload?: unknown): Promise<T>;
-import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type { ConfigView, CredentialsView, QuotaDescribeView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, RetrievalStrategy, VersionCheckView } from "../shared/api-types.ts";
 import type { BrowserPlatform, PlatformStatusResponse } from "../shared/platform-types.ts";
 import type { CustomProviderDraft, CustomSourceTestView } from "../shared/custom-provider-types.ts";
-export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, VersionCheckView, } from "../shared/api-types.ts";
+export type { ConfigView, CredentialsView, ProviderView, QuotaDescribeView, QuotaView, SearchMode, SearchModeView, TestProviderView, TestSearchView, SearchRoutingPolicy, RetrievalStrategy, VersionCheckView, } from "../shared/api-types.ts";
 export type { BrowserPlatform, PlatformStatusResponse, } from "../shared/platform-types.ts";
 export type { CustomProviderConfig, CustomProviderDraft, CustomProtocol, AuthMode, CustomSourceTestView, CustomSourceErrorCode, } from "../shared/custom-provider-types.ts";
 export declare const api: {
@@ -54,11 +54,12 @@ export declare const api: {
         options: any;
     }>;
     providerOptionsBatch: (providers: Record<string, Record<string, unknown> | null>) => Promise<Record<string, any>>;
-    routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) => Promise<{
+    routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[], retrievalStrategy?: RetrievalStrategy) => Promise<{
         saved: true;
         policy: SearchRoutingPolicy;
         defaultProvider: string;
         fallbackOrder: string[];
+        retrievalStrategy: RetrievalStrategy;
     }>;
     platformStatus: () => Promise<PlatformStatusResponse>;
     platformLogin: (platform: BrowserPlatform) => Promise<{

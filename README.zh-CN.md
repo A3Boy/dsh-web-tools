@@ -186,7 +186,12 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 * **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免在冷却期内产生无效请求。
 * **故障熔断**：同一 Provider 连续 3 次超时、网络或服务端错误后暂停调用 30 秒；恢复时只放行一个探测请求，探测失败则冷却翻倍，最长 5 分钟。鉴权失败和调用方取消不计入熔断。
 * **短时结果缓存**：通用搜索缓存 60 秒、网页抓取缓存 5 分钟，相同并发请求合并；每类最多缓存 100 条，搜索与抓取分别限制为 2 MiB、4 MiB 的序列化内容。失败和空结果不缓存，小红书 / X 平台源不缓存。设置卡片的手动搜索测试绕过结果缓存；插件内修改凭据会清理缓存，配置变化使用独立缓存键。缓存命中不会推进轮询或产生真实 Provider 请求。
-* **搜索路由策略**：`web_search` 支持顺序模式（Ordered）、轮询模式（Round-Robin）和随机模式（Random）；`web_fetch` 始终按可抓取 Provider 的确定性链条执行。
+* **搜索路由策略**：`web_search` 支持六种起始 Provider 策略，可在设置卡片中切换：**顺序**（始终从第一项开始）、**轮询**（每次查询轮换起始项）、**随机**、**自适应**（按最近 24 小时的成功率与延迟综合排序，数据不足时回落到你配置的顺序）、**最快**（按实测平均耗时）与**最省**（按计费档次：自建 SearXNG → 低价 API → 按量计费的深度抓取）。`web_fetch` 始终按可抓取 Provider 的确定性链条执行。指标类策略在没有实测数据时绝不会退化为随机。
+* **多源检索方式**：同一设置区决定一次搜索最多使用几个 Provider：
+  * **单源**（默认）——依次尝试，最省配额，与旧行为完全一致。
+  * **对冲**——首选源超过 1.2 秒仍未返回时并发唤醒第二个源，先返回者胜出，另一个请求会被**取消**，不再继续消耗配额。在不增加快查询开销的前提下压低 p95 / p99 尾延迟。
+  * **融合**——同时请求两个源并用 **RRF（倒数排名融合）** 合并排序；URL 规范化会去除跟踪参数、`www.`、尾斜杠并重排查询参数。召回更全，代价约为双倍配额。若两路都失败，配置链条的其余 Provider 仍会作为兜底执行。
+  * 被取消的尝试（包括对冲中落败的一方）只记为诊断信息，不计入 Provider 失败，因此不会把健康的源在自适应排序中降权。
 * **会话级联网控制 (Search Mode)**：输入框集成单入口紧凑切换器（单按钮 + 极简下拉菜单），提供三档确定性检索模式（默认「智能联网」，支持 `Alt+S` 快捷键循环切换）：
   * **智能联网 (Smart)**：弹性语义决策。由 Agent 根据上下文问题意图，自主判断是否调起外部网络检索。
   * **始终联网 (Always)**：强一致性知识校验。要求 Agent 每轮对话至少完成一次有效的外部检索或内容深抓，确保回答具备外部权威可溯源依据。
@@ -219,6 +224,32 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 </div>
 
 * **智能代理分流与内网直连 (Intranet Proxy Bypass)**：完整支持 Windows 系统代理及 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 环境变量。内置 **DNS 预检与私网智能旁路**，公网请求正常走代理通道，而本地回环及解析至私网地址（RFC 1918）的自建搜索源（如局域网自建 SearXNG 或私有网关）自动采用底层直连拨号，彻底消弭开启系统代理时内网服务不可达的拓扑冲突。
+
+---
+
+## 独立 MCP Server
+
+检索内核也可以脱离 DSH，以 stdio MCP 服务的形式运行，任意支持 MCP 的 Agent 都能直接调用（Claude Code、Cursor、Windsurf 等）。对外提供 `web_search`（`query`、`maxResults`）与 `web_fetch`（`url`）两个工具，并协商 MCP 协议版本 `2025-06-18`、`2025-03-26`、`2024-11-05`。
+
+```bash
+# 全局安装后，bin 已在 PATH 中：
+dsh-web-tools-mcp
+
+# 或者直接从源码目录运行：
+npm install && npm run build
+node bin/mcp-server.js
+```
+
+> `npx dsh-web-tools-mcp` 是无效写法：npx 会把第一个参数当成**包名**。请使用已安装的 bin，或 `npx -p dsh-web-tools dsh-web-tools-mcp`。
+
+密钥从环境变量读取（`EXA_API_KEY`、`TAVILY_API_KEY`、`BRAVE_API_KEY`、`SERPER_API_KEY`、`FIRECRAWL_API_KEY`、`KEENABLE_API_KEY`、`YOU_API_KEY`、`JINA_API_KEY`、`PARALLEL_API_KEY`，自建实例用 `SEARXNG_URL`）——MCP 服务不读取 DSH 的凭据库。
+
+| 环境变量 | 默认值 | 含义 |
+|---|---|---|
+| `WEB_TOOLS_DEFAULT_PROVIDER` | `exa` | 链条中的首个 Provider |
+| `WEB_TOOLS_ROUTING_POLICY` | `adaptive` | 起始路由策略（`ordered`/`round-robin`/`random`/`adaptive`/`fastest`/`cheapest`） |
+| `WEB_TOOLS_TIMEOUT_MS` | `10000` | 单 Provider 单次尝试预算 |
+| `WEB_TOOLS_REQUEST_TIMEOUT_MS` | `60000` | 单次工具调用的硬上限 |
 
 ---
 

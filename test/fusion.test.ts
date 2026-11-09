@@ -2,15 +2,32 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { canonicalizeUrl, reciprocalRankFusion, type ProviderResultSet } from "../src/host/fusion.ts";
 
-test("canonicalizeUrl strips tracking parameters, fragments, and normalizes hostname", () => {
+test("canonicalizeUrl normalizes host, ports, fragments and tracking params", () => {
   const url1 = "https://EXAMPLE.COM/page?utm_source=twitter&utm_medium=social#section-1";
   assert.equal(canonicalizeUrl(url1), "https://example.com/page");
 
-  const url2 = "https://example.com/?ref=producthunt&from=timeline";
+  const url2 = "https://example.com/?fbclid=abc";
   assert.equal(canonicalizeUrl(url2), "https://example.com");
 
   const url3 = "http://example.com:80/docs/?fbclid=12345&important_arg=true";
-  assert.equal(canonicalizeUrl(url3), "http://example.com/docs/?important_arg=true");
+  assert.equal(canonicalizeUrl(url3), "http://example.com/docs?important_arg=true");
+});
+
+test("canonicalizeUrl deduplicates www/non-www and trailing-slash variants", () => {
+  assert.equal(canonicalizeUrl("https://www.example.com/a/"), canonicalizeUrl("https://example.com/a"));
+  assert.equal(canonicalizeUrl("https://example.com/a/?utm_campaign=x"), canonicalizeUrl("https://example.com/a"));
+});
+
+test("canonicalizeUrl sorts query params so ordering does not split entries", () => {
+  assert.equal(canonicalizeUrl("https://example.com/s?b=2&a=1"), canonicalizeUrl("https://example.com/s?a=1&b=2"));
+});
+
+test("canonicalizeUrl keeps ambiguous params instead of merging distinct pages", () => {
+  // `source` / `from` / `ref` are meaningful on many sites; the previous list
+  // stripped them and merged genuinely different documents.
+  assert.equal(canonicalizeUrl("https://example.com/x?source=api"), "https://example.com/x?source=api");
+  assert.equal(canonicalizeUrl("https://example.com/y?ref=docs"), "https://example.com/y?ref=docs");
+  assert.notEqual(canonicalizeUrl("https://example.com/x?source=api"), canonicalizeUrl("https://example.com/x?source=human"));
 });
 
 test("reciprocalRankFusion promotes items matching across multiple providers", () => {
@@ -26,7 +43,7 @@ test("reciprocalRankFusion promotes items matching across multiple providers", (
     provider: "tavily",
     sources: [
       { url: "https://example.com/gamma", title: "Gamma", snippet: "Gamma snippet" },
-      { url: "https://example.com/alpha?utm_source=newsletter", title: "Alpha Tavily", snippet: "Much longer and more informative snippet for alpha" },
+      { url: "https://www.example.com/alpha/?utm_source=newsletter", title: "Alpha Tavily", snippet: "Much longer and more informative snippet for alpha" },
     ],
   };
 
@@ -63,4 +80,13 @@ test("reciprocalRankFusion respects maxResults cap", () => {
   assert.equal(fused.length, 2);
   assert.equal(fused[0].url, "https://example.com/1");
   assert.equal(fused[1].url, "https://example.com/2");
+});
+
+test("reciprocalRankFusion keeps the first-seen original URL for display", () => {
+  const fused = reciprocalRankFusion([
+    { provider: "a", sources: [{ url: "https://www.example.com/page/" }] },
+    { provider: "b", sources: [{ url: "https://example.com/page?utm_source=x" }] },
+  ]);
+  assert.equal(fused.length, 1);
+  assert.equal(fused[0].url, "https://www.example.com/page/");
 });

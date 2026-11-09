@@ -1,5 +1,5 @@
 /**
- * dsh-web-tools — in-memory rolling stats (diagnostics only, no persistence).
+ * dsh-web-tools — in-memory rolling stats (diagnostics + adaptive routing).
  * @module
  */
 export interface StatEntry {
@@ -12,21 +12,29 @@ export interface StatEntry {
 export declare class Stats {
     private entries;
     private readonly max;
+    /**
+     * @param max ring capacity. Sized so a busy multi-provider day still keeps a
+     *   usable per-provider sample: at 200 the ring evicted one provider's whole
+     *   history within minutes, so `adaptive` kept falling back to its neutral
+     *   prior and the order jittered.
+     */
     constructor(max?: number);
     record(entry: StatEntry): void;
     /**
      * Aggregate view for the diagnostics area (last `hours` window).
-     * `fallback` counts searches that failed at least once and then succeeded
-     * (i.e. real fallback events), not raw failed attempts.
+     * `fallback` counts searches that hit an empty/failed provider and then
+     * succeeded (i.e. real fallback events), not raw failed attempts.
      */
     summary(hours?: number): {
         total: number;
         success: number;
         failed: number;
+        empty: number;
         fallback: number;
         byProvider: Record<string, {
             success: number;
             failed: number;
+            empty: number;
             avgLatencyMs: number;
         }>;
     };

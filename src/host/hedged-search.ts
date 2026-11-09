@@ -1,166 +1,319 @@
 /**
- * dsh-web-tools — Hedged & Multi-Source Parallel Search Execution.
+ * dsh-web-tools — cross-provider retrieval orchestration.
  *
- * Implements Google-style hedged requests (Dean & Barroso, 2013 "The Tail at Scale")
- * and dual-provider parallel fusion for "Deep" search mode:
+ * Two strategies sit on top of the single-provider executor:
  *
- * 1. Hedged mode:
- *    - Dispatches to Provider 1.
- *    - If Provider 1 does not settle within `hedgeDelayMs` (default 1200ms),
- *      launches Provider 2 concurrently without cancelling Provider 1.
- *    - The first successful response resolves the request, or if both settle
- *      within budget, their results are fused using RRF.
+ * 1. hedged (Dean & Barroso, "The Tail at Scale"):
+ *    - Start the primary lane.
+ *    - If it is still running after `hedgeDelayMs`, start a second lane in
+ *      parallel. The FIRST success wins and the loser is ABORTED, so the
+ *      cancelled request stops consuming quota instead of running to
+ *      completion in the background.
+ *    - If the primary settles first, the hedge never launches.
  *
- * 2. Deep mode:
- *    - Dispatches simultaneously to up to `fanout` providers (default 2).
- *    - Combines all successful result sets via `reciprocalRankFusion`.
+ * 2. fused:
+ *    - Start both lanes immediately and wait for both.
+ *    - Merge their ranked lists with Reciprocal Rank Fusion (wider recall,
+ *      roughly double the provider cost — hence opt-in).
+ *
+ * Lanes are independent: each has its own AbortController linked to the
+ * caller's signal and to one overall deadline, so cancelling one lane can
+ * never cancel the other.
  * @module
  */
 import type { Source } from "./providers/types.ts";
-import { reciprocalRankFusion, type FusedSource, type ProviderResultSet } from "./fusion.ts";
+import { reciprocalRankFusion } from "./fusion.ts";
 
+/** Which lane a provider call belongs to. */
+export type LaneRole = "primary" | "secondary";
+
+/** One provider call as the executor sees it. */
 export interface ProviderSearchFn {
-  (providerName: string, signal: AbortSignal): Promise<{ sources: Source[] }>;
+  (providerName: string, signal: AbortSignal, lane: LaneRole): Promise<{ sources: Source[] }>;
 }
 
-export interface HedgedSearchOptions {
-  /** Maximum delay before launching the hedged secondary request (ms). Default: 1200ms. */
+export type MultiSourceMode = "hedged" | "fused";
+
+export interface MultiSourceOptions {
+  /** "hedged" (default) = first success wins; "fused" = run both and merge. */
+  mode?: MultiSourceMode;
+  /** Delay before the hedged lane starts. Default: 1200ms. */
   hedgeDelayMs?: number;
-  /** Overall attempt budget (ms). Default: 6000ms. */
+  /** Overall budget for the whole multi-source attempt. Default: 6000ms. */
   timeoutMs?: number;
-  /** Caller cancellation signal. */
+  /** Caller cancellation. */
   signal?: AbortSignal;
 }
 
-export interface HedgedSearchResult {
-  sources: FusedSource[] | Source[];
+/** Diagnostics for one lane, in the executor's `attempts` vocabulary. */
+export interface LaneAttempt {
+  provider: string;
+  latencyMs: number;
+  outcome: string;
+}
+
+export interface MultiSourceResult {
+  sources: Source[];
+  /** `a` or `a+b` for a fused answer. */
   backend: string;
+  /** True when the second lane was actually launched. */
   hedgedLaunched: boolean;
-  attempts: Array<{ provider: string; latencyMs: number; status: "success" | "empty" | "error" }>;
+  /** True when two ranked lists were merged with RRF. */
+  fused: boolean;
+  attempts: LaneAttempt[];
+}
+
+type LaneStatus = "pending" | "success" | "empty" | "error";
+
+interface Lane {
+  role: LaneRole;
+  provider: string;
+  controller: AbortController;
+  started: boolean;
+  done: boolean;
+  status: LaneStatus;
+  sources: Source[];
+  error?: unknown;
+  latencyMs: number;
+  promise?: Promise<void>;
+}
+
+function errorCodeOf(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length > 0 ? code : "error";
+}
+
+function abortError(): Error {
+  const err = new Error("search aborted by caller") as Error & { code?: string };
+  err.code = "aborted";
+  return err;
+}
+
+/** Strip fusion-only bookkeeping so callers see plain sources. */
+function plainSources(sources: Source[]): Source[] {
+  return sources.map((s) => ({
+    url: s.url,
+    ...(s.title !== undefined ? { title: s.title } : {}),
+    ...(s.snippet !== undefined ? { snippet: s.snippet } : {}),
+    ...(s.publishedAt !== undefined ? { publishedAt: s.publishedAt } : {}),
+  }));
 }
 
 /**
- * Execute a hedged search request across two candidates.
+ * Run two providers under the requested strategy.
+ *
+ * @throws the winning lane's error when no lane produced a non-empty answer and
+ *         no lane legitimately returned an empty set.
  */
 export async function runHedgedSearch(
   providers: [string, string],
   searchFn: ProviderSearchFn,
-  options: HedgedSearchOptions = {},
-): Promise<HedgedSearchResult> {
-  const [p1, p2] = providers;
-  const hedgeDelayMs = options.hedgeDelayMs ?? 1200;
-  const timeoutMs = options.timeoutMs ?? 6000;
+  options: MultiSourceOptions = {},
+): Promise<MultiSourceResult> {
+  const mode: MultiSourceMode = options.mode ?? "hedged";
+  const hedgeDelayMs = Math.max(0, options.hedgeDelayMs ?? 1200);
+  const timeoutMs = Math.max(1, options.timeoutMs ?? 6000);
   const parentSignal = options.signal;
 
-  const attempts: Array<{ provider: string; latencyMs: number; status: "success" | "empty" | "error" }> = [];
-  let hedgedLaunched = false;
+  if (parentSignal?.aborted) throw abortError();
 
-  const controller = new AbortController();
-  const onParentAbort = () => controller.abort();
-  if (parentSignal) {
-    if (parentSignal.aborted) throw new Error("search aborted");
-    parentSignal.addEventListener("abort", onParentAbort);
-  }
+  const attempts: LaneAttempt[] = [];
+  const deadline = new AbortController();
+  const onParentAbort = () => deadline.abort();
+  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
 
-  const timeoutTimer = setTimeout(() => controller.abort(), timeoutMs);
+  const deadlineTimer = setTimeout(() => deadline.abort(), timeoutMs);
+  (deadlineTimer as { unref?: () => void }).unref?.();
 
-  try {
-    const started1 = Date.now();
-    const p1Promise = searchFn(p1, controller.signal).then(
-      (res) => {
-        const latencyMs = Date.now() - started1;
-        attempts.push({ provider: p1, latencyMs, status: res.sources.length > 0 ? "success" : "empty" });
-        return { provider: p1, res, error: null };
-      },
-      (err) => {
-        const latencyMs = Date.now() - started1;
-        attempts.push({ provider: p1, latencyMs, status: "error" });
-        return { provider: p1, res: null, error: err };
-      },
-    );
-
-    // Set a timer to trigger the secondary hedged provider if p1 is slow
-    let p2Promise: Promise<{ provider: string; res: { sources: Source[] } | null; error: unknown }> | null = null;
-    let hedgeTimer: NodeJS.Timeout | null = null;
-
-    const launchHedge = () => {
-      hedgedLaunched = true;
-      const started2 = Date.now();
-      return searchFn(p2, controller.signal).then(
-        (res) => {
-          const latencyMs = Date.now() - started2;
-          attempts.push({ provider: p2, latencyMs, status: res.sources.length > 0 ? "success" : "empty" });
-          return { provider: p2, res, error: null };
-        },
-        (err) => {
-          const latencyMs = Date.now() - started2;
-          attempts.push({ provider: p2, latencyMs, status: "error" });
-          return { provider: p2, res: null, error: err };
-        },
-      );
-    };
-
-    const hedgeDelayPromise = new Promise<void>((resolve) => {
-      hedgeTimer = setTimeout(() => {
-        p2Promise = launchHedge();
-        resolve();
-      }, hedgeDelayMs);
+  let notify: (() => void) | null = null;
+  const changed = () => {
+    const fn = notify;
+    notify = null;
+    fn?.();
+  };
+  const waitChange = () =>
+    new Promise<void>((resolve) => {
+      notify = resolve;
     });
 
-    // Race p1 against the hedge delay timer
-    const firstResult = await Promise.race([p1Promise, hedgeDelayPromise]);
+  const makeLane = (role: LaneRole, provider: string): Lane => ({
+    role,
+    provider,
+    controller: new AbortController(),
+    started: false,
+    done: false,
+    status: "pending",
+    sources: [],
+    latencyMs: 0,
+  });
 
-    if (firstResult && firstResult.res && firstResult.res.sources.length > 0) {
-      // P1 settled quickly with results before hedge timer fired!
-      if (hedgeTimer) clearTimeout(hedgeTimer);
+  const primary = makeLane("primary", providers[0]);
+  const secondary = makeLane("secondary", providers[1]);
+
+  const startLane = (lane: Lane): Promise<void> => {
+    if (lane.started) return lane.promise ?? Promise.resolve();
+    lane.started = true;
+    // Link the lane to the shared deadline without touching the other lane.
+    if (deadline.signal.aborted) lane.controller.abort(deadline.signal.reason);
+    else deadline.signal.addEventListener("abort", () => lane.controller.abort(deadline.signal.reason), { once: true });
+
+    const startedAt = Date.now();
+    lane.promise = (async () => {
+      try {
+        const res = await searchFn(lane.provider, lane.controller.signal, lane.role);
+        lane.latencyMs = Date.now() - startedAt;
+        lane.sources = res?.sources ?? [];
+        lane.status = lane.sources.length > 0 ? "success" : "empty";
+      } catch (error) {
+        lane.latencyMs = Date.now() - startedAt;
+        lane.status = "error";
+        lane.error = error;
+      } finally {
+        lane.done = true;
+        attempts.push({
+          provider: lane.provider,
+          latencyMs: lane.latencyMs,
+          outcome:
+            lane.status === "success"
+              ? "success"
+              : lane.status === "empty"
+                ? "empty"
+                : `failed:${errorCodeOf(lane.error)}`,
+        });
+        changed();
+      }
+    })();
+    return lane.promise;
+  };
+
+  let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearHedgeTimer = () => {
+    if (hedgeTimer !== undefined) {
+      clearTimeout(hedgeTimer);
+      hedgeTimer = undefined;
+    }
+  };
+
+  /**
+   * Wakes the waiting loop on EITHER a lane settling or the deadline firing.
+   *
+   * Without the deadline arm, a backend that ignores its abort signal would
+   * park the loop forever: `waitChange()` alone never resolves when nothing
+   * settles.
+   */
+  const abortSignal = new Promise<void>((resolve) => {
+    if (deadline.signal.aborted) {
+      resolve();
+      return;
+    }
+    deadline.signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+  const waitNext = () => Promise.race([waitChange(), abortSignal]);
+  /** Grace period for a backend that honours cancellation asynchronously. */
+  const SETTLE_GRACE_MS = 250;
+
+  /** Read a lane's status through a call so the compiler cannot narrow it across awaits. */
+  const succeeded = (lane: Lane): boolean => lane.status === "success";
+
+  /** Nothing succeeded: surface an empty answer if a lane legitimately had one. */
+  const finishWithoutSuccess = (): MultiSourceResult => {
+    const emptyLane = [primary, secondary].find((l) => l.status === "empty");
+    if (emptyLane) {
       return {
-        sources: firstResult.res.sources,
-        backend: p1,
-        hedgedLaunched: false,
+        sources: [],
+        backend: emptyLane.provider,
+        hedgedLaunched: secondary.started,
+        fused: false,
         attempts,
       };
     }
+    throw primary.error ?? secondary.error ?? abortError();
+  };
 
-    // P1 was either slow or returned empty/error; wait for both or p2
-    if (!p2Promise) p2Promise = launchHedge();
-    const [out1, out2] = await Promise.all([p1Promise, p2Promise]);
+  const finishSingle = (lane: Lane): MultiSourceResult => ({
+    sources: plainSources(lane.sources),
+    backend: lane.provider,
+    hedgedLaunched: secondary.started,
+    fused: false,
+    attempts,
+  });
 
-    const resultSets: ProviderResultSet[] = [];
-    if (out1.res && out1.res.sources.length > 0) {
-      resultSets.push({ provider: p1, sources: out1.res.sources });
+  try {
+    if (mode === "fused") {
+      void startLane(primary);
+      void startLane(secondary);
+      while (!(primary.done && secondary.done)) {
+        if (deadline.signal.aborted) {
+          // One short grace for lanes that honour cancellation lazily, then
+          // stop waiting: a stalled backend must not pin the whole request.
+          await new Promise((resolve) => setTimeout(resolve, SETTLE_GRACE_MS));
+          break;
+        }
+        await waitNext();
+      }
+
+      const winners = [primary, secondary].filter((l) => l.status === "success");
+      if (winners.length === 2) {
+        const fused = reciprocalRankFusion(
+          winners.map((lane) => ({ provider: lane.provider, sources: lane.sources })),
+        );
+        return {
+          sources: plainSources(fused),
+          backend: `${winners[0].provider}+${winners[1].provider}`,
+          hedgedLaunched: true,
+          fused: true,
+          attempts,
+        };
+      }
+      if (winners.length === 1) return finishSingle(winners[0]);
+      return finishWithoutSuccess();
     }
-    if (out2.res && out2.res.sources.length > 0) {
-      resultSets.push({ provider: p2, sources: out2.res.sources });
+
+    // ---- hedged -----------------------------------------------------------
+    void startLane(primary);
+
+    // Phase 1: does the primary settle before the hedge delay?
+    const hedgeDue = new Promise<"hedge">((resolve) => {
+      hedgeTimer = setTimeout(() => resolve("hedge"), hedgeDelayMs);
+      (hedgeTimer as { unref?: () => void }).unref?.();
+    });
+    const primarySettled = primary.promise!.then(() => "primary" as const);
+    const phase = await Promise.race([primarySettled, hedgeDue]);
+    clearHedgeTimer();
+
+    if (phase === "primary") {
+      if (primary.status === "success") return finishSingle(primary);
+      if (primary.status === "empty") return finishSingle(primary);
+      throw primary.error ?? abortError();
     }
 
-    if (resultSets.length > 1) {
-      const fused = reciprocalRankFusion(resultSets);
-      return {
-        sources: fused,
-        backend: `${p1}+${p2}`,
-        hedgedLaunched,
-        attempts,
-      };
+    // Phase 2: the primary is slow — run a hedge lane and take the first success.
+    void startLane(secondary);
+    while (true) {
+      if (primary.status === "success") {
+        secondary.controller.abort();
+        return finishSingle(primary);
+      }
+      if (secondary.status === "success") {
+        primary.controller.abort();
+        return finishSingle(secondary);
+      }
+      if (primary.done && secondary.done) return finishWithoutSuccess();
+      if (deadline.signal.aborted) {
+        await new Promise((resolve) => setTimeout(resolve, SETTLE_GRACE_MS));
+        if (succeeded(primary)) return finishSingle(primary);
+        if (succeeded(secondary)) return finishSingle(secondary);
+        return finishWithoutSuccess();
+      }
+      await waitNext();
     }
-
-    if (resultSets.length === 1) {
-      return {
-        sources: resultSets[0].sources,
-        backend: resultSets[0].provider,
-        hedgedLaunched,
-        attempts,
-      };
-    }
-
-    // Both yielded 0 sources or failed
-    return {
-      sources: [],
-      backend: p1,
-      hedgedLaunched,
-      attempts,
-    };
   } finally {
-    clearTimeout(timeoutTimer);
-    if (parentSignal) parentSignal.removeEventListener("abort", onParentAbort);
+    clearHedgeTimer();
+    clearTimeout(deadlineTimer);
+    parentSignal?.removeEventListener("abort", onParentAbort);
+    // Abort whichever lane is still in flight: a hedged result must never leave
+    // a background request running after we already answered.
+    primary.controller.abort();
+    secondary.controller.abort();
   }
 }

@@ -12,12 +12,14 @@
  */
 import type { Source } from "./providers/types.ts";
 /**
- * Canonicalize a URL for deduplication across search engines:
- *  - Lowercase scheme and hostname
- *  - Remove default ports
- *  - Strip trailing slashes on root path
- *  - Strip tracking and telemetry query params
- *  - Strip hash fragments
+ * Canonicalize a URL into a stable deduplication key:
+ *  - lowercase scheme and hostname, drop a leading `www.`
+ *  - remove default ports and hash fragments
+ *  - strip click-tracking / telemetry query params
+ *  - collapse a trailing slash (root and directory paths)
+ *  - sort query params so `?a=1&b=2` and `?b=2&a=1` collide
+ *
+ * Only the KEY is normalized; the first-seen original URL is what gets shown.
  */
 export declare function canonicalizeUrl(rawUrl: string): string;
 export interface ProviderResultSet {

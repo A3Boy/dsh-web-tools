@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { McpServer } from "../src/mcp/server.ts";
+import { CURRENT_VERSION } from "../src/shared/version.ts";
 
 function createTestHarness(options: {
-  mockSearch?: (req: any) => Promise<any>;
+  mockSearch?: (req: any, signal?: AbortSignal) => Promise<any>;
   mockFetch?: (req: any) => Promise<any>;
+  requestTimeoutMs?: number;
 } = {}) {
   const inStream = new PassThrough();
   const outStream = new PassThrough();
@@ -39,6 +41,7 @@ function createTestHarness(options: {
     outStream,
     searchProvider: mockSearchProvider,
     fetchProvider: mockFetchProvider,
+    requestTimeoutMs: options.requestTimeoutMs,
   });
 
   server.start();
@@ -80,8 +83,65 @@ test("mcp-server: initialize handshake responds with capabilities and serverInfo
     assert.equal(res.jsonrpc, "2.0");
     assert.equal(res.id, 1);
     assert.equal(res.result.serverInfo.name, "dsh-web-tools-mcp");
-    assert.equal(res.result.serverInfo.version, "0.4.0");
+    assert.equal(res.result.serverInfo.version, CURRENT_VERSION);
     assert.deepEqual(res.result.capabilities, { tools: {} });
+  } finally {
+    harness.server.close();
+  }
+});
+
+test("mcp-server: unsupported protocol versions fall back to a supported revision", async () => {
+  const harness = createTestHarness();
+  try {
+    harness.send({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "initialize",
+      params: { protocolVersion: "1999-01-01" },
+    });
+
+    const res = await harness.readResponse();
+    assert.equal(res.result.protocolVersion, "2025-06-18");
+  } finally {
+    harness.server.close();
+  }
+});
+
+test("mcp-server: a supported protocol version is echoed back", async () => {
+  const harness = createTestHarness();
+  try {
+    harness.send({
+      jsonrpc: "2.0",
+      id: 12,
+      method: "initialize",
+      params: { protocolVersion: "2024-11-05" },
+    });
+
+    const res = await harness.readResponse();
+    assert.equal(res.result.protocolVersion, "2024-11-05");
+  } finally {
+    harness.server.close();
+  }
+});
+
+test("mcp-server: a stalled backend is cut off by the per-call deadline", async () => {
+  const harness = createTestHarness({
+    // Deliberately ignores the abort signal — the deadline must still win.
+    mockSearch: () => new Promise(() => {}),
+    requestTimeoutMs: 25,
+  });
+  try {
+    harness.send({
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: { name: "web_search", arguments: { query: "hang" } },
+    });
+
+    const res = await harness.readResponse();
+    assert.equal(res.id, 13);
+    assert.equal(res.result.isError, true);
+    assert.match(res.result.content[0].text, /timed out/i);
   } finally {
     harness.server.close();
   }

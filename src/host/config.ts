@@ -12,13 +12,16 @@ import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { KeenableUsageBucket } from "./providers/keenable-usage.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
-import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { SearchRoutingPolicy, RetrievalStrategy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import type { OutboundAuthorization } from "./provider-transport.ts";
 import { loadCustomProviders } from "./custom-provider-schema.ts";
 
 /** Persistent search routing policy id (shared with the client card). */
 export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
+
+/** Persistent retrieval strategy id (shared with the client card). */
+export type ToolRetrievalStrategy = RetrievalStrategy;
 
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
@@ -59,6 +62,11 @@ export const DEFAULT_SETTINGS = {
   // search query. "ordered" = always from the first available; "round-robin"
   // and "random" rotate the start offset (see routing-policy.ts).
   searchRoutingPolicy: "ordered" as ToolSearchRoutingPolicy,
+  // Cross-provider retrieval orchestration: "single" keeps the classic
+  // one-at-a-time chain; "hedged" adds a latency-triggered second request;
+  // "fused" runs two providers and merges them with RRF (more coverage, more
+  // cost). Default stays "single" so upgrading never silently doubles spend.
+  retrievalStrategy: "single" as ToolRetrievalStrategy,
   // Operator-defined search sources (Issue #9). Kept in their OWN array rather
   // than merged into providerBaseUrls/providerEnabled: a merge would force a
   // migration of every existing profile for no benefit, and custom sources
@@ -87,6 +95,8 @@ export interface WebToolsSettings {
   keenableUsageCache: Record<string, KeenableUsageBucket>;
   /** Search routing policy (see shared api-types). */
   searchRoutingPolicy: ToolSearchRoutingPolicy;
+  /** Cross-provider retrieval strategy (see shared api-types). */
+  retrievalStrategy: ToolRetrievalStrategy;
   /** Operator-defined custom search sources (Issue #9). */
   customProviders: CustomProviderConfig[];
   /** Operator-granted outbound destinations for internal gateways / private IPs. */
@@ -112,6 +122,11 @@ export const Config: z<WebToolsSettings> = z.object({
     z.const("adaptive"),
     z.const("fastest"),
     z.const("cheapest"),
+  ]),
+  retrievalStrategy: z.union([
+    z.const("single"),
+    z.const("hedged"),
+    z.const("fused"),
   ]),
   // Validated structurally on load; a bad entry is dropped, never thrown, so a
   // hand-edited profile cannot make the plugin fail to register.

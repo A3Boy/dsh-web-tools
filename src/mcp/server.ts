@@ -16,12 +16,23 @@ import { Readable } from "node:stream";
 import { createSearchProvider, createFetchProvider, type WebSearchProviderLike, type WebFetchProviderLike } from "../host/registry.ts";
 import { Stats } from "../host/stats.ts";
 import type { SearchRoutingPolicy } from "../host/routing-policy.ts";
+import { CURRENT_VERSION } from "../shared/version.ts";
+
+/**
+ * MCP protocol revisions this server understands, newest first. The server
+ * answers `initialize` with the client's version when it is on this list and
+ * with its own newest otherwise — echoing an arbitrary string would claim
+ * support for a protocol we do not implement.
+ */
+const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 export interface McpServerOptions {
   env?: Record<string, string | undefined>;
   defaultProvider?: string;
   routingPolicy?: SearchRoutingPolicy;
   timeoutMs?: number;
+  /** Hard ceiling for ONE tools/call (search or fetch). Default: 60s. */
+  requestTimeoutMs?: number;
   inStream?: NodeJS.ReadableStream;
   outStream?: NodeJS.WritableStream;
   searchProvider?: WebSearchProviderLike;
@@ -45,12 +56,19 @@ export class McpServer {
   private readonly fetchProvider: WebFetchProviderLike;
   private readonly inStream: NodeJS.ReadableStream;
   private readonly outStream: NodeJS.WritableStream;
+  private readonly requestTimeoutMs: number;
   private rl?: readline.Interface;
 
   constructor(options: McpServerOptions = {}) {
     const env = options.env ?? process.env;
     this.inStream = options.inStream ?? process.stdin;
     this.outStream = options.outStream ?? process.stdout;
+    this.requestTimeoutMs = (() => {
+      const raw = env.WEB_TOOLS_REQUEST_TIMEOUT_MS ? parseInt(env.WEB_TOOLS_REQUEST_TIMEOUT_MS, 10) : NaN;
+      const fromEnv = Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+      const chosen = options.requestTimeoutMs ?? fromEnv;
+      return Number.isFinite(chosen) && chosen > 0 ? chosen : 60_000;
+    })();
 
     if (options.searchProvider && options.fetchProvider) {
       this.searchProvider = options.searchProvider;
@@ -139,6 +157,38 @@ export class McpServer {
     }
   }
 
+  /**
+   * Bound ONE tool call. A provider chain can legitimately spend several
+   * per-attempt budgets in a row; without this ceiling a stalled backend would
+   * leave the client's request hanging forever (and the agent waiting on it).
+   */
+  private async withDeadline<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    // Deliberately NOT unref'd: while a tool call is in flight the deadline is
+    // the only thing guaranteeing the request settles, so it must keep the
+    // process alive even if a backend stalls without any other handle open.
+    const timer = setTimeout(
+      () => controller.abort(new Error(`tool call timed out after ${this.requestTimeoutMs}ms`)),
+      this.requestTimeoutMs,
+    );
+    try {
+      // Race the deadline explicitly: a backend that ignores its abort signal
+      // must not be able to hang the client's request.
+      return await Promise.race([
+        run(controller.signal),
+        new Promise<never>((_, reject) => {
+          controller.signal.addEventListener(
+            "abort",
+            () => reject(controller.signal.reason ?? new Error("tool call aborted")),
+            { once: true },
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private sendResponse(id: string | number | null, result: any): void {
     if (id === null || id === undefined) return;
     const payload = JSON.stringify({
@@ -177,15 +227,18 @@ export class McpServer {
 
     switch (method) {
       case "initialize": {
-        const clientVersion = params?.protocolVersion ?? "2024-11-05";
+        const requested = typeof params?.protocolVersion === "string" ? params.protocolVersion : "";
+        const protocolVersion = (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
+          ? requested
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
         this.sendResponse(id, {
-          protocolVersion: clientVersion,
+          protocolVersion,
           capabilities: {
             tools: {},
           },
           serverInfo: {
             name: "dsh-web-tools-mcp",
-            version: "0.4.0",
+            version: CURRENT_VERSION,
           },
         });
         break;
@@ -255,7 +308,9 @@ export class McpServer {
           const maxResults = typeof args.maxResults === "number" ? Math.max(1, Math.min(20, args.maxResults)) : 5;
 
           try {
-            const res = await this.searchProvider.search({ query, maxResults });
+            const res = await this.withDeadline((signal) =>
+              this.searchProvider.search({ query, maxResults }, signal),
+            );
             let formattedText = "";
 
             if (res.sources && res.sources.length > 0) {
@@ -296,7 +351,7 @@ export class McpServer {
           }
 
           try {
-            const res = await this.fetchProvider.fetch({ url });
+            const res = await this.withDeadline((signal) => this.fetchProvider.fetch({ url }, signal));
             const content = res.body?.content || "(No readable content extracted)";
             const headerParts = [
               res.metadata?.title ? `# ${res.metadata.title}` : "",

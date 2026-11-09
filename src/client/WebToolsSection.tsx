@@ -35,6 +35,7 @@ import {
   type TestSearchView,
   type ProviderView,
   type SearchRoutingPolicy,
+  type RetrievalStrategy,
   type VersionCheckView,
   type PlatformStatusResponse,
 } from "./api.ts";
@@ -708,8 +709,12 @@ export function WebToolsSection(props: SectionProps) {
    * Writes are drained one at a time; a newer edit replaces the pending intent
    * instead of racing a second multi-second recomposition.
    */
-  const saveOrder = (ordered: readonly string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
-    const fields = routingFields(ordered, policy);
+  const saveOrder = (
+    ordered: readonly string[],
+    policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered",
+    retrievalStrategy: RetrievalStrategy = config.retrievalStrategy ?? "single",
+  ) => {
+    const fields = routingFields(ordered, policy, retrievalStrategy);
     ++orderWriteSeq.current;
     pendingOrder.current = fields;
 
@@ -731,7 +736,7 @@ export function WebToolsSection(props: SectionProps) {
     orderWriteInFlight.current = true;
 
     void api
-      .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder])
+      .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder], fields.retrievalStrategy)
       .then((result) => {
         if (seq !== orderWriteSeq.current) return; // a newer intent owns the view
         pendingOrder.current = null;
@@ -911,15 +916,42 @@ export function WebToolsSection(props: SectionProps) {
               <SegmentedControl
                 style={{ display: "flex", width: "100%" }}
                 options={[
-                  { value: "ordered", label: t("routingPolicy.ordered") },
-                  { value: "round-robin", label: t("routingPolicy.round-robin") },
-                  { value: "random", label: t("routingPolicy.random") },
+                  { value: "ordered", label: t("routingPolicyShort.ordered"), title: t("routingPolicy.ordered") },
+                  { value: "round-robin", label: t("routingPolicyShort.round-robin"), title: t("routingPolicy.round-robin") },
+                  { value: "random", label: t("routingPolicyShort.random"), title: t("routingPolicy.random") },
+                  { value: "adaptive", label: t("routingPolicyShort.adaptive"), title: t("routingPolicy.adaptive") },
+                  { value: "fastest", label: t("routingPolicyShort.fastest"), title: t("routingPolicy.fastest") },
+                  { value: "cheapest", label: t("routingPolicyShort.cheapest"), title: t("routingPolicy.cheapest") },
                 ]}
                 value={config.searchRoutingPolicy ?? "ordered"}
                 onChange={(v) => saveOrder(liveOrder(), v as SearchRoutingPolicy)}
+                size="sm"
+                disabled={savingOrder}
               />
               <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
                 {t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
+              <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: text.secondary }}>
+                {t("retrievalStrategyLabel")}
+              </div>
+              <SegmentedControl
+                style={{ display: "flex", width: "100%" }}
+                options={[
+                  { value: "single", label: t("retrievalStrategy.single"), title: t("retrievalStrategyHint.single") },
+                  { value: "hedged", label: t("retrievalStrategy.hedged"), title: t("retrievalStrategyHint.hedged") },
+                  { value: "fused", label: t("retrievalStrategy.fused"), title: t("retrievalStrategyHint.fused") },
+                ]}
+                value={config.retrievalStrategy ?? "single"}
+                onChange={(v) =>
+                  saveOrder(liveOrder(), config.searchRoutingPolicy ?? "ordered", v as RetrievalStrategy)
+                }
+                size="sm"
+                disabled={savingOrder}
+              />
+              <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
+                {t(`retrievalStrategyHint.${config.retrievalStrategy ?? "single"}`)}
               </div>
             </div>
           </SettingsGroup>

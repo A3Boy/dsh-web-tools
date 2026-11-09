@@ -186,7 +186,12 @@ In addition to the 10 built-in search adapters and social platforms, dsh-web-too
 * **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately.
 * **Circuit Breaker**: Three consecutive timeout, network, or server failures pause a provider for 30 seconds. Recovery admits one probe; failed probes double the cooldown up to five minutes. Authentication failures and caller cancellation do not count.
 * **Short-Lived Result Cache**: General search results live for 60 seconds and fetched pages for five minutes, with identical concurrent requests sharing upstream work. Each cache holds at most 100 entries, bounded to 2 MiB for search and 4 MiB for fetch in serialized content. Failures, empty results, and Xiaohongshu / X platform sources are not cached. Manual search tests bypass the result cache; credential edits in the plugin clear it, and configuration changes use distinct cache keys. Cache hits do not advance round-robin routing or call providers.
-* **Configurable Routing Policies**: `web_search` supports Ordered, Round-Robin, and Random starting-provider selection. `web_fetch` always follows the deterministic fetch-capable chain.
+* **Configurable Routing Policies**: `web_search` supports six starting-provider policies, selectable in the settings card: **Ordered** (always first), **Round-Robin** (rotate per query), **Random**, **Adaptive** (ranked by a 24h success-rate/latency score, falling back to your configured order when there is not enough evidence), **Fastest** (measured average latency) and **Cheapest** (cost tier: self-hosted SearXNG → budget APIs → metered deep-extraction). `web_fetch` always follows the deterministic fetch-capable chain. Metric-driven policies never randomize a chain that has no measurements.
+* **Multi-Source Retrieval**: the same card selects how many providers one search may use:
+  * **Single** (default) — try providers one at a time; cheapest, identical to previous behavior.
+  * **Hedged** — if the first provider is still running after 1.2s, a second one starts in parallel; the first success wins and the loser's request is **aborted** so it stops consuming quota. Cuts p95/p99 tail latency without doubling spend on fast queries.
+  * **Fused** — query two providers at once and merge both ranked lists with **Reciprocal Rank Fusion** (URL canonicalization strips tracking parameters, `www.`, trailing slashes and reorders query params). Wider recall at roughly double the cost. If both lanes fail, the rest of the configured chain still runs as a safety net.
+  * Cancelled attempts (including the hedged loser) are recorded as diagnostics but never counted as provider failures, so they cannot demote a healthy source in the adaptive ranking.
 * **Session-Level Search Mode**: A refined, compact picker in the composer offering three deterministic retrieval behaviors (defaults to Smart, with `Alt+S` keyboard shortcut to cycle through modes):
   * **Smart (智能联网)**: Elastic semantic dispatch. The agent autonomously determines whether real-time web retrieval is needed based on conversational intent.
   * **Always (始终联网)**: Strong-consistency knowledge verification. Mandates at least one completed `web_search` or `web_fetch` per turn to ensure claims are grounded in external sources.
@@ -219,6 +224,32 @@ In addition to the 10 built-in search adapters and social platforms, dsh-web-too
 </div>
 
 * **Intelligent Proxy Routing & Intranet Bypass**: Seamlessly integrates with Windows system proxy settings and `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` environment variables. Equipped with **DNS preflight routing**: public traffic follows configured proxies, while loopback addresses and private subnets (RFC 1918) automatically bypass the proxy gate with direct dialing — completely eliminating connectivity drops for LAN-hosted SearXNG or custom private gateways when system proxies are active.
+
+---
+
+## Standalone MCP Server
+
+The retrieval engine also runs outside DSH as a stdio MCP server, so any MCP-capable agent can call it directly (Claude Code, Cursor, Windsurf, …). It exposes `web_search` (`query`, `maxResults`) and `web_fetch` (`url`), and negotiates MCP revisions `2025-06-18`, `2025-03-26` and `2024-11-05`.
+
+```bash
+# after installing the package (global), the bin is on PATH:
+dsh-web-tools-mcp
+
+# or run it straight from a checkout:
+npm install && npm run build
+node bin/mcp-server.js
+```
+
+> `npx dsh-web-tools-mcp` does not work: npx treats the first argument as a *package* name. Use the installed bin, or `npx -p dsh-web-tools dsh-web-tools-mcp`.
+
+Keys come from the environment (`EXA_API_KEY`, `TAVILY_API_KEY`, `BRAVE_API_KEY`, `SERPER_API_KEY`, `FIRECRAWL_API_KEY`, `KEENABLE_API_KEY`, `YOU_API_KEY`, `JINA_API_KEY`, `PARALLEL_API_KEY`, or `SEARXNG_URL` for a self-hosted instance) — the MCP server does not read the DSH credential store.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WEB_TOOLS_DEFAULT_PROVIDER` | `exa` | First provider in the chain |
+| `WEB_TOOLS_ROUTING_POLICY` | `adaptive` | Start-of-chain policy (`ordered`/`round-robin`/`random`/`adaptive`/`fastest`/`cheapest`) |
+| `WEB_TOOLS_TIMEOUT_MS` | `10000` | Per-provider attempt budget |
+| `WEB_TOOLS_REQUEST_TIMEOUT_MS` | `60000` | Hard ceiling for one tool call |
 
 ---
 

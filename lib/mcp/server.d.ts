@@ -5,6 +5,8 @@ export interface McpServerOptions {
     defaultProvider?: string;
     routingPolicy?: SearchRoutingPolicy;
     timeoutMs?: number;
+    /** Hard ceiling for ONE tools/call (search or fetch). Default: 60s. */
+    requestTimeoutMs?: number;
     inStream?: NodeJS.ReadableStream;
     outStream?: NodeJS.WritableStream;
     searchProvider?: WebSearchProviderLike;
@@ -15,12 +17,19 @@ export declare class McpServer {
     private readonly fetchProvider;
     private readonly inStream;
     private readonly outStream;
+    private readonly requestTimeoutMs;
     private rl?;
     constructor(options?: McpServerOptions);
     /** Start listening for JSON-RPC messages on the input stream. */
     start(): void;
     /** Close the server and stop listening. */
     close(): void;
+    /**
+     * Bound ONE tool call. A provider chain can legitimately spend several
+     * per-attempt budgets in a row; without this ceiling a stalled backend would
+     * leave the client's request hanging forever (and the agent waiting on it).
+     */
+    private withDeadline;
     private sendResponse;
     private sendError;
     private handleMessage;

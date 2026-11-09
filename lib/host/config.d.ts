@@ -12,11 +12,13 @@ import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import type { KeenableUsageBucket } from "./providers/keenable-usage.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
-import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { SearchRoutingPolicy, RetrievalStrategy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import type { OutboundAuthorization } from "./provider-transport.ts";
 /** Persistent search routing policy id (shared with the client card). */
 export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
+/** Persistent retrieval strategy id (shared with the client card). */
+export type ToolRetrievalStrategy = RetrievalStrategy;
 /** Settings namespace for this plugin. */
 export declare const SETTINGS_NS = "dsh-web-tools";
 /** Default provider when nothing is configured. Changed from tavily to exa
@@ -42,6 +44,7 @@ export declare const DEFAULT_SETTINGS: {
     braveQuotaCache: Record<string, QuotaSnapshot>;
     keenableUsageCache: Record<string, KeenableUsageBucket>;
     searchRoutingPolicy: ToolSearchRoutingPolicy;
+    retrievalStrategy: ToolRetrievalStrategy;
     customProviders: CustomProviderConfig[];
     /** Operator-granted outbound destinations for internal gateways / private IPs. */
     outboundAuthorizations: OutboundAuthorization[];
@@ -62,6 +65,8 @@ export interface WebToolsSettings {
     keenableUsageCache: Record<string, KeenableUsageBucket>;
     /** Search routing policy (see shared api-types). */
     searchRoutingPolicy: ToolSearchRoutingPolicy;
+    /** Cross-provider retrieval strategy (see shared api-types). */
+    retrievalStrategy: ToolRetrievalStrategy;
     /** Operator-defined custom search sources (Issue #9). */
     customProviders: CustomProviderConfig[];
     /** Operator-granted outbound destinations for internal gateways / private IPs. */

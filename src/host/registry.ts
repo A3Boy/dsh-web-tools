@@ -10,6 +10,8 @@
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { resolveSearchChain, type SearchRoutingPolicy, type SearchRoutingState } from "./routing-policy.ts";
+import { runHedgedSearch, type LaneAttempt } from "./hedged-search.ts";
+import { isRetrievalStrategy, type RetrievalStrategy } from "../shared/api-types.ts";
 import {
   buildPool,
   markUnhealthy,
@@ -40,6 +42,12 @@ export interface WebSearchProviderLike {
     content?: string;
     sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
     truncated: boolean;
+    /** Which provider(s) served the answer (`a+b` for a fused answer). */
+    backend?: string;
+    /** Per-provider attempt ledger (diagnostics / settings card). */
+    attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }>;
+    /** True when the result merged two providers with RRF. */
+    fused?: boolean;
   }>;
 }
 
@@ -77,6 +85,10 @@ export interface WebToolsRuntimeConfig {
   fallbackOrder: string[];
   /** Search routing policy — how the runtime picks the starting provider per query. */
   searchRoutingPolicy?: SearchRoutingPolicy;
+  /** Cross-provider retrieval strategy (single/hedged/fused). */
+  retrievalStrategy?: RetrievalStrategy;
+  /** Hedged mode only: delay before the second lane starts. Default 1200ms. */
+  hedgeDelayMs?: number;
   providerBaseUrls: Record<string, string>;
   enabledProviders: Record<string, boolean>;
   providerOptions?: StoredProviderOptions;
@@ -264,174 +276,259 @@ export function createSearchProvider(
         metrics,
       );
 
-      const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
-      let lastError: ProviderError | undefined;
-      let candidateEmptyOutcome: {
+      // A hand-edited profile can carry any string; treat an unknown value as
+      // the historical single-chain behavior instead of guessing a mode.
+      const strategy: RetrievalStrategy = isRetrievalStrategy(cfg.retrievalStrategy)
+        ? cfg.retrievalStrategy
+        : "single";
+
+      /** Run the provider chain in `lane` order; the first usable answer wins. */
+      const runChain = async (
+        lane: string[],
+        laneSignal?: AbortSignal,
+      ): Promise<{
         content?: string;
         sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+        truncated: boolean;
+        attempts: Array<{ provider: string; outcome: string; latencyMs?: number }>;
         backend: string;
-      } | null = null;
-      const searchHints = extractSearchHints(request.query);
-
-      for (const providerName of chain) {
-        if (cfg.enabledProviders[providerName] === false) continue;
-        const entryInfo: CatalogEntry | undefined = snapshot?.get(providerName);
-        if (entryInfo?.config && entryInfo.config.enabled === false) {
-          attempts.push({ provider: providerName, outcome: "skipped-disabled" });
-          continue;
+      }> => {
+        if (lane.length === 0) {
+          return { sources: [], truncated: false, attempts: [], backend: "" };
         }
-        const adapter = adapterFor(providerName, snapshot);
-        if (!adapter) {
-          attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
-          continue;
-        }
-        let entries = await pools.poolOf(providerName);
-        const keyless = keylessOf(providerName, adapter, snapshot);
-        if (entries.length === 0 && keyless) {
-          // Keyless sources (self-hosted SearXNG, or a custom source with auth
-          // mode "none") execute with an empty key.
-          entries = [new PoolEntry("", 0)];
-        } else if (entries.length === 0) {
-          attempts.push({ provider: providerName, outcome: "skipped-no-keys" });
-          continue;
-        }
+        const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
+        let lastError: ProviderError | undefined;
+        let candidateEmptyOutcome: {
+          content?: string;
+          sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+          backend: string;
+        } | null = null;
+        const searchHints = extractSearchHints(request.query);
 
-        // Auth-invalid keys stay unhealthy until the credential actually
-        // changes (refreshPool preserves healthy=false for persisted keys).
-        // If the whole pool is unusable, skip this provider — do NOT reset.
-        let usable = entries.filter((e) => isEntryUsable(e));
-        if (usable.length === 0) {
-          attempts.push({ provider: providerName, outcome: "skipped-no-healthy-keys" });
-          continue;
-        }
+        /**
+         * Record a FAILED attempt without blaming the provider for a
+         * cancellation. A hedged loser is aborted on purpose and a caller can
+         * cancel mid-flight; counting either as a provider fault would push a
+         * perfectly healthy source down the adaptive ranking for 24h.
+         */
+        const recordFailedAttempt = (provider: string, code: string, latencyMs: number) => {
+          if (code === "aborted") return;
+          stats.record({ provider, outcome: `failed:${code}`, latencyMs });
+        };
 
-        // Provider-level cooldown (Retry-After). The store uses its own clock
-        // (injectable for tests) — zero HTTP when cooling down.
-        // Retry-After cooldown or open circuit breaker; a half-open breaker admits one probe.
-        const admission = healthStore?.admit(providerName);
-        if (admission?.state === "blocked") {
-          attempts.push({ provider: providerName, outcome: "skipped-cooldown" });
-          continue;
-        }
+        for (const providerName of lane) {
+          if (cfg.enabledProviders[providerName] === false) continue;
+          const entryInfo: CatalogEntry | undefined = snapshot?.get(providerName);
+          if (entryInfo?.config && entryInfo.config.enabled === false) {
+            attempts.push({ provider: providerName, outcome: "skipped-disabled" });
+            continue;
+          }
+          const adapter = adapterFor(providerName, snapshot);
+          if (!adapter) {
+            attempts.push({ provider: providerName, outcome: "skipped-no-adapter" });
+            continue;
+          }
+          let entries = await pools.poolOf(providerName);
+          const keyless = keylessOf(providerName, adapter, snapshot);
+          if (entries.length === 0 && keyless) {
+            // Keyless sources (self-hosted SearXNG, or a custom source with auth
+            // mode "none") execute with an empty key.
+            entries = [new PoolEntry("", 0)];
+          } else if (entries.length === 0) {
+            attempts.push({ provider: providerName, outcome: "skipped-no-keys" });
+            continue;
+          }
 
-        // Provider-internal key failover: on AUTH failures only, try the next
-        // healthy key in the SAME provider before falling back to another
-        // provider. Non-auth failures (429/5xx/network/timeout) do not rotate
-        // keys — they fall through to the next provider directly.
-        let providerLevelDecision: "next-provider" | "break" | "terminal" | null = null;
-        // Base URL from the request snapshot, so an override edit mid-request
-        // cannot make one attempt dial a different host than another.
-        const searchBaseUrl = entryInfo?.builtIn
-          ? entryInfo.endpoint?.effectiveBaseUrl
-          : cfg.providerBaseUrls[providerName];
-        while (usable.length > 0) {
-          const index = selectIndex(entries);
-          const entry = entries[index];
-          if (entry) reserveKey(entries, index);
-          const started = Date.now();
-          const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];
-          try {
-            const outcome = await runWithTimeout(
-              (s) =>
-                adapter.search(request.query, maxResults, entry?.key ?? "", searchBaseUrl, {
-                  signal: s,
-                  options: providerOptions,
-                  hints: searchHints,
-                }),
-              cfg.providerAttemptTimeoutMs,
-              signal,
-            );
-            if (entry) markUsed(entries, index);
-            healthStore?.recordSuccess(providerName, admission);
-            const latencyMs = Date.now() - started;
+          // Auth-invalid keys stay unhealthy until the credential actually
+          // changes (refreshPool preserves healthy=false for persisted keys).
+          // If the whole pool is unusable, skip this provider — do NOT reset.
+          let usable = entries.filter((e) => isEntryUsable(e));
+          if (usable.length === 0) {
+            attempts.push({ provider: providerName, outcome: "skipped-no-healthy-keys" });
+            continue;
+          }
 
-            // Soft-fail on empty results: if 0 sources returned and there are more providers
-            // left in the fallback chain, remember this empty result and attempt the next provider.
-            const isLastInChain = chain.indexOf(providerName) === chain.length - 1;
-            if (outcome.sources.length === 0 && !isLastInChain) {
-              if (!candidateEmptyOutcome) {
-                candidateEmptyOutcome = { ...outcome, backend: providerName };
+          // Provider-level cooldown (Retry-After). The store uses its own clock
+          // (injectable for tests) — zero HTTP when cooling down.
+          // Retry-After cooldown or open circuit breaker; a half-open breaker admits one probe.
+          const admission = healthStore?.admit(providerName);
+          if (admission?.state === "blocked") {
+            attempts.push({ provider: providerName, outcome: "skipped-cooldown" });
+            continue;
+          }
+
+          // Provider-internal key failover: on AUTH failures only, try the next
+          // healthy key in the SAME provider before falling back to another
+          // provider. Non-auth failures (429/5xx/network/timeout) do not rotate
+          // keys — they fall through to the next provider directly.
+          let providerLevelDecision: "next-provider" | "break" | "terminal" | null = null;
+          // Base URL from the request snapshot, so an override edit mid-request
+          // cannot make one attempt dial a different host than another.
+          const searchBaseUrl = entryInfo?.builtIn
+            ? entryInfo.endpoint?.effectiveBaseUrl
+            : cfg.providerBaseUrls[providerName];
+          while (usable.length > 0) {
+            const index = selectIndex(entries);
+            const entry = entries[index];
+            if (entry) reserveKey(entries, index);
+            const started = Date.now();
+            const providerOptions = cfg.providerOptions?.[providerName as keyof StoredProviderOptions];
+            try {
+              const outcome = await runWithTimeout(
+                (s) =>
+                  adapter.search(request.query, maxResults, entry?.key ?? "", searchBaseUrl, {
+                    signal: s,
+                    options: providerOptions,
+                    hints: searchHints,
+                  }),
+                cfg.providerAttemptTimeoutMs,
+                laneSignal,
+              );
+              if (entry) markUsed(entries, index);
+              healthStore?.recordSuccess(providerName, admission);
+              const latencyMs = Date.now() - started;
+
+              // Soft-fail on empty results: if 0 sources returned and there are more providers
+              // left in the fallback chain, remember this empty result and attempt the next provider.
+              const isLastInChain = lane.indexOf(providerName) === lane.length - 1;
+              if (outcome.sources.length === 0 && !isLastInChain) {
+                if (!candidateEmptyOutcome) {
+                  candidateEmptyOutcome = { ...outcome, backend: providerName };
+                }
+                attempts.push({ provider: providerName, outcome: "empty", latencyMs });
+                stats.record({ provider: providerName, outcome: "empty", latencyMs });
+                providerLevelDecision = "next-provider";
+                break;
               }
-              attempts.push({ provider: providerName, outcome: "empty", latencyMs });
-              stats.record({ provider: providerName, outcome: "empty", latencyMs });
+
+              attempts.push({ provider: providerName, outcome: "success", latencyMs });
+              stats.record({ provider: providerName, outcome: "success", latencyMs });
+              return {
+                ...outcome,
+                truncated: false,
+                attempts,
+                backend: providerName,
+              };
+            } catch (error) {
+              const err = toProviderError(error);
+              const latencyMs = Date.now() - started;
+              const decision = classifyFailure(err);
+              // Caller cancellation terminates the whole chain — never fall back.
+              if (decision === "terminal") {
+                providerLevelDecision = "terminal";
+                lastError = err;
+                attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+                recordFailedAttempt(providerName, err.code, latencyMs);
+                break;
+              }
+              if (decision === "non-retryable") {
+                providerLevelDecision = "break";
+                lastError = err;
+                attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+                recordFailedAttempt(providerName, err.code, latencyMs);
+                break;
+              }
+              // retryable:
+              if (err.code === "auth") {
+                // key indicted → mark unhealthy, try the next key in this pool
+                markUnhealthy(entries, index);
+                attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+                recordFailedAttempt(providerName, err.code, latencyMs);
+                usable = entries.filter((e) => isEntryUsable(e));
+                continue;
+              }
+              // non-auth retryable (429/5xx/network/timeout) → next provider
+              lastError = err;
+              // Only timeout / server / network count toward the circuit breaker.
+              healthStore?.recordFailure(providerName, err.code, admission);
+              // Only rate-limit errors carry a server-requested cooldown.
+              if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
+                healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
+              }
+              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+              recordFailedAttempt(providerName, err.code, latencyMs);
               providerLevelDecision = "next-provider";
               break;
+            } finally {
+              if (entry) releaseKey(entries, index);
             }
-
-            attempts.push({ provider: providerName, outcome: "success", latencyMs });
-            stats.record({ provider: providerName, outcome: "success", latencyMs });
-            return {
-              ...outcome,
-              truncated: false,
-              attempts,
-              backend: providerName,
-            };
-          } catch (error) {
-            const err = toProviderError(error);
-            const latencyMs = Date.now() - started;
-            const decision = classifyFailure(err);
-            // Caller cancellation terminates the whole chain — never fall back.
-            if (decision === "terminal") {
-              providerLevelDecision = "terminal";
-              lastError = err;
-              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              break;
-            }
-            if (decision === "non-retryable") {
-              providerLevelDecision = "break";
-              lastError = err;
-              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              break;
-            }
-            // retryable:
-            if (err.code === "auth") {
-              // key indicted → mark unhealthy, try the next key in this pool
-              markUnhealthy(entries, index);
-              attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              usable = entries.filter((e) => isEntryUsable(e));
-              continue;
-            }
-            // non-auth retryable (429/5xx/network/timeout) → next provider
-            lastError = err;
-            // Only timeout / server / network count toward the circuit breaker.
-            healthStore?.recordFailure(providerName, err.code, admission);
-            // Only rate-limit errors carry a server-requested cooldown.
-            if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
-              healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
-            }
-            attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-            stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-            providerLevelDecision = "next-provider";
-            break;
-          } finally {
-            if (entry) releaseKey(entries, index);
           }
+
+          // A half-open probe that reached no verdict (abort, bad request, all keys auth-failed) must not hold the slot.
+          if (admission?.state === "probe") healthStore?.releaseProbe(providerName, admission);
+          if (providerLevelDecision === "terminal") throw toWebError(lastError);
+          if (providerLevelDecision === "break") break;
+          // else fall through to the next provider in the chain
         }
 
-        // A half-open probe that reached no verdict (abort, bad request, all keys auth-failed) must not hold the slot.
-        if (admission?.state === "probe") healthStore?.releaseProbe(providerName, admission);
-        if (providerLevelDecision === "terminal") throw toWebError(lastError);
-        if (providerLevelDecision === "break") break;
-        // else fall through to the next provider in the chain
+        if (candidateEmptyOutcome) {
+          return {
+            ...candidateEmptyOutcome,
+            truncated: false,
+            attempts,
+          };
+        }
+
+        const reason = lastError
+          ? `${lastError.code}: ${lastError.message}`
+          : "no usable provider";
+        const err = new WebToolsWebError(`web search failed after ${attempts.length} attempt(s): ${reason}`);
+        err.attempts = attempts;
+        throw err;
+      };
+
+      // ---- retrieval orchestration ---------------------------------------
+      // "single" keeps the historical one-at-a-time chain. "hedged"/"fused"
+      // reuse that same executor through the lane function below, so key pools,
+      // health, cooldowns and stats behave identically in every mode.
+      if (strategy === "single" || chain.length < 2) {
+        return runChain(chain, signal);
       }
 
-      if (candidateEmptyOutcome) {
+      const multiSourceTimeoutMs =
+        Number.isFinite(cfg.providerAttemptTimeoutMs) && cfg.providerAttemptTimeoutMs > 0
+          ? Math.min(cfg.providerAttemptTimeoutMs * 2, 60_000)
+          : 15_000;
+
+      /**
+       * One lane. The primary lane may keep falling back down the configured
+       * chain; a hedge lane is deliberately limited to one provider so a slow
+       * primary cannot make both lanes spend quota on the same source.
+       */
+      const executeLane = async (
+        providerName: string,
+        laneSignal: AbortSignal,
+        lane: "primary" | "secondary",
+      ) => {
+        const start = Math.max(0, chain.indexOf(providerName));
+        const isolated = strategy === "fused" || lane === "secondary";
+        return runChain(isolated ? chain.slice(start, start + 1) : chain.slice(start), laneSignal);
+      };
+
+      try {
+        const multi = await runHedgedSearch([chain[0], chain[1]], executeLane, {
+          mode: strategy === "fused" ? "fused" : "hedged",
+          ...(typeof cfg.hedgeDelayMs === "number" ? { hedgeDelayMs: cfg.hedgeDelayMs } : {}),
+          timeoutMs: multiSourceTimeoutMs,
+          signal,
+        });
         return {
-          ...candidateEmptyOutcome,
+          sources: multi.sources,
           truncated: false,
-          attempts,
+          attempts: multi.attempts.map((attempt: LaneAttempt) => ({
+            provider: attempt.provider,
+            outcome: attempt.outcome,
+            latencyMs: attempt.latencyMs,
+          })),
+          backend: multi.backend,
+          fused: multi.fused,
         };
+      } catch (error) {
+        // Fused mode only fans out the first two providers; when both fail, the
+        // rest of the configured chain is still a safety net.
+        if (strategy === "fused" && chain.length > 2) return runChain(chain.slice(2), signal);
+        throw error;
       }
-
-      const reason = lastError
-        ? `${lastError.code}: ${lastError.message}`
-        : "no usable provider";
-      const err = new WebToolsWebError(`web search failed after ${attempts.length} attempt(s): ${reason}`);
-      err.attempts = attempts;
-      throw err;
     },
   };
 }
@@ -532,6 +629,10 @@ export function createFetchProvider(
             body: { kind: "text" as const, content: text },
             truncated: false,
             backend: providerName,
+            // Native extraction endpoints return Markdown without metadata, so
+            // consumers (e.g. the MCP web_fetch result) used to lose the page
+            // title on this path. Recover it from the first Markdown heading.
+            metadata: { title: inferTitleFromMarkdown(text) },
           };
         } catch (error) {
           const err = toProviderError(error);
@@ -616,9 +717,24 @@ export function createFetchProvider(
   };
 }
 
+/**
+ * Best-effort page title from provider-extracted Markdown.
+ *
+ * Native extraction endpoints (Tavily/Exa/Firecrawl/Parallel/Jina) return a
+ * Markdown body with no metadata block. The first ATX heading is the only
+ * reliable signal; when there is none we return undefined rather than guessing
+ * a title from prose (a first paragraph makes a terrible title).
+ */
+export function inferTitleFromMarkdown(text: string): string | undefined {
+  const head = text.slice(0, 2000);
+  const match = /^[ \t]{0,3}#{1,3}[ \t]+(.+?)[ \t]*$/m.exec(head);
+  if (!match) return undefined;
+  const title = match[1].replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  return title.length > 0 ? title.slice(0, 300) : undefined;
+}
+
 /** Convert any thrown value into a classified ProviderError. */
-function toProviderError(error: unknown): ProviderError {
-  if (typeof error === "object" && error !== null && "code" in error && typeof (error as ProviderError).code === "string") {
+function toProviderError(error: unknown): ProviderError {  if (typeof error === "object" && error !== null && "code" in error && typeof (error as ProviderError).code === "string") {
     return error as ProviderError;
   }
   const message = error instanceof Error ? error.message : String(error);
