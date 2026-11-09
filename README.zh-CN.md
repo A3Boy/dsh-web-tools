@@ -31,7 +31,7 @@
 
 当联网能力只依赖一个 Web Provider 时，额度耗尽、限流或服务异常都可能直接中断检索；而简单接入多个搜索 API，往往又只能使用它们共同支持的基础能力，没有真正发挥不同搜索源各自擅长的搜索模式、分类、时效、域名策略和正文提取能力。
 
-dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、SearXNG，以及小红书、Twitter / X 接入 DSH 标准 `web_search` / `web_fetch`。
+dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、Serper (Google 搜索)、SearXNG，以及小红书、Twitter / X 接入 DSH 标准 `web_search` / `web_fetch`。
 
 在统一 DSH 工具接口的同时，dsh-web-tools 通过 SearchHints 归一化查询意图，再针对不同 Provider 分别编译为其支持的原生参数，尽可能使用各家的分类、时效、域名、地区、深度搜索与正文提取能力；同时通过多 API Key、Provider Fallback 和平台专用浏览器会话，提高整个联网链路的可用性。
 
@@ -39,11 +39,13 @@ dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina�
 
 **核心亮点**：
 
-- **9 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
+- **10 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、Serper、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
 - **SearchHints → Provider-specific 参数编译**：将 Query 中的技术 / 论文 / 新闻、时效、域名、地区与语言等搜索意图归一化，再按不同 Provider 的能力映射为各自原生参数；整个过程由确定性代码完成，不增加额外 LLM 调用。
 - **小红书与 Twitter / X 平台来源**：两个平台均通过独立的本地浏览器 Profile 提供已登录站内搜索、详情抓取，以及页面实际返回的评论或回复。
-- **多搜索源调度与自动容灾**：支持多 API Key 分配、鉴权失败切换、429 冷却、Ordered / Round-Robin / Random 路由，以及可配置 Provider Fallback。
-- **DSH 原生工具集成**：直接复用标准 `web_search` / `web_fetch`，模型侧无需学习额外工具，同时提供会话级「联网搜索」模式。
+- **自定义搜索源与一键预设模板**：支持声明式接入私有知识库与 RESTful 搜索 API，提供 Serper、SearXNG、Elasticsearch / OpenSearch 和 Tavily 兼容网关一键预设。
+- **超长文档自动大纲目录 (TOC)**：内置通用抓取器针对超过 8,000 字符的长篇文档自动生成并前置 Markdown 目录大纲，大幅提升大模型长文阅读与定位效率。
+- **多搜索源调度与自动容灾**：支持多 API Key 分配、鉴权失败切换、429 冷却、故障熔断器、短时结果缓存与并发合并、Ordered / Round-Robin / Random 路由，以及可配置 Provider Fallback。
+- **DSH 原生工具集成与快捷键**：直接复用标准 `web_search` / `web_fetch`，模型侧无需学习额外工具，会话级「联网搜索」模式支持 `Alt+S` 快捷切换。
 
 ```text
                          DSH Agent
@@ -72,7 +74,7 @@ dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina�
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools 搜索策略与多源调度" />
 </p>
 
-## 9 大 Web Provider 原生能力深度适配
+## 10 大 Web Provider 原生能力深度适配
 
 统一的是 DSH 的工具接口和搜索语义，不统一的是各家 Provider 的能力。
 
@@ -96,8 +98,9 @@ dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider �
 * **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
 * **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
 * **SearXNG**：自建元搜索支持 `categories` (it/science/news) 与 `time_range`。
-* **Keenable**：Web 搜索，支持 `site` 域名限定与 `published_after` / `published_before` 日期过滤。
-* **原生与通用正文提取 (`web_fetch`)**：配置 Tavily、Exa、Firecrawl、Parallel、You.com、Jina 时自动优先调用其原生云端提取接口；未配置或失败时，以及使用 SearXNG / Brave 时，自动平滑回退至**插件内置通用 HTTP 抓取器**（基于 Defuddle 纯本地 Markdown 解析与 SSRF / DNS 安全防护），无需额外配置或购买第三方 Fetch Key。
+* **Keenable**：Web 搜索，支持 `site` 域名限定与 `published_after` / `published_before` 日期过滤、**原生页面抓取 (`/v1/fetch`)** 与响应头额度追踪 (`x-ratelimit-*`)。
+* **Serper (Google 搜索)**：实时 Google 搜索 API，支持丰富摘要提取、快速回答 (`answerBox`)、国家 (`gl`)、语言 (`hl`)、时效 (`tbs`) 与域名限定 (`site:` / `-site:`)。
+* **原生与通用正文提取 (`web_fetch`)**：配置 Tavily、Exa、Firecrawl、Parallel、You.com、Jina、Keenable 时自动优先调用其原生云端提取接口；未配置或失败时，以及使用 SearXNG / Brave 时，自动平滑回退至**插件内置通用 HTTP 抓取器**（基于 Defuddle 纯本地 Markdown 解析与 SSRF / DNS 安全防护，超长文档自动生成并前置 Markdown 目录大纲），无需额外配置或购买第三方 Fetch Key。
 
 ---
 
@@ -133,10 +136,12 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 
 ## 自定义搜索源与地址覆盖 (Issue #9)
 
-除了内置的 9 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
+除了内置的 10 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
 
+* **一键快速预设模板**：
+  * 支持一键载入常用搜索后端配置：**Serper (Google 搜索)**、**SearXNG (自建元搜索)**、**Elasticsearch / OpenSearch**（带多字段全文检索 bodyTemplate）以及 **Tavily 兼容网关**。
 * **内置源地址覆盖与恢复**：
-  * 全部 9 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、Keenable、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
+  * 全部 10 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、Keenable、Serper、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
   * 精确保留路径前缀（如 `/v1`、`/v2`），并在跨域名变更时进行凭证保护提示，支持随时一键恢复官方默认地址。
 * **三条并列接入路径（单弹窗渐进式配置）**：
   * **兼容已有搜索接口**：遵循标准 Tavily JSON POST 规范，免配任何字段映射，适合快速接入各开源代理镜像或兼容网关。
@@ -169,8 +174,10 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 * **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低 `inFlight` 的 Key，鉴权失败自动切换备用 Key。
 * **确定性 Provider Fallback**：遇到网络异常、超时、5xx 服务端错误、429 限流或配额耗尽时，自动降级至链条中的下一搜索源。
 * **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免在冷却期内产生无效请求。
+* **故障熔断**：同一 Provider 连续 3 次超时、网络或服务端错误后暂停调用 30 秒；恢复时只放行一个探测请求，探测失败则冷却翻倍，最长 5 分钟。鉴权失败和调用方取消不计入熔断。
+* **短时结果缓存**：通用搜索缓存 60 秒、网页抓取缓存 5 分钟，相同并发请求合并；每类最多缓存 100 条，搜索与抓取分别限制为 2 MiB、4 MiB 的序列化内容。失败和空结果不缓存，小红书 / X 平台源不缓存。设置卡片的手动搜索测试绕过结果缓存；插件内修改凭据会清理缓存，配置变化使用独立缓存键。缓存命中不会推进轮询或产生真实 Provider 请求。
 * **搜索路由策略**：`web_search` 支持顺序模式（Ordered）、轮询模式（Round-Robin）和随机模式（Random）；`web_fetch` 始终按可抓取 Provider 的确定性链条执行。
-* **会话级联网控制 (Search Mode)**：输入框集成单入口紧凑切换器（单按钮 + 极简下拉菜单），提供三档确定性检索模式（默认「智能联网」）：
+* **会话级联网控制 (Search Mode)**：输入框集成单入口紧凑切换器（单按钮 + 极简下拉菜单），提供三档确定性检索模式（默认「智能联网」，支持 `Alt+S` 快捷键循环切换）：
   * **智能联网 (Smart)**：弹性语义决策。由 Agent 根据上下文问题意图，自主判断是否调起外部网络检索。
   * **始终联网 (Always)**：强一致性知识校验。要求 Agent 每轮对话至少完成一次有效的外部检索或内容深抓，确保回答具备外部权威可溯源依据。
   * **关闭联网 (Off)**：确定性物理隔离。彻底抛弃依赖弱提示词（System Prompt）容易被模型忽略的弊端，采用**底层运行时三重物理拦截**（从可用工具集中动态剔除 `web_search` / `web_fetch`、单调守卫 Monotonic Guard 强行阻断历史惯性调用、首轮注入运行时断网说明），由宿主环境硬性判定，确保绝不产生外部网络请求。

@@ -32,6 +32,9 @@ export const MAX_FETCH_BYTES = 5 * 1024 * 1024;
 /** Maximum redirect hops before aborting. */
 export const MAX_REDIRECT_HOPS = 5;
 
+/** Threshold character count above which an automatic Table of Contents is prepended. */
+export const TOC_CHAR_THRESHOLD = 8000;
+
 /** Default per-attempt timeout for generic fetch (10 seconds). */
 export const DEFAULT_GENERIC_FETCH_TIMEOUT_MS = 10_000;
 
@@ -126,6 +129,40 @@ function classifyContentType(contentTypeHeader: string | null): "html" | "text" 
   }
 
   return "unsupported";
+}
+
+/**
+ * Scan markdown headings (# H1, ## H2, ### H3) and build a Table of Contents outline.
+ * Returns undefined if content is shorter than threshold or has fewer than 2 headings.
+ */
+export function generateMarkdownToc(markdown: string, threshold = TOC_CHAR_THRESHOLD): string | undefined {
+  if (!markdown || markdown.length < threshold) return undefined;
+
+  const lines = markdown.split("\n");
+  const tocEntries: string[] = [];
+  let inCodeBlock = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    const match = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+    if (match) {
+      const level = match[1].length;
+      const text = match[2].trim().replace(/[#*`_]/g, "");
+      if (text) {
+        const indent = "  ".repeat(level - 1);
+        tocEntries.push(`${indent}- ${text}`);
+      }
+    }
+  }
+
+  if (tocEntries.length < 2) return undefined;
+  return `## Table of Contents\n\n${tocEntries.join("\n")}\n\n---\n\n`;
 }
 
 /**
@@ -377,12 +414,13 @@ export async function fetchGenericWebPage(
     }
 
     if (typeKind === "text") {
+      const toc = generateMarkdownToc(bodyText);
       return {
         url: initialUrl,
         finalUrl: currentUrl,
         statusCode: response.status,
         contentType: rawContentType,
-        content: bodyText,
+        content: toc ? `${toc}${bodyText}` : bodyText,
         truncated,
         backend: "builtin-http",
         extraction: "raw-text",
@@ -398,13 +436,18 @@ export async function fetchGenericWebPage(
       });
 
       const markdownContent = extracted?.content ? extracted.content.trim() : "";
-      const finalContent = markdownContent || bodyText.trim();
+      let finalContent = markdownContent || bodyText.trim();
 
       if (!finalContent) {
         throw new GenericFetchError("WEB_EMPTY_CONTENT", `Could not extract text content from "${currentUrl}"`, {
           statusCode: response.status,
           url: currentUrl,
         });
+      }
+
+      const toc = generateMarkdownToc(finalContent);
+      if (toc) {
+        finalContent = `${toc}${finalContent}`;
       }
 
       return {

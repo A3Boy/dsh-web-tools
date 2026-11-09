@@ -262,7 +262,9 @@ export function createSearchProvider(
 
         // Provider-level cooldown (Retry-After). The store uses its own clock
         // (injectable for tests) — zero HTTP when cooling down.
-        if (healthStore?.isCoolingDown(providerName)) {
+        // Retry-After cooldown or open circuit breaker; a half-open breaker admits one probe.
+        const admission = healthStore?.admit(providerName);
+        if (admission?.state === "blocked") {
           attempts.push({ provider: providerName, outcome: "skipped-cooldown" });
           continue;
         }
@@ -295,6 +297,7 @@ export function createSearchProvider(
               signal,
             );
             if (entry) markUsed(entries, index);
+            healthStore?.recordSuccess(providerName, admission);
             const latencyMs = Date.now() - started;
             attempts.push({ provider: providerName, outcome: "success", latencyMs });
             stats.record({ provider: providerName, outcome: "success", latencyMs });
@@ -334,6 +337,8 @@ export function createSearchProvider(
             }
             // non-auth retryable (429/5xx/network/timeout) → next provider
             lastError = err;
+            // Only timeout / server / network count toward the circuit breaker.
+            healthStore?.recordFailure(providerName, err.code, admission);
             // Only rate-limit errors carry a server-requested cooldown.
             if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
               healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
@@ -347,6 +352,8 @@ export function createSearchProvider(
           }
         }
 
+        // A half-open probe that reached no verdict (abort, bad request, all keys auth-failed) must not hold the slot.
+        if (admission?.state === "probe") healthStore?.releaseProbe(providerName, admission);
         if (providerLevelDecision === "terminal") throw toWebError(lastError);
         if (providerLevelDecision === "break") break;
         // else fall through to the next provider in the chain
@@ -412,8 +419,9 @@ export function createFetchProvider(
         if (entries.length === 0) continue; // no credentials for this backend
         const usable = entries.filter((e) => e.healthy);
         if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
-        // Provider cooldown (Retry-After): skip without HTTP call.
-        if (healthStore?.isCoolingDown(providerName)) continue;
+        // Retry-After cooldown or open circuit breaker: skip without HTTP call; half-open admits one probe.
+        const admission = healthStore?.admit(providerName);
+        if (admission?.state === "blocked") continue;
         const index = selectIndex(entries);
         const entry = entries[index];
         if (entry) reserveKey(entries, index);
@@ -433,6 +441,7 @@ export function createFetchProvider(
             signal,
           );
           if (entry) markUsed(entries, index);
+          healthStore?.recordSuccess(providerName, admission);
           attempts.push({ provider: providerName, outcome: "success" });
           return {
             url: request.url,
@@ -444,6 +453,7 @@ export function createFetchProvider(
         } catch (error) {
           const err = toProviderError(error);
           if (err.code === "auth") markUnhealthy(entries, index);
+          healthStore?.recordFailure(providerName, err.code, admission);
           if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
             healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
           }
@@ -460,6 +470,8 @@ export function createFetchProvider(
           // retryable → try next fetch-capable provider in the chain
         } finally {
           if (entry) releaseKey(entries, index);
+          // A half-open probe that reached no verdict (abort, auth, bad request) must not hold the slot.
+          if (admission?.state === "probe") healthStore?.releaseProbe(providerName, admission);
         }
       }
 

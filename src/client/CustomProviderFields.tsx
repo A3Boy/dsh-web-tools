@@ -17,6 +17,7 @@ import type { TFunc } from "./WebToolsSection.tsx";
 import { SegmentedControl } from "./ui/SegmentedControl.tsx";
 import {
   PROTOCOL_DEFAULTS,
+  CUSTOM_PRESETS,
   accessModeOf,
   type AuthMode,
   type CustomMethod,
@@ -24,6 +25,7 @@ import {
   type CustomProtocol,
   type CustomProviderDraft,
   type CustomAccessMode,
+  type CustomPreset,
 } from "../shared/custom-provider-types.ts";
 import { IconChevronRightOutline14, IconTrashOutline16 } from "./icons.ts";
 
@@ -325,8 +327,43 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
     currentMode !== "template" &&
     (draft.endpoint.baseUrl.includes(":8080") || draft.endpoint.baseUrl.toLowerCase().includes("searx"));
 
+  const handleApplyPreset = (preset: CustomPreset) => {
+    onChange({
+      ...preset.draft,
+      enabled: draft.enabled ?? true,
+    });
+    setAdvancedOpen(preset.draft.protocol === "generic-json");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 0. Preset Templates Quick-Bar */}
+      <div>
+        <label style={labelStyle}>{t("presetTemplatesLabel")}</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {CUSTOM_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              style={{
+                ...secondaryBtnStyle,
+                padding: "3px 9px",
+                fontSize: 11,
+                borderRadius: 12,
+                cursor: "pointer",
+                border: `1px solid ${surface.border}`,
+                background: surface.layer2,
+                color: text.primary,
+              }}
+              title={p.description}
+              onClick={() => handleApplyPreset(p)}
+            >
+              + {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 1. Access Mode Selection (Three Parallel Paths) */}
       <div>
         <label style={labelStyle}>{t("accessModeLabel")}</label>

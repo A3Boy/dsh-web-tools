@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fetchGenericWebPage, GenericFetchError, MAX_FETCH_BYTES } from "../src/host/generic-fetch.ts";
+import {
+  fetchGenericWebPage,
+  GenericFetchError,
+  MAX_FETCH_BYTES,
+  generateMarkdownToc,
+} from "../src/host/generic-fetch.ts";
 
 describe("generic-fetch: Defuddle & linkedom extraction", () => {
   it("extracts clean markdown and metadata from standard HTML with strictly local parsing", async () => {
@@ -312,5 +317,33 @@ describe("generic-fetch: Defuddle & linkedom extraction", () => {
     });
     assert.equal(res.truncated, true);
     assert.equal(res.content.length, MAX_FETCH_BYTES);
+  });
+
+  it("generateMarkdownToc creates structured outline for long documents", () => {
+    const shortDoc = "# Heading 1\nSome text\n## Heading 2\nMore text";
+    assert.equal(generateMarkdownToc(shortDoc, 8000), undefined);
+
+    const longDoc = [
+      "# Introduction",
+      "Lorem ipsum ".repeat(500),
+      "```markdown",
+      "# Ignored Heading inside Code",
+      "```",
+      "## Architecture",
+      "Content about architecture ".repeat(300),
+      "### Subsystem A",
+      "Details ".repeat(200),
+      "## Conclusion",
+      "Final remarks ".repeat(100),
+    ].join("\n");
+
+    const toc = generateMarkdownToc(longDoc, 1000);
+    assert.ok(toc);
+    assert.ok(toc.includes("## Table of Contents"));
+    assert.ok(toc.includes("- Introduction"));
+    assert.ok(toc.includes("  - Architecture"));
+    assert.ok(toc.includes("    - Subsystem A"));
+    assert.ok(toc.includes("  - Conclusion"));
+    assert.ok(!toc.includes("Ignored Heading"));
   });
 });

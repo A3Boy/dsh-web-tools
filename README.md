@@ -31,7 +31,7 @@ Empower DeepSeek Harness with unified search and deep content extraction across 
 
 When web access depends on a single provider, exhausted quota, rate limits, or timeouts can interrupt retrieval. Wrapping multiple APIs with a naive proxy often flattens them to a lowest common denominator, failing to leverage each provider's specialized search modes, categories, freshness, domain rules, and extraction capabilities.
 
-dsh-web-tools connects Exa, Tavily, Firecrawl, Parallel, Brave, You.com, Jina, Keenable, SearXNG, Xiaohongshu, and Twitter / X to DSH’s standard `web_search` / `web_fetch` interface.
+dsh-web-tools connects Exa, Tavily, Firecrawl, Parallel, Brave, You.com, Jina, Keenable, Serper (Google Search), SearXNG, Xiaohongshu, and Twitter / X to DSH’s standard `web_search` / `web_fetch` interface.
 
 While keeping the tool interface unified, dsh-web-tools normalizes search intents through SearchHints and compiles queries into native provider-specific parameters. This leverages each engine's native categories, freshness filters, domain policies, regional targeting, and content extraction, while maximizing uptime through multi-key allocation, automated failover, and dedicated browser profiles.
 
@@ -39,11 +39,13 @@ While keeping the tool interface unified, dsh-web-tools normalizes search intent
 
 **Key Highlights**:
 
-- **Native-Capability Adaptation Across 9 Web Providers**: Keeps the standard `web_search` / `web_fetch` contracts while compiling unified search intent into provider-specific native parameters instead of reducing every backend to the same lowest-common-denominator feature set.
+- **Native-Capability Adaptation Across 10 Web Providers**: Keeps the standard `web_search` / `web_fetch` contracts while compiling unified search intent into provider-specific native parameters instead of reducing every backend to the same lowest-common-denominator feature set.
 - **SearchHints → Provider-Specific Parameter Compilation**: Normalizes technical, research, news, date, region, and domain constraints from queries, compiling them into provider-native parameters through deterministic code without additional LLM latency.
 - **Xiaohongshu & Twitter / X Platform Sources**: Both platforms support signed-in native search, detail extraction, and returned comments or replies through dedicated local browser profiles.
-- **Multi-Source Scheduling & Resilience**: Features multi-API-key pooling, 401 failover, 429 cooldown windows, configurable Ordered / Round-Robin / Random routing, and failover chains.
-- **Native DSH Tool Integration**: Plugs directly into standard `web_search` / `web_fetch` without requiring new tool declarations, and includes a session-level "Search Mode" toggle.
+- **Custom Search Providers & One-Click Presets**: Declarative mapping for in-house clusters, SearXNG, and REST search APIs with one-click presets for Serper, SearXNG, Elasticsearch/OpenSearch, and Tavily-compatible gateways.
+- **Long-Document Structured Outline (TOC)**: Built-in generic fetcher automatically generates and prepends a Markdown Table of Contents outline for documents exceeding 8,000 characters.
+- **Multi-Source Scheduling & Resilience**: Features multi-API-key pooling, 401 failover, 429 cooldown windows, circuit breakers, short-lived result cache with request coalescing, configurable Ordered / Round-Robin / Random routing, and failover chains.
+- **Native DSH Tool Integration & Keyboard Shortcut**: Plugs directly into standard `web_search` / `web_fetch` without requiring new tool declarations, and includes a composer "Search Mode" toggle with `Alt+S` shortcut.
 
 ```text
                          DSH Agent
@@ -96,8 +98,9 @@ All adaptations run through deterministic code without invoking an extra LLM cal
 * **You.com**: Native **`boost_domains`** soft-weighting, freshness presets, and geo/language targeting.
 * **Jina**: Query noise reduction and ReaderLM-v2 high-precision markdown extraction.
 * **SearXNG**: Self-hosted metasearch with `categories` (it/science/news) and `time_range`.
-* **Keenable**: Web search with `site` domain scoping and `published_after` / `published_before` date filters.
-* **Native & Generic Page Extraction (`web_fetch`)**: Automatically routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader) when available; seamlessly falls back to the **built-in generic HTTP fetcher** (powered by local Defuddle Markdown parsing with SSRF/DNS protection) for SearXNG-only / Brave-only setups or when native extractors fail.
+* **Keenable**: Web search with `site` domain scoping and `published_after` / `published_before` date filters, native page fetching (`/v1/fetch`), and response-header rate-limit quota tracking (`x-ratelimit-*`).
+* **Serper (Google Search)**: Real-time Google Search API with rich snippet extraction, quick answers (`answerBox`), country targeting (`gl`), language targeting (`hl`), freshness (`tbs`), and domain filters (`site:` / `-site:`).
+* **Native & Generic Page Extraction (`web_fetch`)**: Automatically routes to provider-native scraping backends (Exa `/contents`, Tavily `/extract`, Firecrawl `/scrape`, Parallel `/v1/extract`, You.com `/v1/contents`, Jina Reader, Keenable `/v1/fetch`) when available; seamlessly falls back to the **built-in generic HTTP fetcher** (powered by local Defuddle Markdown parsing with SSRF/DNS protection and automatic Table of Contents outline generation for long documents) for SearXNG-only / Brave-only setups or when native extractors fail.
 
 ---
 
@@ -133,10 +136,12 @@ Agents use `小红书:` or `X:` as a platform-routing prefix. The prefix selects
 
 ## Custom Search Providers & Address Overrides (Issue #9)
 
-In addition to the 9 built-in search adapters and social platforms, dsh-web-tools natively supports **Custom Search Providers** and **Built-in Service Address Overrides**:
+In addition to the 10 built-in search adapters and social platforms, dsh-web-tools natively supports **Custom Search Providers** and **Built-in Service Address Overrides**:
 
+* **One-Click Quick Presets**:
+  * Instantly load pre-tested configurations for popular search backends: **Serper (Google Search)**, **SearXNG (Meta Search)**, **Elasticsearch / OpenSearch** (with full-text query body template), and **Tavily Compatible Gateways**.
 * **Built-in Base URL Overrides**:
-  * All 9 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, Keenable, SearXNG) support custom service addresses (e.g. self-hosted API gateways, reverse proxies).
+  * All 10 built-in search providers (Exa, Tavily, Firecrawl, Brave, You, Parallel, Jina, Keenable, Serper, SearXNG) support custom service addresses (e.g. self-hosted API gateways, reverse proxies).
   * Preserves path prefixes (such as `/v1`, `/v2`), prompts for confirmation on foreign destinations to protect API keys, and supports instant restoration to official defaults.
 * **Three Parallel Access Paths (Progressive Modal UX)**:
   * **Compatible Provider API**: Follows the standard Tavily POST JSON specification with zero manual mapping. Ideal for self-hosted proxies and compatible gateways.
@@ -169,8 +174,10 @@ In addition to the 9 built-in search adapters and social platforms, dsh-web-tool
 * **Multi-API-Key Pooling**: Assigns keys per provider, balances concurrent requests by lowest in-flight count, and fails over across keys on authentication errors.
 * **Deterministic Provider Fallback**: Automatically cascades through the fallback chain on network failures, timeouts, 5xx server errors, 429 rate limits, or exhausted quotas.
 * **429 Retry-After Cooldown**: Enforces zero-request cooldown windows when servers return `Retry-After` headers, skipping rate-limited providers immediately.
+* **Circuit Breaker**: Three consecutive timeout, network, or server failures pause a provider for 30 seconds. Recovery admits one probe; failed probes double the cooldown up to five minutes. Authentication failures and caller cancellation do not count.
+* **Short-Lived Result Cache**: General search results live for 60 seconds and fetched pages for five minutes, with identical concurrent requests sharing upstream work. Each cache holds at most 100 entries, bounded to 2 MiB for search and 4 MiB for fetch in serialized content. Failures, empty results, and Xiaohongshu / X platform sources are not cached. Manual search tests bypass the result cache; credential edits in the plugin clear it, and configuration changes use distinct cache keys. Cache hits do not advance round-robin routing or call providers.
 * **Configurable Routing Policies**: `web_search` supports Ordered, Round-Robin, and Random starting-provider selection. `web_fetch` always follows the deterministic fetch-capable chain.
-* **Session-Level Search Mode**: A refined, compact picker in the composer offering three deterministic retrieval behaviors (defaults to Smart):
+* **Session-Level Search Mode**: A refined, compact picker in the composer offering three deterministic retrieval behaviors (defaults to Smart, with `Alt+S` keyboard shortcut to cycle through modes):
   * **Smart (智能联网)**: Elastic semantic dispatch. The agent autonomously determines whether real-time web retrieval is needed based on conversational intent.
   * **Always (始终联网)**: Strong-consistency knowledge verification. Mandates at least one completed `web_search` or `web_fetch` per turn to ensure claims are grounded in external sources.
   * **Off (关闭联网)**: Deterministic physical isolation. Replaces fragile prompt-only requests with a **three-tier runtime enforcement barrier** (dynamically withholds tools from the agent's schema, blocks model inertia via a monotonic guard before execution, and injects a single-turn explanation), ensuring zero outbound network leakage regardless of historical context.

@@ -6,27 +6,109 @@
  *   results live at `results[]` with
  *   `{ title, url, description, snippet, published_at }`. The snippet prefers
  *   `description`, falls back to `snippet`, and is capped either way.
+ * Fetch: GET https://api.keenable.ai/v1/fetch?url=... with X-API-Key.
  * API reference: https://docs.keenable.ai/api-reference/search
- * Search-only: web_fetch falls back to the built-in generic fetcher.
  * @module
  */
 import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type Source } from "./types.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { SearchHints } from "../search-hints.ts";
+import type { QuotaSnapshot } from "../quota.ts";
 
 const KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search";
+const KEENABLE_FETCH_URL = "https://api.keenable.ai/v1/fetch";
 const KEENABLE_MAX_RESULTS = 20;
 const KEENABLE_SNIPPET_MAX_CHARS = 600;
 
 export const KEENABLE_META = {
   name: "keenable",
   label: "Keenable",
-  description: "Web search API (description-first snippets)",
+  description: "Web search & clean markdown extraction API",
   credSuffix: "KEENABLE",
-  fetchCapable: false,
+  fetchCapable: true,
   needsBaseUrl: false,
 } as const;
+
+/** Parse rate limit quota headers from Keenable response. */
+export function keenableQuotaFromHeaders(headers?: Headers | Record<string, string> | null): QuotaSnapshot {
+  if (!headers) {
+    return {
+      supported: false,
+      authoritative: false,
+      unit: "requests",
+      source: "dashboard",
+      fetchedAt: Date.now(),
+      note: "Balance is available in the Keenable dashboard",
+    };
+  }
+
+  const get = (key: string): string | null => {
+    if (typeof (headers as Headers).get === "function") {
+      return (headers as Headers).get(key);
+    }
+    const val = (headers as Record<string, string>)[key] ?? (headers as Record<string, string>)[key.toLowerCase()];
+    return val !== undefined && val !== null ? String(val) : null;
+  };
+
+  const limitStr = get("x-ratelimit-limit");
+  const remainingStr = get("x-ratelimit-remaining");
+  const resetStr = get("x-ratelimit-reset");
+
+  const limit = limitStr !== null ? Number(limitStr) : undefined;
+  const remaining = remainingStr !== null ? Number(remainingStr) : undefined;
+
+  let resetAt: string | undefined;
+  if (resetStr) {
+    const n = Number(resetStr);
+    if (Number.isFinite(n) && n > 0) {
+      const ms = n < 1e11 ? n * 1000 : n;
+      try {
+        resetAt = new Date(ms).toISOString();
+      } catch {
+        // ignore invalid date
+      }
+    }
+  }
+
+  const supported = remaining !== undefined || limit !== undefined;
+  return {
+    supported,
+    authoritative: true,
+    limit: Number.isFinite(limit) ? limit : undefined,
+    remaining: Number.isFinite(remaining) ? remaining : undefined,
+    resetAt,
+    unit: "requests",
+    source: "response_header",
+    fetchedAt: Date.now(),
+    note: supported ? "From Keenable rate-limit response headers" : "Balance is available in the Keenable dashboard",
+  };
+}
+
+const keenableQuotaCache = new Map<string, QuotaSnapshot>();
+
+export function recordKeenableQuota(apiKey: string, headers?: Headers | Record<string, string> | null): QuotaSnapshot | undefined {
+  if (!apiKey || !headers) return undefined;
+  const snapshot = keenableQuotaFromHeaders(headers);
+  if (snapshot.supported) {
+    keenableQuotaCache.set(apiKey, snapshot);
+    return snapshot;
+  }
+  return undefined;
+}
+
+export async function keenableQuota(apiKey: string, _baseUrl?: string, _signal?: AbortSignal): Promise<QuotaSnapshot> {
+  const cached = keenableQuotaCache.get(apiKey);
+  if (cached) return cached;
+  return {
+    supported: false,
+    authoritative: false,
+    unit: "requests",
+    source: "dashboard",
+    fetchedAt: Date.now(),
+    note: "Run a search or fetch first — Keenable reports quota in response headers",
+  };
+}
 
 /** Normalize a Keenable `/v1/search` JSON body into sources. Pure, for tests. */
 export function parseKeenableSearchJson(body: unknown, limit: number): Source[] {
@@ -95,6 +177,7 @@ export const KeenableProvider: ProviderAdapter = {
       signal,
     }, { provider: "keenable" });
     throwIfHttp("Keenable", res);
+    recordKeenableQuota(token, res.headers);
     let body: unknown;
     try {
       body = await res.json();
@@ -104,7 +187,54 @@ export const KeenableProvider: ProviderAdapter = {
     return { sources: parseKeenableSearchJson(body, limit) };
   },
 
-  async fetch(_url, _apiKey, _baseUrl, _signal) {
-    throw providerError("config", "Keenable does not provide native fetch");
+  async fetch(url, apiKey, _baseUrl, contextOrSignal) {
+    const { signal } = resolveContext(contextOrSignal);
+    const token = (apiKey ?? "").trim();
+    if (!token) throw providerError("config", "Keenable API key is not configured");
+    const fetchUrl = `${KEENABLE_FETCH_URL}?url=${encodeURIComponent(url)}`;
+    const res = await fetchWithProxy(fetchUrl, {
+      method: "GET",
+      headers: {
+        accept: "application/json, text/markdown;q=0.9, text/plain;q=0.8",
+        "x-api-key": token,
+        "x-keenable-title": "dsh-web-tools",
+      },
+      signal,
+    }, { provider: "keenable" });
+    throwIfHttp("Keenable", res);
+    recordKeenableQuota(token, res.headers);
+
+    const contentType = res.headers.get("content-type") || "";
+    let content = "";
+    let title: string | undefined;
+    let author: string | undefined;
+    let publishedAt: string | undefined;
+
+    if (contentType.includes("application/json")) {
+      try {
+        const body = (await res.json()) as Record<string, unknown>;
+        content = String(body.markdown ?? body.content ?? body.text ?? "").trim();
+        if (typeof body.title === "string" && body.title) title = body.title;
+        if (typeof body.author === "string" && body.author) author = body.author;
+        if (typeof body.published_at === "string" && body.published_at) publishedAt = body.published_at;
+      } catch {
+        // Fall back to reading as text below
+      }
+    }
+
+    if (!content) {
+      content = (await res.text()).trim();
+    }
+
+    if (!content) {
+      throw providerError("invalid-response", `Keenable returned empty content for ${url}`);
+    }
+
+    return {
+      text: content,
+      ...(title ? { title } : {}),
+      ...(author ? { author } : {}),
+      ...(publishedAt ? { publishedAt } : {}),
+    };
   },
 };

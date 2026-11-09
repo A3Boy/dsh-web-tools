@@ -128,7 +128,8 @@ export const zhDict: Record<string, string> = {
   "capability.firecrawl": "网页搜索 · 正文抓取",
   "capability.parallel": "深度搜索 · 内容提取",
   "capability.jina": "网页搜索 · 动态页面读取",
-  "capability.keenable": "网页搜索 · 结果摘要",
+  "capability.keenable": "网页搜索 · 正文抓取 · 结果摘要",
+  "capability.serper": "Google 搜索 · 丰富摘要 · 知识图谱",
   "capability.searxng": "自托管搜索 · 隐私可控",
   connectionSettings: "连接设置",
   connectionDefault: "默认",
@@ -348,6 +349,7 @@ export const zhDict: Record<string, string> = {
   dashFirecrawl: "Firecrawl 控制台",
   dashJina: "Jina AI 控制台",
   dashKeenable: "Keenable 控制台",
+  dashSerper: "Serper 控制台",
   dashYou: "You.com 控制台",
   // --- Credential / test connection copy ---
   confirmDelete: "确认删除?",
@@ -357,6 +359,8 @@ export const zhDict: Record<string, string> = {
   // --- Issue #9: Custom Search Providers ---
   addCustomProvider: "添加自定义搜索源",
   editCustomProvider: "编辑自定义搜索源",
+  presetTemplatesLabel: "快速模板预设",
+  presetApplyTooltip: "载入 {name} 模板配置",
   accessModeLabel: "接入方式",
   accessModeCompatible: "兼容已有搜索接口",
   accessModeTemplate: "使用协议模板",
@@ -565,7 +569,8 @@ export const enDict: Record<string, string> = {
   "capability.firecrawl": "Web Search · Page Read",
   "capability.parallel": "Web Search · Extract",
   "capability.jina": "Web Search · Page Read",
-  "capability.keenable": "Web Search · Summaries",
+  "capability.keenable": "Web Search · Page Read · Summaries",
+  "capability.serper": "Google Search · Rich Snippets · Knowledge Graph",
   "capability.searxng": "Self-hosted Web Search",
   connectionSettings: "Connection settings",
   connectionDefault: "Default",
@@ -787,6 +792,7 @@ export const enDict: Record<string, string> = {
   dashFirecrawl: "Firecrawl dashboard",
   dashJina: "Jina AI dashboard",
   dashKeenable: "Keenable dashboard",
+  dashSerper: "Serper dashboard",
   dashYou: "You.com dashboard",
   // --- Credential / test connection copy ---
   confirmDelete: "Delete this key?",
@@ -796,6 +802,8 @@ export const enDict: Record<string, string> = {
   // --- Issue #9: Custom Search Providers ---
   addCustomProvider: "Add Custom Provider",
   editCustomProvider: "Edit Custom Provider",
+  presetTemplatesLabel: "Quick Presets",
+  presetApplyTooltip: "Load {name} template configuration",
   accessModeLabel: "Access Mode",
   accessModeCompatible: "Compatible Provider API",
   accessModeTemplate: "Protocol Template",

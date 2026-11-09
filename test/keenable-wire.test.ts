@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { KeenableProvider, buildKeenableSearchBody, parseKeenableSearchJson } from "../src/host/providers/keenable.ts";
+import {
+  KeenableProvider,
+  buildKeenableSearchBody,
+  parseKeenableSearchJson,
+  keenableQuotaFromHeaders,
+} from "../src/host/providers/keenable.ts";
 
 test("KeenableProvider search posts query + max_results with x-api-key", async () => {
   let capturedUrl = "";
@@ -41,10 +46,70 @@ test("KeenableProvider search posts query + max_results with x-api-key", async (
   }
 });
 
-test("KeenableProvider requires an API key and is search-only", async () => {
+test("KeenableProvider requires an API key and supports fetch", async () => {
   await assert.rejects(() => KeenableProvider.search("q", 5, "", undefined), /API key is not configured/);
-  await assert.rejects(() => KeenableProvider.fetch("https://example.com", "k", undefined), /native fetch/);
-  assert.equal(KeenableProvider.fetchCapable, false);
+  await assert.rejects(() => KeenableProvider.fetch("https://example.com", "", undefined), /API key is not configured/);
+  assert.equal(KeenableProvider.fetchCapable, true);
+});
+
+test("KeenableProvider fetch calls /v1/fetch with x-api-key and parses json", async () => {
+  let capturedUrl = "";
+  let capturedHeaders: Record<string, string> = {};
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    capturedUrl = url;
+    capturedHeaders = (init?.headers as Record<string, string>) || {};
+    return {
+      status: 200,
+      ok: true,
+      headers: {
+        get: (h: string) => {
+          if (h === "content-type") return "application/json";
+          if (h === "x-ratelimit-limit") return "1000";
+          if (h === "x-ratelimit-remaining") return "950";
+          return null;
+        },
+      },
+      json: async () => ({
+        markdown: "# Article Title\n\nContent here",
+        title: "Article Title",
+        author: "Author Name",
+        published_at: "2026-10-15T12:00:00Z",
+      }),
+      text: async () => "# Article Title\n\nContent here",
+    } as unknown as Response;
+  }) as typeof globalThis.fetch;
+
+  try {
+    const outcome = await KeenableProvider.fetch("https://example.com/post", "kn-key", undefined);
+    assert.equal(capturedUrl, "https://api.keenable.ai/v1/fetch?url=https%3A%2F%2Fexample.com%2Fpost");
+    assert.equal(capturedHeaders["x-api-key"], "kn-key");
+    assert.equal(capturedHeaders["x-keenable-title"], "dsh-web-tools");
+    assert.equal(outcome.text, "# Article Title\n\nContent here");
+    assert.equal(outcome.title, "Article Title");
+    assert.equal(outcome.author, "Author Name");
+    assert.equal(outcome.publishedAt, "2026-10-15T12:00:00Z");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("keenableQuotaFromHeaders parses x-ratelimit headers", () => {
+  const headers = {
+    "x-ratelimit-limit": "500",
+    "x-ratelimit-remaining": "420",
+    "x-ratelimit-reset": "1762690000",
+  };
+  const q = keenableQuotaFromHeaders(headers);
+  assert.equal(q.supported, true);
+  assert.equal(q.limit, 500);
+  assert.equal(q.remaining, 420);
+  assert.ok(typeof q.resetAt === "string" && q.resetAt.length > 0);
+  assert.equal(q.unit, "requests");
+
+  const emptyQ = keenableQuotaFromHeaders(undefined);
+  assert.equal(emptyQ.supported, false);
 });
 
 test("parseKeenableSearchJson tolerates malformed bodies", () => {

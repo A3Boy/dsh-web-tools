@@ -87,6 +87,12 @@ export const PROVIDER_ENDPOINTS: Record<string, { search: ProviderEndpoint; extr
   },
   keenable: {
     search: { defaultBaseUrl: "https://api.keenable.ai", path: "/v1/search", url: "https://api.keenable.ai/v1/search", host: "api.keenable.ai", overridable: true },
+    extra: {
+      fetch: { defaultBaseUrl: "https://api.keenable.ai", path: "/v1/fetch", url: "https://api.keenable.ai/v1/fetch", host: "api.keenable.ai", overridable: false },
+    },
+  },
+  serper: {
+    search: { defaultBaseUrl: "https://google.serper.dev", path: "/search", url: "https://google.serper.dev/search", host: "google.serper.dev", overridable: true },
   },
   searxng: {
     search: { defaultBaseUrl: "http://127.0.0.1:8080", path: "/search", url: "http://127.0.0.1:8080/search", host: "127.0.0.1", overridable: true },

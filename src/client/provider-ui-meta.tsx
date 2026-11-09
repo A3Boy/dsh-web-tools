@@ -15,6 +15,7 @@ export const PROVIDER_DASHBOARD: Record<string, { labelKey: string; url: string 
   jina: { labelKey: "dashJina", url: "https://jina.ai" },
   you: { labelKey: "dashYou", url: "https://you.com/platform" },
   keenable: { labelKey: "dashKeenable", url: "https://keenable.ai" },
+  serper: { labelKey: "dashSerper", url: "https://serper.dev/dashboard" },
 };
 
 /** Lookup a provider's dashboard entry; undefined for providers without one. */
@@ -32,6 +33,7 @@ export const PROVIDER_CAPABILITY_KEY: Record<string, string> = {
   parallel: "capability.parallel",
   jina: "capability.jina",
   keenable: "capability.keenable",
+  serper: "capability.serper",
   searxng: "capability.searxng",
 };
 

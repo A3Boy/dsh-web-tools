@@ -29,6 +29,8 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDis
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
+import { createCachedSearchProvider, createCachedFetchProvider, runWithoutCache } from "./cached-web.ts";
+import { fingerprint as configFingerprint } from "./result-cache.ts";
 import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
@@ -297,11 +299,19 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   const sourceRegistry = new SpecializedSourceRegistry();
 
-  const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
+  const rawSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore, resolveSnapshot);
 
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
+  const rawFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
+
+  // Short-lived result cache + in-flight coalescing for the GENERAL chain only
+  // (platform sources stay uncached). Any provider / routing / endpoint /
+  // custom-source change alters the fingerprint, which invalidates old entries.
+  const cacheFingerprint = () =>
+    configFingerprint({ runtime: resolveRuntimeConfig(), config: readConfig() });
+  const generalSearchProvider = createCachedSearchProvider(rawSearchProvider, { fingerprint: cacheFingerprint });
+  const generalFetchProvider = createCachedFetchProvider(rawFetchProvider, { fingerprint: cacheFingerprint });
 
   sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
@@ -425,9 +435,12 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   async function testFullSearch(query: string) {
     const started = Date.now();
     try {
-      const result = await routedSearchProvider.search(
-        { query, maxResults: 5 },
-        undefined, // no caller signal for a manual card test
+      // Manual card test must measure the real chain, never a cached answer.
+      const result = await runWithoutCache(() =>
+        routedSearchProvider.search(
+          { query, maxResults: 5 },
+          undefined, // no caller signal for a manual card test
+        ),
       );
       return {
         ok: true,
@@ -612,6 +625,8 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   function forgetSource(sourceId: string) {
     healthStore.deleteCooldown(sourceId);
     poolStore.forget(sourceId);
+    generalSearchProvider.clear();
+    generalFetchProvider.clear();
   }
 
   /** Remove every credential ref a deleted source owned. */
@@ -820,7 +835,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           syncGlobalOutboundAuthorizations();
         },
         readCredential: (ref) => readCredential(ctx, ref),
-        writeCredential: (ref, value) => writeCredential(ctx, ref, value),
+        writeCredential: async (ref, value) => {
+          await writeCredential(ctx, ref, value);
+          generalSearchProvider.clear();
+          generalFetchProvider.clear();
+        },
         testProviderSearch,
         testFullSearch,
         describeQuotas,
