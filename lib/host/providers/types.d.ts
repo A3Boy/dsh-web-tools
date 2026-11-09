@@ -19,7 +19,7 @@ export interface SearchOutcome {
     sources: Source[];
 }
 /** Machine classification of a provider failure (closed union). */
-export type ProviderErrorCode = "auth" | "quota" | "bad-request" | "rate-limit" | "timeout" | "server" | "network" | "config" | "aborted" | "invalid-response";
+export type ProviderErrorCode = "auth" | "quota" | "bad-request" | "rate-limit" | "timeout" | "server" | "network" | "config" | "aborted" | "invalid-response" | "low-quality" | "empty";
 /** Classified failure raised by adapters (never thrown raw). */
 export interface ProviderError extends Error {
     /** Machine code from {@link ProviderErrorCode}. */

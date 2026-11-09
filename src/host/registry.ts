@@ -10,7 +10,16 @@
  */
 import { classifyFailure, fallbackChain } from "./fallback.ts";
 import { resolveSearchChain, type SearchRoutingPolicy, type SearchRoutingState } from "./routing-policy.ts";
-import { buildPool, markUnhealthy, markUsed, reserveKey, releaseKey, selectIndex, PoolEntry } from "./pool.ts";
+import {
+  buildPool,
+  markUnhealthy,
+  markUsed,
+  reserveKey,
+  releaseKey,
+  selectIndex,
+  PoolEntry,
+  isEntryUsable,
+} from "./pool.ts";
 import { PROVIDERS } from "./providers/index.ts";
 import type { ProviderError, ProviderErrorCode } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -73,6 +82,28 @@ export interface WebToolsRuntimeConfig {
   providerOptions?: StoredProviderOptions;
 }
 
+/** Known bot-wall / JS-challenge signatures indicating failed content extraction. */
+const BOT_WALL_PATTERNS = [
+  /please enable javascript/i,
+  /attention required! \| cloudflare/i,
+  /access denied/i,
+  /checking your browser before accessing/i,
+  /security check to access/i,
+  /enable cookies and reload the page/i,
+  /cloudflare ray id/i,
+];
+
+/**
+ * Gate content quality from native extractors. If content is an empty stub or
+ * bot challenge, treat as low-quality failure to allow fallback.
+ */
+function isLowQualityContent(text: string): boolean {
+  const trimmed = (text ?? "").trim();
+  if (trimmed.length === 0) return true;
+  if (trimmed.length < 1000 && BOT_WALL_PATTERNS.some((re) => re.test(trimmed))) return true;
+  return false;
+}
+
 /** Live per-provider key pools, keyed by provider name. */
 export type Pools = Record<string, PoolEntry[]>;
 
@@ -108,6 +139,7 @@ export function createPoolStore(resolveKeys: (providerName: string) => Promise<s
         if (old) {
           e.uses = old.uses;
           e.healthy = old.healthy;
+          e.unhealthyAt = old.unhealthyAt;
         }
       }
     }
@@ -226,6 +258,11 @@ export function createSearchProvider(
 
       const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
       let lastError: ProviderError | undefined;
+      let candidateEmptyOutcome: {
+        content?: string;
+        sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+        backend: string;
+      } | null = null;
       const searchHints = extractSearchHints(request.query);
 
       for (const providerName of chain) {
@@ -254,7 +291,7 @@ export function createSearchProvider(
         // Auth-invalid keys stay unhealthy until the credential actually
         // changes (refreshPool preserves healthy=false for persisted keys).
         // If the whole pool is unusable, skip this provider — do NOT reset.
-        let usable = entries.filter((e) => e.healthy);
+        let usable = entries.filter((e) => isEntryUsable(e));
         if (usable.length === 0) {
           attempts.push({ provider: providerName, outcome: "skipped-no-healthy-keys" });
           continue;
@@ -299,6 +336,20 @@ export function createSearchProvider(
             if (entry) markUsed(entries, index);
             healthStore?.recordSuccess(providerName, admission);
             const latencyMs = Date.now() - started;
+
+            // Soft-fail on empty results: if 0 sources returned and there are more providers
+            // left in the fallback chain, remember this empty result and attempt the next provider.
+            const isLastInChain = chain.indexOf(providerName) === chain.length - 1;
+            if (outcome.sources.length === 0 && !isLastInChain) {
+              if (!candidateEmptyOutcome) {
+                candidateEmptyOutcome = { ...outcome, backend: providerName };
+              }
+              attempts.push({ provider: providerName, outcome: "empty", latencyMs });
+              stats.record({ provider: providerName, outcome: "empty", latencyMs });
+              providerLevelDecision = "next-provider";
+              break;
+            }
+
             attempts.push({ provider: providerName, outcome: "success", latencyMs });
             stats.record({ provider: providerName, outcome: "success", latencyMs });
             return {
@@ -332,7 +383,7 @@ export function createSearchProvider(
               markUnhealthy(entries, index);
               attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
               stats.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
-              usable = entries.filter((e) => e.healthy);
+              usable = entries.filter((e) => isEntryUsable(e));
               continue;
             }
             // non-auth retryable (429/5xx/network/timeout) → next provider
@@ -357,6 +408,14 @@ export function createSearchProvider(
         if (providerLevelDecision === "terminal") throw toWebError(lastError);
         if (providerLevelDecision === "break") break;
         // else fall through to the next provider in the chain
+      }
+
+      if (candidateEmptyOutcome) {
+        return {
+          ...candidateEmptyOutcome,
+          truncated: false,
+          attempts,
+        };
       }
 
       const reason = lastError
@@ -384,6 +443,9 @@ export function createFetchProvider(
   healthStore?: ProviderHealthStore,
   genericFetcher: typeof fetchGenericWebPage = fetchGenericWebPage,
   resolveSnapshot?: () => ProviderSnapshot,
+  stats?: {
+    record: (entry: { provider: string; outcome: string; latencyMs: number }) => void;
+  },
 ): WebFetchProviderLike {
   const pools = poolStore ?? createPoolStore(resolveKeys);
 
@@ -401,7 +463,7 @@ export function createFetchProvider(
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
-      const attempts: Array<{ provider: string; outcome: string }> = [];
+      const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];
       let lastNativeError: ProviderError | undefined;
       void lastNativeError; // retained for debugging inspection if native chain fails
 
@@ -417,7 +479,7 @@ export function createFetchProvider(
         if (!adapter || !adapter.fetchCapable) continue; // not a native fetch backend, skip
         const entries = await pools.poolOf(providerName);
         if (entries.length === 0) continue; // no credentials for this backend
-        const usable = entries.filter((e) => e.healthy);
+        const usable = entries.filter((e) => isEntryUsable(e));
         if (usable.length === 0) continue; // all keys auth-unhealthy, skip provider
         // Retry-After cooldown or open circuit breaker: skip without HTTP call; half-open admits one probe.
         const admission = healthStore?.admit(providerName);
@@ -430,6 +492,7 @@ export function createFetchProvider(
         // override applies to SEARCH only (see endpoints.ts), because a gateway
         // that proxies search may not proxy extraction.
         const fetchBaseUrl = cfg.providerBaseUrls[providerName];
+        const started = Date.now();
         try {
           const { text } = await runWithTimeout(
             (sig) =>
@@ -440,9 +503,21 @@ export function createFetchProvider(
             cfg.providerAttemptTimeoutMs,
             signal,
           );
+          const latencyMs = Date.now() - started;
+
+          // Gate content quality: empty stub or bot challenge falls back to next provider or generic fetch
+          if (isLowQualityContent(text)) {
+            const lowQualityErr = Object.assign(
+              new Error(`fetch returned low-quality content (${text.length} chars)`),
+              { code: "low-quality" as ProviderErrorCode },
+            );
+            throw lowQualityErr;
+          }
+
           if (entry) markUsed(entries, index);
           healthStore?.recordSuccess(providerName, admission);
-          attempts.push({ provider: providerName, outcome: "success" });
+          attempts.push({ provider: providerName, outcome: "success", latencyMs });
+          stats?.record({ provider: providerName, outcome: "success", latencyMs });
           return {
             url: request.url,
             statusCode: 200,
@@ -452,13 +527,15 @@ export function createFetchProvider(
           };
         } catch (error) {
           const err = toProviderError(error);
+          const latencyMs = Date.now() - started;
           if (err.code === "auth") markUnhealthy(entries, index);
           healthStore?.recordFailure(providerName, err.code, admission);
           if (err.code === "rate-limit" && typeof err.retryAfterMs === "number" && err.retryAfterMs > 0) {
             healthStore?.cooldownFor(providerName, err.retryAfterMs, "rate-limit");
           }
           lastNativeError = err;
-          attempts.push({ provider: providerName, outcome: `failed:${err.code}` });
+          attempts.push({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
+          stats?.record({ provider: providerName, outcome: `failed:${err.code}`, latencyMs });
           const decision = classifyFailure(err);
           // Caller cancellation or terminal URL/SSRF errors should abort immediately without fallback
           if (decision === "terminal") {
@@ -484,12 +561,15 @@ export function createFetchProvider(
       }
 
       // 2. Fallback to built-in generic HTTP fetcher (Defuddle + linkedom)
+      const genericStarted = Date.now();
       try {
         const res = await genericFetcher(request.url, {
           signal,
           timeoutMs: cfg.providerAttemptTimeoutMs,
         });
-        attempts.push({ provider: "builtin-http", outcome: "success" });
+        const latencyMs = Date.now() - genericStarted;
+        attempts.push({ provider: "builtin-http", outcome: "success", latencyMs });
+        stats?.record({ provider: "builtin-http", outcome: "success", latencyMs });
         return {
           url: res.finalUrl,
           statusCode: res.statusCode,
@@ -504,8 +584,10 @@ export function createFetchProvider(
           },
         };
       } catch (genErr: unknown) {
+        const latencyMs = Date.now() - genericStarted;
         if (genErr instanceof GenericFetchError) {
-          attempts.push({ provider: "builtin-http", outcome: `failed:${genErr.code}` });
+          attempts.push({ provider: "builtin-http", outcome: `failed:${genErr.code}`, latencyMs });
+          stats?.record({ provider: "builtin-http", outcome: `failed:${genErr.code}`, latencyMs });
           const webErr = new WebToolsWebError(
             `web fetch failed: ${genErr.message}`,
           );
@@ -517,6 +599,8 @@ export function createFetchProvider(
         const fallbackErr = new WebToolsWebError(
           `web fetch failed: ${genErr instanceof Error ? genErr.message : String(genErr)}`,
         );
+        attempts.push({ provider: "builtin-http", outcome: "failed:error", latencyMs });
+        stats?.record({ provider: "builtin-http", outcome: "failed:error", latencyMs });
         fallbackErr.attempts = attempts;
         throw fallbackErr;
       }

@@ -276,11 +276,10 @@ New installations default to **Exa**; existing installations keep their saved pr
 ## Local Development
 
 ```bash
-pnpm install          # Install dependencies
-pnpm test             # Run test suite
-pnpm run typecheck    # Type checking
-pnpm run build        # Build bundle into lib/
-
+npm install          # Install dependencies
+npm test             # Run test suite
+npm run typecheck    # Type checking
+npm run build        # Build bundle into lib/
 ```
 
 ---
@@ -306,7 +305,7 @@ When using Docker or self-hosted SearXNG, if you encounter `no usable provider` 
 If cache issues occur after upgrading via local path or symlinks, reinstall from the profile directory:
 
 ```bash
-cd ~/.dsh/profiles/web && pnpm install
+cd ~/.dsh/profiles/web && npm install
 
 ```
 

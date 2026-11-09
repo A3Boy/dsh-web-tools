@@ -402,3 +402,51 @@ test("7. search routing isolation: createFetchProvider is NOT affected by search
   assert.equal(a.calls.filter(c => c.kind === "fetch").length, 2);
   assert.equal(b.calls.filter(c => c.kind === "fetch").length, 0);
 });
+
+test("8. soft-fail: empty results from first provider fallback to second provider with results", async () => {
+  const tavily = stubAdapter("tavily");
+  tavily.search = async () => ({ sources: [] }); // returns 0 sources
+
+  const exa = stubAdapter("exa");
+  exa.search = async () => ({ sources: [{ url: "https://exa.ai/1", title: "Exa Result" }] });
+
+  const provider = createSearchProvider(
+    () => cfg({ defaultProvider: "tavily", fallbackOrder: ["exa"] }),
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+  );
+
+  const res = await provider.search({ query: "rare query" });
+  assert.equal(res.backend, "exa", "soft-failed tavily and retrieved results from exa");
+  assert.equal(res.sources.length, 1);
+  assert.equal(res.sources[0].url, "https://exa.ai/1");
+
+  // attempts should record tavily as empty and exa as success
+  const tavilyAttempt = res.attempts.find((a) => a.provider === "tavily");
+  const exaAttempt = res.attempts.find((a) => a.provider === "exa");
+  assert.ok(tavilyAttempt, "tavily attempt recorded");
+  assert.equal(tavilyAttempt.outcome, "empty");
+  assert.ok(exaAttempt, "exa attempt recorded");
+  assert.equal(exaAttempt.outcome, "success");
+});
+
+test("9. soft-fail: when all providers return empty results, returns empty without throwing error", async () => {
+  const tavily = stubAdapter("tavily");
+  tavily.search = async () => ({ sources: [] });
+
+  const exa = stubAdapter("exa");
+  exa.search = async () => ({ sources: [] });
+
+  const provider = createSearchProvider(
+    () => cfg({ defaultProvider: "tavily", fallbackOrder: ["exa"] }),
+    async () => "k1",
+    { record() {} },
+    { tavily, exa },
+  );
+
+  const res = await provider.search({ query: "nothing found anywhere" });
+  assert.equal(res.sources.length, 0);
+  assert.equal(res.attempts.length, 2);
+  assert.equal(res.attempts[0].outcome, "empty");
+});

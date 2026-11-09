@@ -7,14 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Keenable Usage Accounting**:
-  - Parses the per-call `usage` object (`sku`, `credits`, `paid`) that billed `/v1/search` and `/v1/fetch` responses return, and accumulates it per key into a persisted monthly ledger (`keenableUsageCache`).
-  - Optional console balance: reads `GET https://api.keenable.ai/bff/organization/balance` with a Supabase session from `KEENABLE_REFRESH_TOKEN` (auto-refreshed) or `KEENABLE_SESSION_TOKEN`. The route is undocumented, so every failure falls back silently to the local ledger.
-  - The quota card now shows "credits used" for the current UTC month when no console session is configured.
-- **Pool Merge Dedupes Organization Balances**: `QuotaSnapshot.group` lets a key pool count one organization-level balance once instead of once per API key.
+### Fixed
+- **Country Detection Accuracy**: Disambiguated 2-letter ISO country codes (`US`, `CN`, `JP`, `UK`, `GB`, `SG`, `DE`, `FR`, `CA`) from case-insensitive common words (e.g. "give us the latest React docs", "contact us"), preventing unintended geographic filtering.
+- **Topic Classification Precision**: Replaced greedy first-match with a multi-signal scoring system, preventing queries like "bond issue 财报" from being misclassified as code searches.
+- **Soft-Fail Search Fallback**: When a provider returns 0 results, the executor now treats it as a soft-fail and continues down the fallback chain to retrieve answers from subsequent healthy providers.
+- **Content Quality Gate for Page Fetch**: Added length and bot challenge (Cloudflare, JS-walls) detection for native fetch adapters, triggering graceful fallback to secondary fetchers or built-in browser retrieval.
+- **Key Pool Auto-Recovery TTL**: Added automatic 15-minute TTL recovery for keys marked unhealthy due to temporary auth/billing failures.
+- **Fetch Metrics & Latency Tracking**: Unified attempt recording and statistics tracking between search and fetch executors.
 
 ### Changed
+- Cleaned up repository root by archiving development screenshot scripts into `scripts/`.
+- Synchronized package manager commands in `README.md` and `README.zh-CN.md` to match `package-lock.json` and CI workflows.
 - `createQuotaPersistScheduler` is generic over the stored record type, so Brave snapshots and the Keenable ledger share the same coalesced settings writer.
 
 ---

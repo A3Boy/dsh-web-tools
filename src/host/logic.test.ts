@@ -67,6 +67,22 @@ test("resetHealth restores the pool", () => {
   assert.equal(selectIndex(p), 0);
 });
 
+test("selectIndex auto-recovers unhealthy keys after TTL expires", () => {
+  const p = buildPool("a,b");
+  const t0 = 1000000;
+  markUnhealthy(p, 0, t0);
+  markUnhealthy(p, 1, t0);
+
+  // Before TTL: still throws
+  assert.throws(() => selectIndex(p, t0 + 1000), /no healthy/);
+
+  // After 15m TTL (e.g. 16 minutes): auto-recovers
+  const tLater = t0 + 16 * 60 * 1000;
+  const picked = selectIndex(p, tLater);
+  assert.equal(picked, 0);
+  assert.equal(p[0].healthy, true);
+});
+
 test("hintOf masks keys", () => {
   const h = hintOf("tvly-dev-ABCDEFGHIJKLMNOP");
   assert.ok(h.startsWith("tvly-"));

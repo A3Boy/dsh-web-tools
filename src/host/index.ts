@@ -313,7 +313,18 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore, resolveSnapshot);
 
-  const rawFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
+  const rawFetchProvider = createFetchProvider(
+    resolveRuntimeConfig,
+    resolveKeys,
+    undefined,
+    poolStore,
+    healthStore,
+    undefined,
+    resolveSnapshot,
+    {
+      record: (e) => stats.record({ ...e, at: Date.now() }),
+    },
+  );
 
   // Short-lived result cache + in-flight coalescing for the GENERAL chain only
   // (platform sources stay uncached). Any provider / routing / endpoint /

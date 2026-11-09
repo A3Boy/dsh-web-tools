@@ -276,11 +276,10 @@ dsh plugin --profile web remove dsh-web-tools
 ## 本地开发
 
 ```bash
-pnpm install          # 安装依赖
-pnpm test             # 运行测试套件
-pnpm run typecheck    # 类型检查
-pnpm run build        # 编译构建 (产物输出至 lib/)
-
+npm install          # 安装依赖
+npm test             # 运行测试套件
+npm run typecheck    # 类型检查
+npm run build        # 编译构建 (产物输出至 lib/)
 ```
 
 ---
@@ -306,8 +305,7 @@ pnpm run build        # 编译构建 (产物输出至 lib/)
 若使用本地包或软链接升级遇到缓存问题，可前往 Profile 目录重新安装：
 
 ```bash
-cd ~/.dsh/profiles/web && pnpm install
-
+cd ~/.dsh/profiles/web && npm install
 ```
 
 Exa 和 Parallel 的余额需要在 Provider 控制台查看；Brave 的配额信息来自实际搜索响应头。配额展示仅用于状态说明，不影响正常检索与降级。

@@ -14,7 +14,17 @@
  */
 
 /** Error kinds the fallback treats as retryable. */
-export const RETRYABLE = new Set(["rate-limit", "timeout", "server", "network", "unavailable", "auth"]);
+export const RETRYABLE = new Set([
+  "rate-limit",
+  "timeout",
+  "server",
+  "network",
+  "unavailable",
+  "auth",
+  "low-quality",
+  "empty",
+  "quota",
+]);
 
 /** Error kinds that never trigger fallback. */
 export const NON_RETRYABLE = new Set(["bad-request", "config"]);

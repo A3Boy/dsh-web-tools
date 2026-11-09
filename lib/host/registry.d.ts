@@ -133,4 +133,10 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
  * back to the built-in generic HTTP fetcher (with SSRF guard + Defuddle Markdown
  * parsing) when native providers are unavailable, keyless, or fail.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage, resolveSnapshot?: () => ProviderSnapshot): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage, resolveSnapshot?: () => ProviderSnapshot, stats?: {
+    record: (entry: {
+        provider: string;
+        outcome: string;
+        latencyMs: number;
+    }) => void;
+}): WebFetchProviderLike;

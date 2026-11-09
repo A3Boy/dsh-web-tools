@@ -19,8 +19,10 @@ export class PoolEntry {
   inFlight = 0;
   /** Searches dispatched through this key so far. */
   uses = 0;
-  /** False after a failed call; skipped by selection until a full reset. */
+  /** False after a failed call; skipped by selection until TTL recovery or a full reset. */
   healthy = true;
+  /** Timestamp (ms) when marked unhealthy. Used for TTL auto-recovery. */
+  unhealthyAt?: number;
 
   constructor(key: string, order: number) {
     this.key = key;
@@ -39,16 +41,34 @@ export function hintOf(key: string): string {
   return `${prefix}-…${tail}`;
 }
 
+/** Default TTL after which an auth-unhealthy key is tentatively retried (15 minutes). */
+export const DEFAULT_KEY_UNHEALTHY_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Check if a pool entry is usable: healthy or whose unhealthy cooldown TTL has expired.
+ */
+export function isEntryUsable(entry: PoolEntry, now = Date.now(), ttlMs = DEFAULT_KEY_UNHEALTHY_TTL_MS): boolean {
+  if (entry.healthy) return true;
+  if (typeof entry.unhealthyAt === "number" && now - entry.unhealthyAt >= ttlMs) {
+    // TTL expired: tentatively restore health to allow a probe dispatch
+    entry.healthy = true;
+    entry.unhealthyAt = undefined;
+    return true;
+  }
+  return false;
+}
+
 /**
  * Select the next key index: among healthy entries, lowest inFlight first,
  * then fewest total uses; ties broken by fixed `order`. Deterministic & concurrency-aware.
  * @param entries
+ * @param now current timestamp for TTL evaluation.
  * @returns index into `entries`.
  * @throws {Error} empty pool or no healthy key.
  */
-export function selectIndex(entries: readonly PoolEntry[]): number {
+export function selectIndex(entries: readonly PoolEntry[], now = Date.now()): number {
   if (entries.length === 0) throw new Error("provider pool is empty");
-  const usable = entries.filter((e: PoolEntry) => e.healthy);
+  const usable = entries.filter((e: PoolEntry) => isEntryUsable(e, now));
   if (usable.length === 0) throw new Error("provider pool has no healthy keys left");
   let best = usable[0];
   for (const e of usable) {
@@ -85,15 +105,19 @@ export function markUsed(entries: PoolEntry[], index: number): void {
 }
 
 /** Record one failed dispatch through `index`. */
-export function markUnhealthy(entries: PoolEntry[], index: number): void {
+export function markUnhealthy(entries: PoolEntry[], index: number, now = Date.now()): void {
   if (entries[index]) {
     entries[index].healthy = false;
+    entries[index].unhealthyAt = now;
   }
 }
 
-/** Reset every entry to healthy (called when the whole pool is exhausted). */
+/** Reset every entry to healthy (called when the whole pool is exhausted or quota is refreshed). */
 export function resetHealth(entries: PoolEntry[]): void {
-  for (const e of entries) e.healthy = true;
+  for (const e of entries) {
+    e.healthy = true;
+    e.unhealthyAt = undefined;
+  }
 }
 
 /**

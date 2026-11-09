@@ -316,3 +316,40 @@ test("SpecializedSourceRegistry: platformEnabled toggle disables platform routin
   assert.equal(fallbackQuery, "site:xiaohongshu.com 探店");
   assert.equal(outcome.retrievalMode, "degraded-web");
 });
+
+test("SearchHints: country detection avoids false positives on common words like 'us' or 'de'", () => {
+  // Lowercase 'us' must NOT match country US
+  const h1 = extractSearchHints("give us the latest React docs");
+  assert.equal(h1.locale?.country, undefined);
+
+  const h2 = extractSearchHints("contact us for support");
+  assert.equal(h2.locale?.country, undefined);
+
+  // Explicit uppercase 'US' or names should match
+  const h3 = extractSearchHints("US stock market updates");
+  assert.equal(h3.locale?.country, "US");
+
+  const h4 = extractSearchHints("United States inflation report");
+  assert.equal(h4.locale?.country, "US");
+
+  const h5 = extractSearchHints("美国联储利率决议");
+  assert.equal(h5.locale?.country, "US");
+});
+
+test("SearchHints: topic classification disambiguates financial vs code queries", () => {
+  // 'bond issue 财报' contains 'issue', but finance signals dominate
+  const h1 = extractSearchHints("bond issue 财报");
+  assert.equal(h1.topic, "finance");
+
+  // 'pr crisis' should NOT be misclassified as code
+  const h2 = extractSearchHints("PR crisis management in hotel chains");
+  assert.equal(h2.topic, "general");
+
+  // Genuine code issue with strong code indicator
+  const h3 = extractSearchHints("React useEffect hook issue");
+  assert.equal(h3.topic, "code");
+
+  // Research paper query
+  const h4 = extractSearchHints("DeepSeek-R1 论文消融实验");
+  assert.equal(h4.topic, "research");
+});

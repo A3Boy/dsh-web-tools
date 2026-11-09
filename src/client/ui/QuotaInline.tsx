@@ -207,10 +207,17 @@ export function QuotaCard(props: {
     );
   }
 
-  // Fallback card when no quota snapshot or for dashboard-only providers
+  // Fallback card when no quota snapshot or for dashboard-only providers.
+  // The note explains WHY there is no number yet (e.g. Keenable only reports a
+  // charge after the first billed call), so an empty card is never a dead end.
   if (!quota || !quota.supported || quota.source === "dashboard") {
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
+        {quota?.note && (
+          <div style={{ fontSize: 11, color: text.tertiary, padding: "8px 16px 6px", lineHeight: 1.5 }}>
+            {quota.note}
+          </div>
+        )}
         {dash && (
           <a
             href={dash.url}
