@@ -7,6 +7,9 @@
   "license": "MIT",
   "type": "module",
   "main": "./lib/host/index.js",
+  "bin": {
+    "dsh-web-tools-mcp": "./bin/mcp-server.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/host/index.d.ts",
@@ -16,10 +19,15 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./mcp": {
+      "types": "./lib/mcp/server.d.ts",
+      "default": "./lib/mcp/server.js"
+    },
     "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "lib",
     "assets/logo-icon.png",
     "locale",

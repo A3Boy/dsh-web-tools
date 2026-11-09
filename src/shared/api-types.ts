@@ -10,7 +10,13 @@ import type { ProviderOptionView } from "./provider-options.ts";
 import type { OutboundAuthorization } from "./custom-provider-types.ts";
 
 /** Search routing policy — how the host picks which provider to try first. */
-export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
+export type SearchRoutingPolicy =
+  | "ordered"
+  | "round-robin"
+  | "random"
+  | "adaptive"
+  | "fastest"
+  | "cheapest";
 
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {

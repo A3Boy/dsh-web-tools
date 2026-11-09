@@ -185,6 +185,7 @@ export function createSearchProvider(
   resolveKeys: (providerName: string) => Promise<string>,
   stats: {
     record: (entry: { provider: string; outcome: string; latencyMs: number }) => void;
+    summary?: () => { byProvider: Record<string, import("./routing-policy.ts").ProviderMetrics> };
   },
   adapterRegistry: Record<string, ProviderAdapterLike> = PROVIDERS,
   poolStore?: PoolStore,
@@ -226,9 +227,13 @@ export function createSearchProvider(
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
+      const metrics = stats.summary?.().byProvider;
       const chain = resolveSearchChain(
         baseChain,
         cfg.searchRoutingPolicy ?? "ordered",
+        undefined,
+        Math.random,
+        metrics,
       );
       return chain.some((name) => {
         if (cfg.enabledProviders[name] === false) return false;
@@ -250,10 +255,13 @@ export function createSearchProvider(
         defaultProvider: cfg.defaultProvider,
         fallbackOrder: cfg.fallbackOrder,
       });
+      const metrics = stats.summary?.().byProvider;
       const chain = resolveSearchChain(
         baseChain,
         cfg.searchRoutingPolicy ?? "ordered",
         routingState,
+        Math.random,
+        metrics,
       );
 
       const attempts: Array<{ provider: string; outcome: string; latencyMs?: number }> = [];

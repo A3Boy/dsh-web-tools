@@ -61,6 +61,35 @@ test("routing-policy: random policy rotates based on injected RNG", () => {
   assert.deepEqual(r2, ["tavily", "exa", "brave"]);
 });
 
+test("routing-policy: cheapest prioritizes lower cost-tier providers", () => {
+  const base = ["parallel", "tavily", "searxng", "keenable"];
+  const res = resolveSearchChain(base, "cheapest");
+  // searxng (0) < keenable (1) < tavily (2) < parallel (3)
+  assert.deepEqual(res, ["searxng", "keenable", "tavily", "parallel"]);
+});
+
+test("routing-policy: fastest prioritizes lowest measured latency", () => {
+  const base = ["tavily", "brave", "serper"];
+  const metrics = {
+    tavily: { success: 10, failed: 0, avgLatencyMs: 850 },
+    brave: { success: 10, failed: 0, avgLatencyMs: 320 },
+    serper: { success: 10, failed: 0, avgLatencyMs: 190 },
+  };
+  const res = resolveSearchChain(base, "fastest", undefined, undefined, metrics);
+  assert.deepEqual(res, ["serper", "brave", "tavily"]);
+});
+
+test("routing-policy: adaptive promotes high success rate and low latency backends", () => {
+  const base = ["unreliable_fast", "reliable_moderate", "slow_failing"];
+  const metrics = {
+    unreliable_fast: { success: 4, failed: 6, avgLatencyMs: 150 }, // 40% success
+    reliable_moderate: { success: 10, failed: 0, avgLatencyMs: 400 }, // 100% success
+    slow_failing: { success: 2, failed: 8, avgLatencyMs: 2500 }, // 20% success
+  };
+  const res = resolveSearchChain(base, "adaptive", undefined, undefined, metrics);
+  assert.equal(res[0], "reliable_moderate");
+});
+
 test("routing-policy: handles empty and single-element base chains", () => {
   assert.deepEqual(resolveSearchChain([], "ordered"), []);
   assert.deepEqual(resolveSearchChain([], "round-robin"), []);

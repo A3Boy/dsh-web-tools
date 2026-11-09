@@ -12,13 +12,20 @@
  * fetch-capable chain because not every provider supports page extraction.
  * @module
  */
-export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
+export type SearchRoutingPolicy = "ordered" | "round-robin" | "random" | "adaptive" | "fastest" | "cheapest";
+export interface ProviderMetrics {
+    success: number;
+    failed: number;
+    avgLatencyMs: number;
+}
+/** Cost tier rating from 0 (free/self-hosted) to 3 (premium multi-step / scrape). */
+export declare const PROVIDER_COST_TIERS: Record<string, number>;
 /** Mutable state for round-robin rotation across calls. */
 export interface SearchRoutingState {
     nextRoundRobinIndex: number;
 }
 /**
- * Rotate the base chain according to the current policy.
+ * Rotate or prioritize the base chain according to the current policy.
  * Returns a new array — the original is never mutated.
  */
-export declare function resolveSearchChain(baseChain: string[], policy: SearchRoutingPolicy, state?: SearchRoutingState, random?: () => number): string[];
+export declare function resolveSearchChain(baseChain: string[], policy: SearchRoutingPolicy, state?: SearchRoutingState, random?: () => number, metricsByProvider?: Record<string, ProviderMetrics>): string[];

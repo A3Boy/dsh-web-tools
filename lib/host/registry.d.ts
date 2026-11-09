@@ -125,6 +125,9 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
         outcome: string;
         latencyMs: number;
     }) => void;
+    summary?: () => {
+        byProvider: Record<string, import("./routing-policy.ts").ProviderMetrics>;
+    };
 }, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, resolveSnapshot?: () => ProviderSnapshot): WebSearchProviderLike;
 /**
  * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`.

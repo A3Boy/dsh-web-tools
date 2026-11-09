@@ -311,6 +311,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   const rawSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
+    summary: () => stats.summary(),
   }, undefined, poolStore, healthStore, resolveSnapshot);
 
   const rawFetchProvider = createFetchProvider(
