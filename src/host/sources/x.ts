@@ -316,7 +316,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal, "interactive");
     if (!isAuth) {
       return {
         items: [],
@@ -351,7 +351,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       // Blank attached page — capture listeners must be in place BEFORE the
       // SPA fires SearchTimeline, so openPage() (which navigates eagerly) is
       // not usable here.
-      page = await this.runtime.createPage("x", signal);
+      page = await this.runtime.createPage("x", signal, "interactive");
     } catch (err: any) {
       if (err.name === "UrlDisallowedError") {
         return { items: [], error: { code: "blocked", message: err.message, retryable: false } };
@@ -374,40 +374,15 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       // even with a valid session; /home boots the same bundle and hydrates it.
       try {
         await page.navigate("https://x.com/home", signal);
-        await page.waitForSelector('[data-testid="SideNav_AccountSwitcher_Button"]', 6000, signal);
+        await page.waitForSelector('[data-testid="SideNav_AccountSwitcher_Button"]', 3000, signal);
       } catch {
         // Best effort — fall through to the search URL anyway.
       }
       await page.navigate(searchUrl, signal);
-      const capturePromise = capture.wait();
-
-      // Early auth sniff: a logged-out shell never fires SearchTimeline, so
-      // waiting the full 15s window just delays the inevitable. Give the SPA a
-      // short start-up grace, then inspect the page instead of the clock.
-      const early = await Promise.race([
-        capturePromise.then((o) => ({ kind: "captured" as const, outcome: o })),
-        new Promise<{ kind: "early" }>((resolve) =>
-          setTimeout(() => resolve({ kind: "early" as const }), 2500),
-        ),
-      ]);
-      let outcome;
-      if (early.kind === "captured") {
-        outcome = early.outcome;
-      } else {
-        const earlySnapshot = await readXPageSnapshot(page, signal);
-        if (earlySnapshot && isLoggedOutShell(earlySnapshot)) {
-          capture.cancel();
-          return {
-            items: [],
-            error: {
-              code: "auth-expired",
-              message: `x.com showed the logged-out shell instead of search results [${describeXPageSnapshot(earlySnapshot)}]`,
-              retryable: false,
-            },
-          };
-        }
-        outcome = await capturePromise;
-      }
+      // No early "logged out" sniff: at 2.5s a cold SPA has not hydrated yet
+      // (no account menu, no traffic) and its static shell still contains the
+      // "Log in to X" copy, so that probe fires on valid sessions.
+      const outcome = await capture.wait();
 
       if (signal?.aborted || outcome.state === "aborted") {
         return {
@@ -529,7 +504,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       if (item) return { item, retrievalMode: "public-api" };
     }
 
-    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal, "interactive");
     if (!isAuth) {
       return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
     }
@@ -537,7 +512,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     let page;
     let capture;
     try {
-      page = await this.runtime.createPage("x", signal);
+      page = await this.runtime.createPage("x", signal, "interactive");
     } catch (err: any) {
       if (err.name === "UrlDisallowedError") {
         return { error: { code: "blocked", message: err.message, retryable: false } };

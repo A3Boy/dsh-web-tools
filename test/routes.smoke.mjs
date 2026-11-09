@@ -175,7 +175,7 @@ test("platform/status automatically verifies persisted sessions before respondin
   const body = JSON.parse(res.body);
   assert.equal(body.ok, true);
   assert.deepEqual(verifyCalls.sort((a, b) => a.platform.localeCompare(b.platform)), [
-    { platform: "x", mode: "headless" },
+    { platform: "x", mode: "interactive" },
     { platform: "xiaohongshu", mode: "interactive" },
   ]);
   assert.equal(body.value.platforms.x.authenticated, true);

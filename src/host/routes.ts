@@ -55,10 +55,13 @@ async function handlePlatformStatus(deps: RouteDeps): Promise<PlatformStatusResp
   if (needsVerification.length > 0) {
     const results = await Promise.allSettled(
       needsVerification.map(async (status) => {
+        // Both platforms run their operations in the visible (minimized) browser:
+        // x.com refuses to hydrate the app under --headless=new, which made the
+        // status probe disagree with what the user sees in the window.
         const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(
           status.id,
           undefined,
-          status.id === "xiaohongshu" ? "interactive" : "headless",
+          "interactive",
         );
         return { id: status.id, isAuth };
       }),
