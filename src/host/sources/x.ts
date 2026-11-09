@@ -25,6 +25,52 @@ import type {
 const LOGIN_REDIRECT_RE = /\/i\/flow\/login|\/account\/access|challenge/i;
 
 /** Wait for the real X search page and collect tweets via DOM (fallback path). */
+/**
+ * Snapshot of what the search page actually shows, for a failed capture.
+ *
+ * A bare "parse-failed" is undebuggable: the page may be a login wall, a
+ * rate-limit interstitial, a consent/verification screen, or a hydrated shell
+ * whose SPA never issued the SearchTimeline request. This records the facts
+ * that distinguish them.
+ */
+async function readXPageDiagnostics(page: CdpPageLease, signal?: AbortSignal): Promise<string | undefined> {
+  try {
+    const info = await page.evaluate<{
+      href: string;
+      title: string;
+      text: string;
+      tweets: number;
+      graphql: number;
+    }>(
+      `(() => {
+        const text = (document.body && document.body.innerText ? document.body.innerText : "")
+          .replace(/\\s+/g, " ")
+          .slice(0, 160);
+        let graphql = 0;
+        try {
+          graphql = performance.getEntriesByType("resource")
+            .filter((e) => e.name.indexOf("/i/api/graphql/") !== -1).length;
+        } catch {}
+        return {
+          href: location.href,
+          title: document.title || "",
+          text,
+          tweets: document.querySelectorAll("article[data-testid='tweet']").length,
+          graphql,
+        };
+      })()`,
+      signal,
+    );
+    if (!info) return undefined;
+    const bits = [`href=${info.href}`, `tweets=${info.tweets}`, `graphql=${info.graphql}`];
+    if (info.title) bits.push(`title=${info.title.slice(0, 60)}`);
+    if (info.text) bits.push(`text=${info.text.slice(0, 120)}`);
+    return bits.join(", ");
+  } catch {
+    return undefined;
+  }
+}
+
 async function collectTweetsViaDom(
   page: CdpPageLease,
   maxResults: number,
@@ -283,9 +329,16 @@ export class XSource implements SpecializedSource {
       if (domItems.length > 0) {
         return { items: domItems, retrievalMode: "native-browser" };
       }
+      const diagnostics = await readXPageDiagnostics(page, signal);
       return {
         items: [],
-        error: { code: "parse-failed", message: "X search produced no GraphQL response and no DOM tweets", retryable: true },
+        error: {
+          code: "parse-failed",
+          message:
+            "X search produced no GraphQL response and no DOM tweets" +
+            (diagnostics ? ` [${diagnostics}]` : ""),
+          retryable: true,
+        },
       };
     } catch (err: any) {
       if (signal?.aborted) {
