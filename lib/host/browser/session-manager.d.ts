@@ -32,13 +32,16 @@ export declare class SessionManager implements NativeBrowserRuntime {
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     /**
-     * Drop the browser's blank start page after we created our own tab.
+     * Close every existing page that belongs to the platform origin.
      *
-     * A cold Chromium window always contains one internal new-tab page; without
-     * this cleanup every operation showed two tabs. Best-effort: only a single
-     * blank/chrome:// page is closed, so a tab with real content is never lost.
+     * Called right before we open our own tab, so a search always starts from a
+     * clean window: leftover tabs from a previous operation (or from Edge
+     * restoring a crashed session) are removed. Internal new-tab pages are left
+     * untouched — closing the last tab would terminate the browser.
      */
-    private closeLeftoverBlankPage;
+    private closePlatformPagesInternal;
+    /** Public wrapper: close platform tabs (optionally keeping one target). */
+    closePlatformPages(platform: BrowserPlatform, keepTargetId?: string, signal?: AbortSignal): Promise<void>;
     private retainLease;
     private releaseLease;
     private scheduleIdleTimer;

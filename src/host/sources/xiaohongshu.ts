@@ -115,7 +115,41 @@ export function extractXhsNotesFromSearchPayload(json: unknown): Array<Record<st
   return [];
 }
 
-export class XiaohongshuSource implements SpecializedSource {  readonly id = "xiaohongshu" as const;
+/**
+ * What the search page actually did, for a failed capture.
+ *
+ * Distinguishes "the SPA never called the API" (endpoint changed / login wall)
+ * from "the call happened but the response was not captured".
+ */
+async function readXhsPageDiagnostics(page: CdpPageLease, signal?: AbortSignal): Promise<string> {
+  try {
+    const info = await page.evaluate<{ href: string; title: string; apis: string[]; notes: number }>(
+      `(() => {
+        let apis = [];
+        try {
+          apis = performance.getEntriesByType("resource")
+            .map((e) => e.name)
+            .filter((n) => n.indexOf("/api/") !== -1)
+            .slice(-6);
+        } catch {}
+        return {
+          href: location.href,
+          title: document.title || "",
+          apis,
+          notes: document.querySelectorAll("section.note-item").length,
+        };
+      })()`,
+      signal,
+    );
+    if (!info) return "no-diag";
+    return `href=${info.href.slice(0, 120)} notes=${info.notes} title=${info.title.slice(0, 40)} apis=[${info.apis.join(" ")}]`;
+  } catch {
+    return "no-diag";
+  }
+}
+
+export class XiaohongshuSource implements SpecializedSource {
+  readonly id = "xiaohongshu" as const;
   readonly name = "小红书";
   private runtime: NativeBrowserRuntime;
   private readonly noteUrlCache = new Map<string, string>();
@@ -195,7 +229,8 @@ export class XiaohongshuSource implements SpecializedSource {  readonly id = "xi
       await page.navigate(buildXhsSearchUrl(query, req), signal);
       const outcome = await capture.wait();
       if (!outcome || outcome.state !== "captured") {
-        return { outcome: null, reason: `xhs-url: ${outcome?.state ?? "no-response"}` };
+        const diag = await readXhsPageDiagnostics(page, signal);
+        return { outcome: null, reason: `xhs-url: ${outcome?.state ?? "no-response"} [${diag}]` };
       }
       if (typeof outcome.status === "number" && (outcome.status < 200 || outcome.status >= 300)) {
         return { outcome: null, reason: `xhs-url: status=${outcome.status}` };
@@ -453,6 +488,9 @@ export class XiaohongshuSource implements SpecializedSource {  readonly id = "xi
         ...(channelReasons.length ? { diagnostics: channelReasons } : {}),
       };
     } finally {
+      // Tab hygiene: the site opens its own search tab, so without this sweep a
+      // long-lived profile accumulates one Xiaohongshu tab per search.
+      await this.runtime.closePlatformPages?.("xiaohongshu", page.targetId, undefined);
       await page.close();
     }
   }
