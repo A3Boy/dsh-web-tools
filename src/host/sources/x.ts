@@ -106,7 +106,8 @@ function isLoggedOutShell(snap: XPageSnapshot | undefined): boolean {
   );
 }
 
-function describeXPageSnapshot(info: XPageSnapshot): string {  const bits = [
+function describeXPageSnapshot(info: XPageSnapshot): string {
+  const bits = [
     `href=${info.href}`,
     `ready=${info.readyState}`,
     `tweets=${info.tweets}`,
@@ -123,16 +124,17 @@ async function collectTweetsViaDom(
   page: CdpPageLease,
   maxResults: number,
   signal?: AbortSignal,
+  opts: { selectorTimeoutMs?: number; maxScrolls?: number } = {},
 ): Promise<SourceItem[]> {
   try {
-    await page.waitForSelector("article[data-testid='tweet']", 8000, signal);
+    await page.waitForSelector("article[data-testid='tweet']", opts.selectorTimeoutMs ?? 8000, signal);
   } catch {
     // Empty search result or loading slow
   }
 
   const collectedMap = new Map<string, SourceItem>();
   let noNewCount = 0;
-  const maxScrolls = 6;
+  const maxScrolls = opts.maxScrolls ?? 6;
 
   for (let s = 0; s < maxScrolls; s++) {
     if (signal?.aborted) break;
@@ -332,6 +334,9 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     if (top.items.length > 0) return top;
     if (top.error && !top.error.retryable) return top;
     if (signal?.aborted) return top;
+    // A page that never hydrated will not hydrate on a second navigation
+    // either — retrying the other tab would just double the wait.
+    if (top.error?.message.includes("did not hydrate")) return top;
 
     // Pass 2 — "Latest". Niche or CJK keywords frequently have no Top matches
     // while the chronological tab still does. Without this retry the router
@@ -361,27 +366,18 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
 
     try {
       // PRIMARY: capture the SearchTimeline GraphQL response over CDP.
-      // 15s: x.com is a multi-MB SPA and through a proxy the SearchTimeline
-      // request often fires 8-10s after navigation; 8s cut it off one second
-      // before it happened.
+      // 6s: against a warm (cached) bundle the SPA fires SearchTimeline within
+      // a couple of seconds. A longer window only delays the fallback, and the
+      // page is inspected below to decide whether a wait is even worthwhile.
       capture = await page.beginJsonCapture({
         urlIncludes: "/SearchTimeline",
-        timeoutMs: 15000,
+        timeoutMs: 6000,
         signal,
       });
-      // Warm the SPA on /home first. A cold direct navigation straight to
-      // /search can leave the app shell unhydrated (graphql=0, zero tweets)
-      // even with a valid session; /home boots the same bundle and hydrates it.
-      try {
-        await page.navigate("https://x.com/home", signal);
-        await page.waitForSelector('[data-testid="SideNav_AccountSwitcher_Button"]', 3000, signal);
-      } catch {
-        // Best effort — fall through to the search URL anyway.
-      }
+      // Direct navigation only. A /home warm-up is a full hard reload, so it
+      // does NOT preserve the hydrated app — it just costs another 4-6s. The
+      // snapshot below detects an unhydrated shell and reports it instead.
       await page.navigate(searchUrl, signal);
-      // No early "logged out" sniff: at 2.5s a cold SPA has not hydrated yet
-      // (no account menu, no traffic) and its static shell still contains the
-      // "Log in to X" copy, so that probe fires on valid sessions.
       const outcome = await capture.wait();
 
       if (signal?.aborted || outcome.state === "aborted") {
@@ -420,9 +416,13 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
             return { items: graphItems.slice(0, maxResults), retrievalMode: "native-browser" };
           }
 
-          // Thin GraphQL results (or valid 0 tweets): supplement via DOM and merge.
-          // GraphQL items take priority on field overlap; if both yield 0, it is a valid native 0.
-          const domItems = await collectTweetsViaDom(page, maxResults, signal);
+          // Thin GraphQL results (or valid 0 tweets): supplement via a short
+          // DOM pass and merge. 2s/2 scrolls — the GraphQL items are already
+          // the primary source, so this only fills gaps.
+          const domItems = await collectTweetsViaDom(page, maxResults, signal, {
+            selectorTimeoutMs: 2000,
+            maxScrolls: 2,
+          });
           const mergedMap = new Map<string, SourceItem>();
           for (const item of graphItems) {
             mergedMap.set(item.id, item);
@@ -440,24 +440,40 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         // still has a chance to run if the DOM is also empty.
       }
 
-      // Capture failed or schema unrecognized → DOM fallback.
-      const domItems = await collectTweetsViaDom(page, maxResults, signal);
-      if (domItems.length > 0) {
-        return { items: domItems, retrievalMode: "native-browser" };
-      }
+      // Capture failed or schema unrecognized → inspect the page BEFORE any
+      // scrolling. An unhydrated shell has no tweets and no API traffic: DOM
+      // scraping cannot help, so fail fast (this is also what bounds the
+      // operation to ~10s instead of 30s).
       const snapshot = await readXPageSnapshot(page, signal);
-      // A logged-out shell never loads the timeline. Report it as an auth
-      // problem (non-retryable) instead of a parse failure: the caller skips
-      // the second tab and the user is told to sign in again.
-      if (snapshot && isLoggedOutShell(snapshot)) {
+      if (snapshot && snapshot.tweets === 0 && snapshot.graphql === 0) {
+        if (isLoggedOutShell(snapshot)) {
+          return {
+            items: [],
+            error: {
+              code: "auth-expired",
+              message: `x.com showed the logged-out shell instead of search results [${describeXPageSnapshot(snapshot)}]`,
+              retryable: false,
+            },
+          };
+        }
         return {
           items: [],
           error: {
-            code: "auth-expired",
-            message: `x.com showed the logged-out shell instead of search results [${describeXPageSnapshot(snapshot)}]`,
-            retryable: false,
+            code: "parse-failed",
+            message: `X search page did not hydrate (no tweets, no API traffic) [${describeXPageSnapshot(snapshot)}]`,
+            retryable: true,
           },
+          diagnostics: [describeXPageSnapshot(snapshot)],
         };
+      }
+
+      // Hydrated page with an unrecognized envelope → short DOM fallback.
+      const domItems = await collectTweetsViaDom(page, maxResults, signal, {
+        selectorTimeoutMs: 2000,
+        maxScrolls: 2,
+      });
+      if (domItems.length > 0) {
+        return { items: domItems, retrievalMode: "native-browser" };
       }
       return {
         items: [],
