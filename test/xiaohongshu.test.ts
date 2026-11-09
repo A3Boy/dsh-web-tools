@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { XiaohongshuSource, setXhsNativeSearchEnabled } from "../src/host/sources/xiaohongshu.ts";
+import { XiaohongshuSource, setXhsNativeSearchEnabled, mapXhsApiNote, parseXhsCount } from "../src/host/sources/xiaohongshu.ts";
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
@@ -316,4 +316,29 @@ test("XiaohongshuSource: maps explore and post-submit login walls to different f
   } finally {
     setXhsNativeSearchEnabled(true);
   }
+});
+
+test("XHS API mapping: keeps xsec_token, metrics and author", () => {
+  const item = mapXhsApiNote({
+    id: "abc123",
+    xsec_token: "TOKEN/with+chars",
+    display_title: "GPTPLus 还值得开吗",
+    desc: "正文摘要",
+    user: { nickname: "小明", user_id: "u1" },
+    interact_info: { liked_count: "1.2万", collected_count: "345", comment_count: "67" },
+    cover: { url_default: "https://img.example/x.jpg" },
+  });
+  assert.ok(item);
+  assert.equal(item!.id, "abc123");
+  assert.ok(item!.url.includes("xsec_token=TOKEN%2Fwith%2Bchars"));
+  assert.equal(item!.likes, 12000);
+  assert.equal(item!.collects, 345);
+  assert.equal(item!.replies, 67);
+  assert.equal(item!.author?.name, "小明");
+  assert.equal(item!.author?.url, "https://www.xiaohongshu.com/user/profile/u1");
+
+  assert.equal(parseXhsCount("3,412"), 3412);
+  assert.equal(parseXhsCount("1.5k"), 1500);
+  assert.equal(parseXhsCount(88), 88);
+  assert.equal(mapXhsApiNote({}), null);
 });

@@ -1,4 +1,4 @@
-import { createNativeBrowserRuntime, type NativeBrowserRuntime } from "../browser/index.ts";
+import { createNativeBrowserRuntime, type NativeBrowserRuntime, type CdpPageLease } from "../browser/index.ts";
 import {
   extractXhsSearchState,
   extractVisibleXhsSearch,
@@ -12,6 +12,7 @@ import { extractXhsComments } from "./xiaohongshu/comments.ts";
 import { navigateXhsSearchViaUi } from "./xiaohongshu/ui-search.ts";
 import { appendCommentsToItem } from "./comments.ts";
 import { verifyPlatformSession } from "./auth.ts";
+import { xhsSearchNotesViaApi } from "./browser-scripts/xhs-api.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -26,6 +27,67 @@ import type {
 let xhsNativeSearchEnabled = (process.env.XHS_NATIVE_SEARCH ?? "1") !== "0";
 export function setXhsNativeSearchEnabled(v: boolean) { xhsNativeSearchEnabled = v; }
 export function isXhsNativeSearchEnabled() { return xhsNativeSearchEnabled; }
+
+/** Parse "1.2万" / "3,412" / 88 into a number. */
+export function parseXhsCount(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const clean = value.trim().replace(/,/g, "");
+  if (/^\d+$/.test(clean)) return parseInt(clean, 10);
+  const wan = /^([\d.]+)\s*[万wW]$/.exec(clean);
+  if (wan) return Math.round(parseFloat(wan[1]) * 10000);
+  const k = /^([\d.]+)\s*[kK]$/.exec(clean);
+  if (k) return Math.round(parseFloat(k[1]) * 1000);
+  return undefined;
+}
+
+/**
+ * Map one `/search/notes` item into a SourceItem.
+ *
+ * The URL keeps `xsec_token`: without it a later note fetch is redirected to
+ * the login wall, which is why the UI-scraped path lost details whenever the
+ * DOM link dropped the token.
+ */
+export function mapXhsApiNote(note: Record<string, any>): SourceItem | null {
+  const id = note?.id ?? note?.note_id;
+  if (typeof id !== "string" || id.length === 0) return null;
+
+  const token = note?.xsec_token ?? note?.xsecToken;
+  const base = `https://www.xiaohongshu.com/explore/${id}`;
+  const url =
+    typeof token === "string" && token.length > 0
+      ? `${base}?xsec_token=${encodeURIComponent(token)}&xsec_source=pc_search`
+      : base;
+
+  const desc = typeof note?.desc === "string" ? note.desc : "";
+  const title =
+    (typeof note?.display_title === "string" && note.display_title.trim()) ||
+    (typeof note?.title === "string" && note.title.trim()) ||
+    (desc ? desc.split(/\r?\n/)[0].slice(0, 60) : "小红书笔记");
+
+  const user = note?.user ?? {};
+  const interact = note?.interact_info ?? note?.interactInfo ?? {};
+  const cover = note?.cover ?? {};
+  const userId = user?.user_id ?? user?.userId;
+
+  return {
+    id,
+    title,
+    url,
+    snippet: desc ? desc.slice(0, 200) : undefined,
+    author: user?.nickname
+      ? {
+          name: String(user.nickname),
+          url: userId ? `https://www.xiaohongshu.com/user/profile/${userId}` : undefined,
+        }
+      : undefined,
+    likes: parseXhsCount(interact?.liked_count ?? interact?.likedCount),
+    collects: parseXhsCount(interact?.collected_count ?? interact?.collectedCount),
+    replies: parseXhsCount(interact?.comment_count ?? interact?.commentCount),
+    coverImage: cover?.url_default ?? cover?.urlDefault,
+    platform: "xiaohongshu",
+  };
+}
 
 export class XiaohongshuSource implements SpecializedSource {
   readonly id = "xiaohongshu" as const;
@@ -81,6 +143,59 @@ export class XiaohongshuSource implements SpecializedSource {
     };
   }
 
+  /**
+   * Fast path: signed in-page JSON search.
+   *
+   * Returns null (never throws) whenever this channel is unusable, so the
+   * caller can fall back to the UI flow. Risk control, a renamed signer or an
+   * empty payload are all "unusable", not "no results".
+   */
+  private async searchViaApi(
+    page: CdpPageLease,
+    query: string,
+    req: SourceSearchRequest | undefined,
+    maxResults: number,
+    signal?: AbortSignal,
+  ): Promise<SourceSearchOutcome | null> {
+    try {
+      // The API is same-origin, so the page must be on xiaohongshu.com first.
+      // `navigate` already waits for a usable readyState, so no extra wait.
+      await page.navigate("https://www.xiaohongshu.com/explore", signal);
+
+      const hints = req?.hints;
+      // "最新/本周" → chronological; otherwise the site's own relevance order.
+      const sort =
+        hints?.freshness?.preset === "day" || hints?.freshness?.preset === "week"
+          ? "time_descending"
+          : "general";
+      const rawQuery = hints?.rawQuery ?? query;
+      const noteType = /视频|video/i.test(rawQuery) ? 1 : /图文|图片|image/i.test(rawQuery) ? 2 : 0;
+
+      const result = await page.call(
+        xhsSearchNotesViaApi,
+        [{ keyword: query, pageSize: Math.max(20, maxResults), sort, noteType }],
+        signal,
+      );
+      if (!result?.ok || !Array.isArray(result.items) || result.items.length === 0) return null;
+
+      const items: SourceItem[] = [];
+      const seen = new Set<string>();
+      for (const note of result.items) {
+        const mapped = mapXhsApiNote(note);
+        if (!mapped || seen.has(mapped.id)) continue;
+        seen.add(mapped.id);
+        items.push(mapped);
+        if (items.length >= maxResults) break;
+      }
+      if (items.length === 0) return null;
+
+      for (const item of items) this.rememberNoteUrl(item.id, item.url);
+      return { items, retrievalMode: "native-browser" };
+    } catch {
+      return null;
+    }
+  }
+
   private async nativeSearch(
     query: string,
     req?: SourceSearchRequest,
@@ -106,6 +221,15 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     try {
+      // PRIMARY: the site's own signed JSON API, called inside the signed-in
+      // page. No paid API, no key: it reuses the session cookies and the
+      // `_webmsxyw` signer the site installs, and returns full JSON (including
+      // the xsec_token a later note fetch needs). ~0.3-1s instead of 15-25s.
+      const apiOutcome = await this.searchViaApi(page, query, req, maxResults, signal);
+      if (apiOutcome) return apiOutcome;
+
+      // FALLBACK: drive the search UI (survives a signer rename or a
+      // risk-control payload on the JSON channel).
       const navigation = await navigateXhsSearchViaUi(page, query, signal);
       if (navigation.state !== "ready") {
         const code = navigation.state === "signed-out"

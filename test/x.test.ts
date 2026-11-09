@@ -514,3 +514,17 @@ test("XSource: retries the Latest tab when Top yields no tweets", async () => {
   assert.ok(!navigations[0].includes("f=live"), "first pass is the Top tab");
   assert.ok(navigations[1].includes("f=live"), "second pass is the Latest tab");
 });
+
+test("XSource: search URL excludes reply noise and honors media intent", () => {
+  const plain = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus", rawQuery: "GPTPLus" } });
+  assert.ok(plain.includes("-filter%3Areplies"), "replies are excluded by default");
+
+  const replies = buildXSearchUrl("OpenAI 回复", { hints: { platform: "x", cleanQuery: "OpenAI 回复", rawQuery: "OpenAI 回复" } });
+  assert.ok(!replies.includes("-filter%3Areplies"), "an explicit reply request keeps replies");
+
+  const video = buildXSearchUrl("DeepSeek 视频", { hints: { platform: "x", cleanQuery: "DeepSeek 视频", rawQuery: "DeepSeek 视频" } });
+  assert.ok(video.includes("filter%3Avideos"));
+
+  const trending = buildXSearchUrl("AI 热门", { hints: { platform: "x", cleanQuery: "AI 热门", rawQuery: "AI 热门" } });
+  assert.ok(trending.includes("min_faves%3A10"));
+});

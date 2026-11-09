@@ -114,6 +114,17 @@ export function buildXSearchUrl(query: string, req?: SourceSearchRequest, forceL
     }
   }
 
+  // Quality operators. These are FREE query syntax honored by x.com itself (no
+  // paid API tier): topic searches are dominated by reply noise and bot spam,
+  // so replies are excluded unless the caller explicitly asked for them.
+  const raw = (req?.hints?.rawQuery ?? query).toLowerCase();
+  if (!/filter:replies|回复|replies/.test(raw)) q += " -filter:replies";
+  if (/视频|video/.test(raw)) q += " filter:videos";
+  else if (/图片|图文|image|photo/.test(raw)) q += " filter:images";
+  // Only when the caller asked for popularity: a global engagement floor would
+  // erase exactly the niche terms a platform search is usually used for.
+  if (/热门|最火|高赞|trending|viral/.test(raw)) q += " min_faves:10";
+
   // `f=live` switches the UI from relevance-ranked "Top" to chronological
   // "Latest". The news topic wants it by default; the search fallback asks for
   // it explicitly when "Top" produced nothing usable.
