@@ -48,6 +48,12 @@ export async function fallbackSearchToGeneralWeb(
     }));
     return {
       items,
+      // Carry the executor's diagnostics through the platform-fallback hop.
+      // Dropping them here used to make the settings card's Test Search show
+      // an empty backend/attempts ledger for every ordinary search.
+      ...(rawResults.backend !== undefined ? { backend: rawResults.backend } : {}),
+      ...(rawResults.attempts !== undefined ? { attempts: rawResults.attempts } : {}),
+      ...(rawResults.fused !== undefined ? { fused: rawResults.fused } : {}),
       retrievalMode: "degraded-web",
     };
   } catch (err: any) {

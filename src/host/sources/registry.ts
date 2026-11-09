@@ -116,7 +116,15 @@ export class SpecializedSourceRegistry {
           snippet: s.snippet,
           platform: "general" as const,
         }));
-        return { items, retrievalMode: "general-web" };
+        return {
+          items,
+          retrievalMode: "general-web",
+          // Diagnostics must survive this hop: without them the settings card
+          // (and the MCP tool) cannot report which backend served the answer.
+          ...(res.backend !== undefined ? { backend: res.backend } : {}),
+          ...(res.attempts !== undefined ? { attempts: res.attempts } : {}),
+          ...(res.fused !== undefined ? { fused: res.fused } : {}),
+        };
       }
       return { items: [] };
     }

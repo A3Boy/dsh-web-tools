@@ -353,3 +353,29 @@ test("SearchHints: topic classification disambiguates financial vs code queries"
   const h4 = extractSearchHints("DeepSeek-R1 论文消融实验");
   assert.equal(h4.topic, "research");
 });
+
+test("SpecializedSourceRegistry: forwards the executor diagnostics on the general-web path", async () => {
+  const registry = new SpecializedSourceRegistry();
+
+  const provider = {
+    search: async () => ({
+      sources: [{ title: "A", url: "https://a.example/1" }],
+      backend: "tavily+firecrawl",
+      fused: true,
+      attempts: [{ provider: "tavily", outcome: "success", latencyMs: 120 }],
+    }),
+  };
+  registry.setFallbackProviders(provider as any, undefined);
+
+  // No platform hint: the ordinary search path.
+  const plain = await registry.search("plain query");
+  assert.equal(plain.backend, "tavily+firecrawl");
+  assert.equal(plain.fused, true);
+  assert.equal(plain.attempts?.[0]?.provider, "tavily");
+
+  // Platform hint without a registered source: the degraded-web fallback path.
+  const degraded = await registry.search("plain query", { hints: { platform: "x", cleanQuery: "plain query" } });
+  assert.equal(degraded.backend, "tavily+firecrawl");
+  assert.equal(degraded.fused, true);
+  assert.equal(degraded.attempts?.[0]?.provider, "tavily");
+});

@@ -64,6 +64,16 @@ export interface SourceSearchOutcome {
     items: SourceItem[];
     error?: SourceFailure;
     retrievalMode?: "native-browser" | "degraded-web" | "general-web";
+    /** Which provider(s) served a general-web fallback (`a+b` when fused). */
+    backend?: string;
+    /** Per-provider attempt ledger of a general-web fallback. */
+    attempts?: Array<{
+        provider: string;
+        outcome: string;
+        latencyMs?: number;
+    }>;
+    /** True when the fallback merged two providers with RRF. */
+    fused?: boolean;
 }
 export interface SourceFetchOutcome {
     item?: SourceItem;

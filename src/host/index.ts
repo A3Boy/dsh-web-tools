@@ -367,6 +367,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           publishedAt: item.publishedAt,
         })),
         truncated: false,
+        // Forward the executor's diagnostics so the settings card can show the
+        // serving backend, the attempt ledger and whether the answer was fused.
+        ...(outcome.backend !== undefined ? { backend: outcome.backend } : {}),
+        ...(outcome.attempts !== undefined ? { attempts: outcome.attempts } : {}),
+        ...(outcome.fused !== undefined ? { fused: outcome.fused } : {}),
       };
     },
   };
