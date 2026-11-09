@@ -1,5 +1,5 @@
 import { extractSearchHints } from "../search-hints.ts";
-import type { SpecializedPlatformId, SourceSearchOutcome, SourceFetchOutcome } from "./types.ts";
+import type { SpecializedPlatformId, SourceSearchOutcome, SourceFetchOutcome, SourceDegradation } from "./types.ts";
 import type { WebSearchProviderLike, WebFetchProviderLike } from "../registry.ts";
 
 export function buildFallbackQuery(query: string, platform: SpecializedPlatformId): string {
@@ -23,7 +23,13 @@ export async function fallbackSearchToGeneralWeb(
   generalSearch?: WebSearchProviderLike,
   maxResults?: number,
   signal?: AbortSignal,
+  reason?: SourceDegradation,
 ): Promise<SourceSearchOutcome> {
+  const degraded: SourceDegradation = reason ?? {
+    code: "unknown",
+    message: `Native ${platform} search was unavailable`,
+    platform,
+  };
   if (!generalSearch) {
     return {
       items: [],
@@ -33,6 +39,7 @@ export async function fallbackSearchToGeneralWeb(
         retryable: false,
       },
       retrievalMode: "degraded-web",
+      degraded,
     };
   }
 
@@ -54,6 +61,7 @@ export async function fallbackSearchToGeneralWeb(
       ...(rawResults.backend !== undefined ? { backend: rawResults.backend } : {}),
       ...(rawResults.attempts !== undefined ? { attempts: rawResults.attempts } : {}),
       ...(rawResults.fused !== undefined ? { fused: rawResults.fused } : {}),
+      degraded,
       retrievalMode: "degraded-web",
     };
   } catch (err: any) {

@@ -59,6 +59,18 @@ export declare function formatDateYMD(d: Date): string;
  */
 export declare function calculateAfterDate(preset: FreshnessPreset, now?: Date): string;
 /**
+ * Strip conversational tails that hurt IN-PLATFORM keyword search.
+ *
+ * Platform search (X, Xiaohongshu) matches literal tokens: "GPTPLus 还值得开吗"
+ * asks the platform for posts containing 还/值得/开, which mostly returns
+ * unrelated opinion posts. General web engines handle natural language fine, so
+ * this refinement is applied ONLY to the native platform query.
+ *
+ * Deliberately conservative: only well-known question/opinion tails and
+ * leading politeness are removed; everything else is left intact.
+ */
+export declare function refinePlatformQuery(query: string): string;
+/**
  * Extract structured SearchHints from a raw query.
  * Pure function: deterministic, fast, testable, zero side-effects.
  */

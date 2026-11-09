@@ -445,3 +445,72 @@ test("P7.2-B: fetch rejects invalid status URLs before opening browser", async (
   assert.equal(createPageCalled, false, "Must not create browser page for non-tweet URL");
   assert.equal(res.error?.code, "parse-failed");
 });
+
+test("XSource: buildXSearchUrl forceLatest switches to the chronological tab", () => {
+  const top = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus" } });
+  const latest = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus" } }, true);
+  assert.ok(top.includes("src=typed_query"));
+  assert.ok(!top.includes("f=live"));
+  assert.ok(latest.includes("&f=live"));
+});
+
+test("XSource: retries the Latest tab when Top yields no tweets", async () => {
+  const navigations: string[] = [];
+  let attempt = 0;
+
+  const makePage = (): CdpPageLease => {
+    const index = ++attempt;
+    return {
+      targetId: `target-${index}`,
+      sessionId: `session-${index}`,
+      navigate: async (url: string) => {
+        navigations.push(url);
+      },
+      waitForLoad: async () => {},
+      waitForSelector: async () => {},
+      evaluate: async () => "",
+      call: async (fn: any) => {
+        if (fn.name !== "extractVisibleXTweets") return null as any;
+        // Top tab: nothing indexed yet. Latest tab: the fresh post.
+        return index === 1
+          ? []
+          : [{ id: "999", url: "https://x.com/someone/status/999", text: "GPTPLus 还值得开吗", authorName: "Someone", authorHandle: "@someone" }];
+      },
+      scrollBy: async () => {},
+      beginJsonCapture: async () => ({
+        wait: async () => ({ state: "captured" as const, json: {}, url: "", status: 200 }),
+        cancel: () => {},
+      }),
+      close: async () => {},
+    };
+  };
+
+  const fakeRuntime: NativeBrowserRuntime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({
+      platform: "x",
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authState: "authenticated",
+      authenticated: true,
+    }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => makePage(),
+    createPage: async () => makePage(),
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  };
+
+  const source = new XSource(fakeRuntime);
+  const res = await source.search("GPTPLus", { maxResults: 5 });
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].id, "999");
+  assert.equal(navigations.length, 2, "both tabs must be attempted");
+  assert.ok(!navigations[0].includes("f=live"), "first pass is the Top tab");
+  assert.ok(navigations[1].includes("f=live"), "second pass is the Latest tab");
+});

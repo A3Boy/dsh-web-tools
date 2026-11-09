@@ -13,7 +13,7 @@
 import type { WebToolsContext } from "./context-types.ts";
 import { type WebToolsSettings } from "./config.ts";
 import { PROVIDER_ID } from "./registry.ts";
-import type { SourceFetchOutcome } from "./sources/types.ts";
+import type { SourceDegradation, SourceFetchOutcome } from "./sources/types.ts";
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "dsh-web-tools";
 /** Services required by this plugin. */
@@ -33,5 +33,13 @@ export declare function toRoutedFetchResponse(url: string, outcome: SourceFetchO
     };
     truncated: boolean;
 };
+/**
+ * One-line, model-facing explanation of a degraded platform search.
+ *
+ * The web_search tool renders `content` above the source list, so this is the
+ * only place where an agent (and the operator reading the transcript) can learn
+ * that these are site:-filtered web results rather than in-app posts.
+ */
+export declare function describeDegradation(d: SourceDegradation): string;
 export declare function apply(ctx: WebToolsContext, config?: unknown): void;
 export { PROVIDER_ID };

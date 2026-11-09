@@ -145,11 +145,20 @@ export interface TestSearchView {
   backend?: string;
   /** True when the answer merged two providers with RRF. */
   fused?: boolean;
+  /** Set when a platform query was served by a general web fallback. */
+  degraded?: TextSearchDegradation;
   latencyMs?: number;
   resultCount?: number;
   results?: Array<{ title: string; url: string; snippet: string }>;
   attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }>;
   error?: { code: string; message: string };
+}
+
+/** Why a platform search was served by web results instead of native data. */
+export interface TextSearchDegradation {
+  code: string;
+  message: string;
+  platform?: string;
 }
 
 /** Result of a single-provider connection test. */

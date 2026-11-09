@@ -12,6 +12,7 @@ import {
   isTweetDetailResponse,
 } from "./x/normalize.ts";
 import { appendCommentsToItem } from "./comments.ts";
+import { verifyPlatformSession } from "./auth.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -96,7 +97,7 @@ export function parseXMetricNumber(text?: string): number | undefined {
   return undefined;
 }
 
-export function buildXSearchUrl(query: string, req?: SourceSearchRequest): string {
+export function buildXSearchUrl(query: string, req?: SourceSearchRequest, forceLatest = false): string {
   let q = query.trim();
   // Note: lang: filter is intentionally omitted. SearchHints.locale.language
   // is inferred from the user's instruction language, not from an explicit
@@ -113,7 +114,10 @@ export function buildXSearchUrl(query: string, req?: SourceSearchRequest): strin
     }
   }
 
-  const fParam = req?.hints?.topic === "news" ? "&f=live" : "";
+  // `f=live` switches the UI from relevance-ranked "Top" to chronological
+  // "Latest". The news topic wants it by default; the search fallback asks for
+  // it explicitly when "Top" produced nothing usable.
+  const fParam = forceLatest || req?.hints?.topic === "news" ? "&f=live" : "";
   return `https://x.com/search?q=${encodeURIComponent(q)}&src=typed_query${fParam}`;
 }
 
@@ -154,7 +158,7 @@ export class XSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const isAuth = await this.runtime.verifyAuthenticationForOperation("x", signal);
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
     if (!isAuth) {
       return {
         items: [],
@@ -163,8 +167,26 @@ export class XSource implements SpecializedSource {
     }
 
     const maxResults = Math.min(req?.maxResults || 10, 30);
-    const searchUrl = buildXSearchUrl(query, req);
 
+    // Pass 1 — the default ("Top") tab, which X ranks by relevance. Best for
+    // evergreen or popular terms.
+    const top = await this.searchOnce(buildXSearchUrl(query, req), maxResults, signal);
+    if (top.items.length > 0) return top;
+    if (top.error && !top.error.retryable) return top;
+    if (signal?.aborted) return top;
+
+    // Pass 2 — "Latest". Niche or CJK keywords frequently have no Top matches
+    // while the chronological tab still does. Without this retry the router
+    // degraded to a `site:x.com` web search, which matches tokens loosely and
+    // surfaced years-old unrelated tweets.
+    const latest = await this.searchOnce(buildXSearchUrl(query, req, true), maxResults, signal);
+    if (latest.items.length > 0) return latest;
+    if (latest.error && !latest.error.retryable) return latest;
+    return top.error ? top : latest;
+  }
+
+  /** One navigation + capture attempt against a concrete search URL. */
+  private async searchOnce(searchUrl: string, maxResults: number, signal?: AbortSignal): Promise<SourceSearchOutcome> {
     let page;
     let capture;
     try {
@@ -275,7 +297,7 @@ export class XSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
-    const isAuth = await this.runtime.verifyAuthenticationForOperation("x", signal);
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
     if (!isAuth) {
       return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
     }

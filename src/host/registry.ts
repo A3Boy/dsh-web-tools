@@ -48,6 +48,8 @@ export interface WebSearchProviderLike {
     attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }>;
     /** True when the result merged two providers with RRF. */
     fused?: boolean;
+    /** Set when a platform query was served by a general web fallback. */
+    degraded?: { code: string; message: string; platform?: string };
   }>;
 }
 

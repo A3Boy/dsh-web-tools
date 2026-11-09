@@ -11,6 +11,7 @@ import { normalizeXhsFeed } from "./xiaohongshu/normalize.ts";
 import { extractXhsComments } from "./xiaohongshu/comments.ts";
 import { navigateXhsSearchViaUi } from "./xiaohongshu/ui-search.ts";
 import { appendCommentsToItem } from "./comments.ts";
+import { verifyPlatformSession } from "./auth.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -85,7 +86,7 @@ export class XiaohongshuSource implements SpecializedSource {
     req?: SourceSearchRequest,
     signal?: AbortSignal,
   ): Promise<SourceSearchOutcome> {
-    const isAuth = await this.runtime.verifyAuthenticationForOperation("xiaohongshu", signal, "interactive");
+    const isAuth = await verifyPlatformSession(this.runtime, "xiaohongshu", signal, "interactive");
     if (!isAuth) {
       return {
         items: [],
@@ -235,11 +236,7 @@ export class XiaohongshuSource implements SpecializedSource {
       ? url
       : this.noteUrlCache.get(noteId) || url;
 
-    const isAuth = await this.runtime.verifyAuthenticationForOperation(
-      "xiaohongshu",
-      signal,
-      "interactive",
-    );
+    const isAuth = await verifyPlatformSession(this.runtime, "xiaohongshu", signal, "interactive");
     if (!isAuth) {
       return { error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false } };
     }

@@ -407,6 +407,23 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             </div>
           )}
 
+          {/* A platform query served by web results must say so. */}
+          {result.ok && result.degraded && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: text.secondary,
+                background: surface.layer2,
+                border: `1px solid ${surface.border}`,
+                borderRadius: 6,
+                padding: "6px 8px",
+              }}
+            >
+              {t("degradedSearchNotice", { reason: result.degraded.code })}
+            </div>
+          )}
+
           {/* Human-readable attempts timeline */}
           {attempts.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: text.secondary }}>

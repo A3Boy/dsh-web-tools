@@ -64,6 +64,13 @@ export interface SourceSearchOutcome {
     items: SourceItem[];
     error?: SourceFailure;
     retrievalMode?: "native-browser" | "degraded-web" | "general-web";
+    /**
+     * Set when the answer did NOT come from the platform itself (native search
+     * unavailable) and a site:-filtered web search was used instead. Callers must
+     * surface this: silently labelling web results as platform results is the
+     * failure mode this field exists to prevent.
+     */
+    degraded?: SourceDegradation;
     /** Which provider(s) served a general-web fallback (`a+b` when fused). */
     backend?: string;
     /** Per-provider attempt ledger of a general-web fallback. */
@@ -74,6 +81,13 @@ export interface SourceSearchOutcome {
     }>;
     /** True when the fallback merged two providers with RRF. */
     fused?: boolean;
+}
+/** Why a platform search was served by a web-search fallback instead. */
+export interface SourceDegradation {
+    code: SourceErrorCode | "platform-disabled";
+    message: string;
+    /** `xiaohongshu` / `x`, when the degradation came from a platform source. */
+    platform?: SpecializedPlatformId;
 }
 export interface SourceFetchOutcome {
     item?: SourceItem;

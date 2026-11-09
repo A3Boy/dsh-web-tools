@@ -200,6 +200,37 @@ const EXPLICIT_COUNTRY_PATTERNS: Array<{
 ];
 
 /**
+ * Strip conversational tails that hurt IN-PLATFORM keyword search.
+ *
+ * Platform search (X, Xiaohongshu) matches literal tokens: "GPTPLus 还值得开吗"
+ * asks the platform for posts containing 还/值得/开, which mostly returns
+ * unrelated opinion posts. General web engines handle natural language fine, so
+ * this refinement is applied ONLY to the native platform query.
+ *
+ * Deliberately conservative: only well-known question/opinion tails and
+ * leading politeness are removed; everything else is left intact.
+ */
+export function refinePlatformQuery(query: string): string {
+  const original = (query ?? "").trim();
+  if (!original) return original;
+
+  let q = original;
+  // Leading politeness ("请问…", "想问下…").
+  q = q.replace(/^(?:请问|求问|想问一下|想问下|想请教一下|请教一下)[\s,，:：]*/u, "");
+  // "值得买吗 / 还值得开吗 / 值不值得订阅" style tails.
+  q = q.replace(/\s*(?:还)?(?:值得|值不值)(?:得)?(?:开|买|订阅|续费|用|入手)?(?:吗|么|呢)?[?？]?$/u, "");
+  // Plain evaluation questions.
+  q = q.replace(/\s*(?:怎么样|好不好用|好不好|行不行|靠谱吗|好用吗|如何)[?？]?$/u, "");
+  // Dangling question marks / punctuation.
+  q = q.replace(/[?？\s]+$/u, "");
+
+  const refined = q.trim();
+  // Never return an empty query: fall back to the original when the whole
+  // query was a question tail.
+  return refined.length > 0 ? refined : original;
+}
+
+/**
  * Extract structured SearchHints from a raw query.
  * Pure function: deterministic, fast, testable, zero side-effects.
  */

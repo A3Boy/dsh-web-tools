@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractSearchHints } from "../src/host/search-hints.ts";
+import { extractSearchHints, refinePlatformQuery } from "../src/host/search-hints.ts";
 import { buildFallbackQuery } from "../src/host/sources/web-fallback.ts";
 import { SpecializedSourceRegistry } from "../src/host/sources/registry.ts";
 import type { SpecializedSource, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "../src/host/sources/types.ts";
@@ -378,4 +378,100 @@ test("SpecializedSourceRegistry: forwards the executor diagnostics on the genera
   assert.equal(degraded.backend, "tavily+firecrawl");
   assert.equal(degraded.fused, true);
   assert.equal(degraded.attempts?.[0]?.provider, "tavily");
+});
+
+test("SpecializedSourceRegistry: an auth failure degrades to web results WITH a marker", async () => {
+  const registry = new SpecializedSourceRegistry();
+
+  const signedOutSource: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: false,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
+    }),
+    fetch: async () => ({
+      error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
+    }),
+  };
+
+  registry.registerSource(signedOutSource);
+  registry.setFallbackProviders(
+    {
+      search: async () => ({
+        sources: [{ title: "降级笔记", url: "https://www.xiaohongshu.com/explore/1", snippet: "s" }],
+      }),
+    } as any,
+    undefined,
+  );
+
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
+
+  // Degrade instead of hard-failing: the caller still gets candidates...
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.items.length, 1);
+  // ...but the answer is explicitly marked as NOT native platform data.
+  assert.equal(outcome.degraded?.code, "auth-required");
+  assert.equal(outcome.degraded?.platform, "xiaohongshu");
+  assert.equal(outcome.retrievalMode, "degraded-web");
+});
+
+test("SpecializedSourceRegistry: non-auth, non-retryable failures still return immediately", async () => {
+  const registry = new SpecializedSourceRegistry();
+  let fallbackCalled = false;
+
+  registry.registerSource({
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "search-restricted", message: "Search is restricted", retryable: false },
+    }),
+    fetch: async () => ({ error: { code: "blocked", message: "blocked", retryable: false } }),
+  });
+  registry.setFallbackProviders(
+    {
+      search: async () => {
+        fallbackCalled = true;
+        return { sources: [] };
+      },
+    } as any,
+    undefined,
+  );
+
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
+  assert.equal(outcome.error?.code, "search-restricted");
+  assert.equal(fallbackCalled, false);
+  assert.equal(outcome.degraded, undefined);
+});
+
+test("refinePlatformQuery strips question tails that poison platform keyword search", () => {
+  assert.equal(refinePlatformQuery("GPTPLus 还值得开吗"), "GPTPLus");
+  assert.equal(refinePlatformQuery("GPT Plus 值得订阅吗？"), "GPT Plus");
+  assert.equal(refinePlatformQuery("小红书 探店 怎么样"), "小红书 探店");
+  assert.equal(refinePlatformQuery("请问 Claude 好不好用"), "Claude");
+  // English and untouched queries keep their wording.
+  assert.equal(refinePlatformQuery("OpenAI latest model"), "OpenAI latest model");
+  // A query that is ONLY a question tail must not become empty.
+  assert.equal(refinePlatformQuery("值得开吗"), "值得开吗");
 });

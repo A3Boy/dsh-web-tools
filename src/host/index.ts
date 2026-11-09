@@ -59,7 +59,7 @@ import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
 import { extractSearchHints } from "./search-hints.ts";
-import type { SourceFetchOutcome } from "./sources/types.ts";
+import type { SourceDegradation, SourceFetchOutcome } from "./sources/types.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -121,6 +121,32 @@ export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) 
     body: { kind: "text" as const, content },
     truncated: false,
   };
+}
+
+const PLATFORM_DISPLAY_NAME: Record<string, string> = {
+  xiaohongshu: "Xiaohongshu",
+  x: "X (Twitter)",
+};
+
+/**
+ * One-line, model-facing explanation of a degraded platform search.
+ *
+ * The web_search tool renders `content` above the source list, so this is the
+ * only place where an agent (and the operator reading the transcript) can learn
+ * that these are site:-filtered web results rather than in-app posts.
+ */
+export function describeDegradation(d: SourceDegradation): string {
+  const platform = d.platform ? PLATFORM_DISPLAY_NAME[d.platform] ?? d.platform : "the platform";
+  const reason =
+    d.code === "auth-required" || d.code === "auth-expired"
+      ? `there is no signed-in ${platform} browser session`
+      : d.code === "platform-disabled"
+        ? `${platform} is disabled in the dsh-web-tools settings card`
+        : `${platform} native search failed (${d.code})`;
+  return (
+    `Note: ${reason}, so the results below come from a site:-filtered general web search — ` +
+    `they may be older and are not in-app content. Sign in to ${platform} in the dsh-web-tools settings card for native results.`
+  );
 }
 
 /** Release lookup is best-effort: startup and settings must work offline. */
@@ -360,6 +386,10 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
       }
       return {
+        // A degraded answer must SAY it is degraded: silently returning
+        // site:-filtered web results as if they were in-app posts is how a
+        // search looks successful while being much worse.
+        ...(outcome.degraded ? { content: describeDegradation(outcome.degraded), degraded: outcome.degraded } : {}),
         sources: outcome.items.map((item) => ({
           url: item.url,
           title: item.title,
@@ -474,6 +504,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         ok: true,
         backend: (result as unknown as { backend?: string }).backend,
         fused: (result as unknown as { fused?: boolean }).fused === true,
+        degraded: (result as unknown as { degraded?: { code: string; message: string; platform?: string } }).degraded,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),

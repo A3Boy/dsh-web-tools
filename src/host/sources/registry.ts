@@ -1,4 +1,5 @@
 import { validatePlatformUrl } from "../browser/paths.ts";
+import { refinePlatformQuery } from "../search-hints.ts";
 import { fallbackSearchToGeneralWeb, fallbackFetchToGeneralWeb } from "./web-fallback.ts";
 import type {
   SpecializedSource,
@@ -137,23 +138,33 @@ export class SpecializedSourceRegistry {
         this.fallbackSearchProvider,
         req?.maxResults,
         signal,
+        {
+          code: "platform-disabled",
+          message: source
+            ? `${platform} is disabled in the settings card`
+            : `No ${platform} source is registered in this build`,
+          platform,
+        },
       );
     }
 
-    const nativeQuery = req?.hints?.cleanQuery?.trim() || query;
+    const nativeQuery = refinePlatformQuery(req?.hints?.cleanQuery?.trim() || query);
     const outcome = await source.search(nativeQuery, req, signal);
     // If native search succeeded (even 0 results), keep native outcome!
     if (outcome.error === undefined) {
       return { ...outcome, retrievalMode: "native-browser" };
     }
 
-    // Do not hide platform authentication/access failures behind indexed web
-    // results. They cannot provide native details or real comments and would
-    // make an explicit platform search look successful when it was not.
     if (signal?.aborted || outcome.error.code === "aborted") {
       return outcome;
     }
-    if (!outcome.error.retryable) {
+
+    // An absent/expired session used to fail the whole search. Indexed web
+    // results WITH an explicit degraded marker are more useful than a hard
+    // error: the agent still gets candidates, and every layer can tell this was
+    // not native platform data (the marker is what stops it being hidden).
+    const authIssue = outcome.error.code === "auth-required" || outcome.error.code === "auth-expired";
+    if (!outcome.error.retryable && !authIssue) {
       return outcome;
     }
 
@@ -164,6 +175,7 @@ export class SpecializedSourceRegistry {
       this.fallbackSearchProvider,
       req?.maxResults,
       signal,
+      { code: outcome.error.code, message: outcome.error.message, platform },
     );
   }
 
