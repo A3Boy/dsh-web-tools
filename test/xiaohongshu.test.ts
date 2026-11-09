@@ -147,12 +147,17 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   assert.equal(status.capabilities?.nativeSearch, true, "XHS native search must be enabled by default");
   assert.equal(status.capabilities?.nativeFetch, true, "XHS native fetch must be enabled");
 
-  // Production default: native search runs through the signed-in browser.
+  // Production default: the direct-URL channel sees the SSR-rendered notes and
+  // returns immediately — the UI typing flow is NOT needed for this case.
   const searchRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
   assert.equal(searchRes.items.length, 1);
-  assert.deepEqual(nativeSearchQueries, ["Gemini 3.7"]);
   assert.equal(searchRes.items[0].id, "note123");
   assert.ok(searchRes.items[0].url.includes("xsec_token=token123"));
+  assert.deepEqual(
+    nativeSearchQueries,
+    [],
+    "SSR-ready results must not fall through to the slow UI typing flow",
+  );
 
   // Operators can still explicitly disable the native path when debugging.
   setXhsNativeSearchEnabled(false);

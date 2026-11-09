@@ -13,6 +13,7 @@ import {
 } from "./x/normalize.ts";
 import { appendCommentsToItem } from "./comments.ts";
 import { verifyPlatformSession } from "./auth.ts";
+import { fetchWithProxy } from "../fetch-proxy.ts";
 import type {
   SpecializedSource,
   SourceStatus,
@@ -161,15 +162,19 @@ export function buildXSearchUrl(query: string, req?: SourceSearchRequest, forceL
   }
 
   // Quality operators. These are FREE query syntax honored by x.com itself (no
-  // paid API tier): topic searches are dominated by reply noise and bot spam,
-  // so replies are excluded unless the caller explicitly asked for them.
+  // paid API tier): topic searches are dominated by reply noise and bot spam.
+  //
+  // Only applied to ASCII/Latin queries: x.com's parser mis-handles negative
+  // operators combined with CJK keywords and can return 0 posts for a query
+  // that has plenty of matches. Reply filtering for CJK stays client-side.
   const raw = (req?.hints?.rawQuery ?? query).toLowerCase();
-  if (!/filter:replies|回复|replies/.test(raw)) q += " -filter:replies";
-  if (/视频|video/.test(raw)) q += " filter:videos";
-  else if (/图片|图文|image|photo/.test(raw)) q += " filter:images";
+  const isAsciiQuery = /^[\x00-\x7F]+$/.test(raw);
+  if (isAsciiQuery && !/filter:replies|回复|replies/.test(raw)) q += " -filter:replies";
+  if (isAsciiQuery && /视频|video/.test(raw)) q += " filter:videos";
+  else if (isAsciiQuery && /图片|图文|image|photo/.test(raw)) q += " filter:images";
   // Only when the caller asked for popularity: a global engagement floor would
   // erase exactly the niche terms a platform search is usually used for.
-  if (/热门|最火|高赞|trending|viral/.test(raw)) q += " min_faves:10";
+  if (isAsciiQuery && /热门|最火|高赞|trending|viral/.test(raw)) q += " min_faves:10";
 
   // `f=live` switches the UI from relevance-ranked "Top" to chronological
   // "Latest". The news topic wants it by default; the search fallback asks for
@@ -178,8 +183,57 @@ export function buildXSearchUrl(query: string, req?: SourceSearchRequest, forceL
   return `https://x.com/search?q=${encodeURIComponent(q)}&src=typed_query${fParam}`;
 }
 
-export class XSource implements SpecializedSource {
-  readonly id = "x" as const;
+/**
+ * Map the public syndication payload (the one X's embed widget uses) to a
+ * SourceItem. Free endpoint, no auth, no browser.
+ */
+export function mapSyndicationTweet(json: any, fallbackUrl: string): SourceItem | null {
+  const text = typeof json?.text === "string" ? json.text : "";
+  const user = json?.user ?? {};
+  const id = json?.id_str ?? json?.id;
+  if (!id && !text) return null;
+  const handle = typeof user?.screen_name === "string" ? `@${user.screen_name}` : undefined;
+  return {
+    id: String(id ?? ""),
+    title: text.slice(0, 80) || "X Tweet",
+    url: fallbackUrl,
+    text: text || undefined,
+    snippet: text ? text.slice(0, 240) : undefined,
+    author: user?.name
+      ? { name: String(user.name), handle, url: user?.screen_name ? `https://x.com/${user.screen_name}` : undefined }
+      : undefined,
+    publishedAt: typeof json?.created_at === "string" ? json.created_at : undefined,
+    likes: typeof json?.favorite_count === "number" ? json.favorite_count : undefined,
+    replies: typeof json?.conversation_count === "number" ? json.conversation_count : undefined,
+    platform: "x",
+  };
+}
+
+type SyndicationFetcher = (tweetId: string, signal?: AbortSignal) => Promise<any | null>;
+
+/** Fetch one tweet from X's public embed endpoint (no auth, no browser). */
+async function defaultSyndicationFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null> {
+  try {
+    const res = await fetchWithProxy(
+      `https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(tweetId)}&lang=zh-cn&token=a`,
+      { signal, headers: { accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json && typeof json === "object" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+let syndicationFetcher: SyndicationFetcher = defaultSyndicationFetcher;
+
+/** Test seam: replace the network fetcher (pass a null-returning stub). */
+export function setSyndicationFetcher(fn: SyndicationFetcher): void {
+  syndicationFetcher = fn;
+}
+
+export class XSource implements SpecializedSource {  readonly id = "x" as const;
   readonly name = "Twitter / X";
   private runtime: NativeBrowserRuntime;
 
@@ -260,9 +314,12 @@ export class XSource implements SpecializedSource {
 
     try {
       // PRIMARY: capture the SearchTimeline GraphQL response over CDP.
+      // 15s: x.com is a multi-MB SPA and through a proxy the SearchTimeline
+      // request often fires 8-10s after navigation; 8s cut it off one second
+      // before it happened.
       capture = await page.beginJsonCapture({
         urlIncludes: "/SearchTimeline",
-        timeoutMs: 8000,
+        timeoutMs: 15000,
         signal,
       });
       await page.navigate(searchUrl, signal);
@@ -361,14 +418,23 @@ export class XSource implements SpecializedSource {
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
-    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
-    if (!isAuth) {
-      return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
-    }
-
     const targetTweetId = extractTweetIdFromUrl(url);
     if (!targetTweetId) {
       return { error: { code: "parse-failed", message: `Invalid X status URL: "${url}"`, retryable: false } };
+    }
+
+    // Fast public path FIRST: no login, no browser, no paid API. The endpoint
+    // behind X's own embed widget returns the tweet JSON in milliseconds, so a
+    // signed-out profile can still read a public post.
+    const syndicated = await syndicationFetcher(targetTweetId, signal);
+    if (syndicated) {
+      const item = mapSyndicationTweet(syndicated, url);
+      if (item) return { item, retrievalMode: "public-api" };
+    }
+
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal);
+    if (!isAuth) {
+      return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
     }
 
     let page;

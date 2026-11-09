@@ -119,7 +119,7 @@ export interface SourceDegradation {
 export interface SourceFetchOutcome {
   item?: SourceItem;
   error?: SourceFailure;
-  retrievalMode?: "native-browser" | "degraded-web" | "general-web";
+  retrievalMode?: "native-browser" | "degraded-web" | "general-web" | "public-api";
 }
 
 export interface SpecializedSource {

@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { XSource, buildXSearchUrl, parseXMetricNumber } from "../src/host/sources/x.ts";
+import { XSource, buildXSearchUrl, parseXMetricNumber, setSyndicationFetcher } from "../src/host/sources/x.ts";
+// Keep every test hermetic: the public syndication endpoint is network I/O.
+setSyndicationFetcher(async () => null);
 import type { NativeBrowserRuntime, CdpPageLease, JsonCaptureHandle, NetworkCaptureOutcome } from "../src/host/browser/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -522,9 +524,49 @@ test("XSource: search URL excludes reply noise and honors media intent", () => {
   const replies = buildXSearchUrl("OpenAI 回复", { hints: { platform: "x", cleanQuery: "OpenAI 回复", rawQuery: "OpenAI 回复" } });
   assert.ok(!replies.includes("-filter%3Areplies"), "an explicit reply request keeps replies");
 
-  const video = buildXSearchUrl("DeepSeek 视频", { hints: { platform: "x", cleanQuery: "DeepSeek 视频", rawQuery: "DeepSeek 视频" } });
+  const video = buildXSearchUrl("DeepSeek video", { hints: { platform: "x", cleanQuery: "DeepSeek video", rawQuery: "DeepSeek video" } });
   assert.ok(video.includes("filter%3Avideos"));
 
-  const trending = buildXSearchUrl("AI 热门", { hints: { platform: "x", cleanQuery: "AI 热门", rawQuery: "AI 热门" } });
+  const trending = buildXSearchUrl("AI trending", { hints: { platform: "x", cleanQuery: "AI trending", rawQuery: "AI trending" } });
   assert.ok(trending.includes("min_faves%3A10"));
+
+  // CJK queries must NOT get negative/operator suffixes: x.com mis-parses them.
+  const cjk = buildXSearchUrl("DeepSeek 视频", { hints: { platform: "x", cleanQuery: "DeepSeek 视频", rawQuery: "DeepSeek 视频" } });
+  assert.ok(!cjk.includes("filter%3Avideos"));
+  assert.ok(!cjk.includes("-filter%3Areplies"));
+});
+
+test("XSource: the public syndication endpoint serves a tweet without any session", async () => {
+  setSyndicationFetcher(async () => ({
+    id_str: "123",
+    text: "GPTPLus 又涨价了",
+    created_at: "2026-11-09T10:00:00.000Z",
+    favorite_count: 42,
+    conversation_count: 7,
+    user: { name: "测试用户", screen_name: "tester" },
+  }));
+  let pageCreated = false;
+  const runtime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({ platform: "x", runtimeAvailable: true, runtimeState: "stopped", authState: "signed-out", authenticated: false }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => false,
+    verifyAuthenticationForOperation: async () => false,
+    openPage: async () => { pageCreated = true; throw new Error("should not open a page"); },
+    createPage: async () => { pageCreated = true; throw new Error("should not create a page"); },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  } as any;
+
+  const source = new XSource(runtime);
+  const res = await source.fetch("https://x.com/tester/status/123");
+
+  assert.equal(res.item?.text, "GPTPLus 又涨价了");
+  assert.equal(res.item?.author?.handle, "@tester");
+  assert.equal(res.item?.likes, 42);
+  assert.equal(res.retrievalMode, "public-api");
+  assert.equal(pageCreated, false, "no browser page may be opened for a public tweet");
+
+  setSyndicationFetcher(async () => null);
 });

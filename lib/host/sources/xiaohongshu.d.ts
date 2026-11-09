@@ -42,6 +42,11 @@ export declare class XiaohongshuSource implements SpecializedSource {
      */
     private searchViaDirectUrl;
     /**
+     * Notes already rendered on the page (SSR / hydrated state), capped and
+     * de-duplicated. Used before waiting on any network response.
+     */
+    private readRenderedNotes;
+    /**
      * Fast path: signed in-page JSON search.
      *
      * Returns null (never throws) whenever this channel is unusable, so the

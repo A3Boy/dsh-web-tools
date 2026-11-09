@@ -227,6 +227,21 @@ export class XiaohongshuSource implements SpecializedSource {
         signal,
       });
       await page.navigate(buildXhsSearchUrl(query, req), signal);
+
+      // SSR FIRST. Opening /search_result directly usually server-renders the
+      // first screen: the notes are already in the DOM / __INITIAL_STATE__ and
+      // the page never fires /search/notes until the user scrolls. Waiting on
+      // that XHR alone burned 12s while the results were on screen.
+      const readyBy = Date.now() + 5000;
+      while (Date.now() < readyBy && !signal?.aborted) {
+        const early = await this.readRenderedNotes(page, maxResults, signal);
+        if (early.length > 0) {
+          for (const item of early) this.rememberNoteUrl(item.id, item.url);
+          return { outcome: { items: early, retrievalMode: "native-browser" } };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
       const outcome = await capture.wait();
       if (!outcome || outcome.state !== "captured") {
         const diag = await readXhsPageDiagnostics(page, signal);
@@ -256,6 +271,55 @@ export class XiaohongshuSource implements SpecializedSource {
     } finally {
       capture?.cancel();
     }
+  }
+
+  /**
+   * Notes already rendered on the page (SSR / hydrated state), capped and
+   * de-duplicated. Used before waiting on any network response.
+   */
+  private async readRenderedNotes(
+    page: CdpPageLease,
+    maxResults: number,
+    signal?: AbortSignal,
+  ): Promise<SourceItem[]> {
+    const items: SourceItem[] = [];
+    const seen = new Set<string>();
+    const push = (item: SourceItem | null | undefined) => {
+      if (!item || seen.has(item.id)) return;
+      seen.add(item.id);
+      items.push(item);
+    };
+
+    try {
+      const state = await page.call(extractXhsSearchState, [], signal);
+      if (state?.available && Array.isArray(state.feeds)) {
+        for (const feed of state.feeds) push(normalizeXhsFeed(feed));
+      }
+    } catch {
+      // Hydration state is optional.
+    }
+
+    if (items.length < maxResults) {
+      try {
+        const dom = await page.call(extractVisibleXhsSearch, [], signal);
+        for (const d of dom) {
+          push({
+            id: d.id,
+            title: d.title,
+            url: d.url,
+            snippet: d.snippet,
+            author: d.authorName ? { name: d.authorName, url: d.authorUrl } : undefined,
+            likes: d.likes,
+            coverImage: d.coverImage,
+            platform: "xiaohongshu",
+          });
+        }
+      } catch {
+        // DOM extraction is best-effort.
+      }
+    }
+
+    return items.slice(0, maxResults);
   }
 
   /**
