@@ -6,9 +6,9 @@
 
 # dsh-web-tools
 
-让 DeepSeek Harness 拥有直连全网与社媒平台的搜索与抓取能力。
+DeepSeek Harness 的全能智能联网与多源检索层。
 
-**10 大 Web Provider 原生能力适配 · SearchHints 语义编译 · 多源自动容灾 · 小红书 / Twitter X 平台检索**
+**10 大搜索引擎原生特性 · 对冲与融合多源检索 · 小红书 / X 原生会话 · 独立 MCP 服务**
 
 <p align="center">
   <a href="https://github.com/A3Boy/dsh-web-tools/stargazers">
@@ -31,112 +31,146 @@
 
 | 版本 | 发布日期 | 核心更新说明 |
 | :--- | :--- | :--- |
-| **v0.4.0** | 2026-11-09 | 新增 Serper (Google 搜索) 原生适配器；Keenable 支持原生网页抓取 (`/v1/fetch`) 与响应头配额监控；新增自定义源一键预设（Serper、SearXNG、Elasticsearch、Tavily）；超长文档自动生成并前置 Markdown 目录大纲 (TOC)；输入框支持 `Alt+S` 模式切换快捷键；上线故障熔断器与短周期结果缓存。 |
+| **v0.4.0** | 2026-11-09 | **从多源路由器全面升级为高可靠检索层**：<br/>• **并发检索模式**：上线对冲检索（Hedged Search，首源迟缓自动唤醒备用源并取消冗余请求）与多源融合检索（Reciprocal Rank Fusion 倒数排名融合去重）；<br/>• **多维路由策略**：新增自适应路由（基于 24h 成功率与时延动态评分）、最快与最省成本档位路由；<br/>• **独立 MCP Server**：检索内核完全解耦，支持以标准 MCP 协议供 Cursor、Claude Code、Windsurf 等外部 Agent 调用；<br/>• **源扩展与预设**：新增 Serper (Google Search) 原生适配器与 Keenable 网页抓取/配额监控，内置常用搜索源一键预设；<br/>• **鲁棒性升级**：国家与话题误判防范打分制、0 结果软故障降级（Soft-fail）、API Key 鉴权失败自动恢复 TTL、长文档自动 Markdown 目录大纲 (TOC)；<br/>• **可观测性与性能**：诊断时间线支持平台回退穿透与对冲落败取消记录；优化运行时配置探测与编译缓存，DSH 启动时间减少 70% 以上。 |
 | **v0.3.9** | 2026-11-07 | 接入 Keenable 搜索引擎，支持 `site` 域名限定与 `published_after` / `published_before` 发布日期过滤。 |
 | **v0.3.5** | 2026-11-01 | 支持自定义搜索源（三条并列接入路径、JSON 请求体模板与分级出站防护）；支持小红书与 Twitter / X 专用浏览器会话原生检索。 |
 
-完整版本历史与更新细节请参阅 [CHANGELOG.md](CHANGELOG.md)。
-
-## 它解决什么问题
-
-当联网能力只依赖一个 Web Provider 时，额度耗尽、限流或服务异常都可能直接中断检索；而简单接入多个搜索 API，往往又只能使用它们共同支持的基础能力，没有真正发挥不同搜索源各自擅长的搜索模式、分类、时效、域名策略和正文提取能力。
-
-dsh-web-tools 将 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、Serper (Google 搜索)、SearXNG，以及小红书、Twitter / X 接入 DSH 标准 `web_search` / `web_fetch`。
-
-在统一 DSH 工具接口的同时，dsh-web-tools 通过 SearchHints 归一化查询意图，再针对不同 Provider 分别编译为其支持的原生参数，尽可能使用各家的分类、时效、域名、地区、深度搜索与正文提取能力；同时通过多 API Key、Provider Fallback 和平台专用浏览器会话，提高整个联网链路的可用性。
+完整更新履历请参阅 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
-**核心亮点**：
+## 为什么需要 dsh-web-tools？
 
-- **10 大 Web Provider 原生能力深度适配**：保持统一 `web_search` / `web_fetch` 接口，但不把不同搜索源压成最低公共能力。针对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、Serper、SearXNG 分别适配搜索类型、时效、域名策略、地区语言、深度检索与正文提取能力。
-- **SearchHints → Provider-specific 参数编译**：将 Query 中的技术 / 论文 / 新闻、时效、域名、地区与语言等搜索意图归一化，再按不同 Provider 的能力映射为各自原生参数；整个过程由确定性代码完成，不增加额外 LLM 调用。
-- **小红书与 Twitter / X 平台来源**：两个平台均通过独立的本地浏览器 Profile 提供已登录站内搜索、详情抓取，以及页面实际返回的评论或回复。
-- **自定义搜索源与一键预设模板**：支持声明式接入私有知识库与 RESTful 搜索 API，提供 Serper、SearXNG、Elasticsearch / OpenSearch 和 Tavily 兼容网关一键预设。
-- **超长文档自动大纲目录 (TOC)**：内置通用抓取器针对超过 8,000 字符的长篇文档自动生成并前置 Markdown 目录大纲，大幅提升大模型长文阅读与定位效率。
-- **多搜索源调度与自动容灾**：支持多 API Key 分配、鉴权失败切换、429 冷却、故障熔断器、短时结果缓存与并发合并、Ordered / Round-Robin / Random 路由，以及可配置 Provider Fallback。
-- **DSH 原生工具集成与快捷键**：直接复用标准 `web_search` / `web_fetch`，模型侧无需学习额外工具，会话级「联网搜索」模式支持 `Alt+S` 快捷切换。
+在构建大模型 Agent 时，单纯依赖单一搜索 API 往往面临三个明显痛点：
+
+1. **单点脆弱**：单一 API 额度耗尽、限流（429）或遇到网络抖动时，检索流程直接中断。
+2. **能力被抹平**：许多多源方案只是将各 API 包装为最低公共参数，白白浪费了各家搜索源的独特优势（如 Exa 的语义分类、Brave 的 LLM Context、Tavily 的多级深度、Firecrawl 的 GitHub 筛选、Keenable 的摘要提取等）。
+3. **社媒盲区**：传统搜索引擎难以触达小红书、Twitter / X 等强登录态社媒平台内的真实用户笔记与评论。
+
+**dsh-web-tools 为此而生**：它无缝对接 DSH 原生的 `web_search` 与 `web_fetch` 工具，通过确定性的 **SearchHints** 将模型意图直接编译为各搜索源的原生参数；同时引入多 API Key 轮换、故障熔断、对冲/融合检索，并支持直连小红书与 Twitter / X 真实会话，构建起兼顾高可用、高性能与高信息密度的智能检索层。
 
 ```text
-                         DSH Agent
-                            │
-                 web_search / web_fetch
-                            │
-                            ▼
-                       SearchHints
-            topic / freshness / domains
-               locale / cleanQuery ...
-                            │
-                 Provider-specific
-                    compilation
-                            │
-      ┌────────┬─────────┬───────────┬──────────┐
-      │  Exa   │ Tavily  │ Firecrawl │ Parallel │ ...
-      │        │         │           │          │
-      │category│ topic   │ github    │objective │
-      │ date   │ chunks  │ research  │ policy   │
-      │domains │ time    │ tbs       │ queries  │
-      └────────┴─────────┴───────────┴──────────┘
-
+                         DSH Agent / MCP Client
+                                   │
+                        web_search / web_fetch
+                                   │
+                                   ▼
+                              SearchHints
+                 topic / freshness / domains / locale ...
+                                   │
+                 ┌─────────────────┴─────────────────┐
+                 ▼                                   ▼
+     Web Providers (10+ 原生适配)            社交媒体平台 (原生会话)
+  Exa / Tavily / Firecrawl / Serper ...       小红书 / Twitter (X)
+                 │                                   │
+  ┌──────────────┼──────────────┐             (独立 Browser Profile)
+  ▼              ▼              ▼                    │
+单源顺序        对冲检索       多源融合            真实笔记 / 讨论树
+(Single)       (Hedged)       (Fused)                │
+  └──────────────┬──────────────┘                    │
+                 ▼                                   ▼
+         归一化优质检索结果与富文本正文 (支持长文自动 TOC 大纲)
 ```
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/searchOrderAndRouting.png" width="900" alt="dsh-web-tools 搜索策略与多源调度" />
 </p>
 
-## 10 大 Web Provider 原生能力深度适配
+---
 
-统一的是 DSH 的工具接口和搜索语义，不统一的是各家 Provider 的能力。
+## 核心特性
 
-dsh-web-tools 通过 SearchHints 表达查询意图，再针对不同 Provider 分别构造请求，而不是把所有搜索源压缩成一套最低公共参数。
-
-例如，同样是“搜索最近一周的 AI 编程资料”：
-
-* **Exa**：映射分类、ISO 日期范围与域名限制；
-* **Firecrawl**：技术查询映射至 `github` 分类，研究类查询映射至 `research`，并结合 `tbs` 时效过滤；
-* **Parallel**：组合 `objective`、`search_queries` 与 `source_policy`；
-* **Brave Search**：映射 freshness、国家与搜索语言，并优先使用 LLM Context；
-* **You.com**：通过 `boost_domains` 对指定域名进行软加权。
-
-这些适配全部由确定性代码完成，不会为了选择 Provider 参数再额外调用一次 LLM。
-
-* **Exa**：精确分类映射（publication / news / financial report）、ISO 日期范围与域名限制。
-* **Firecrawl**：代码与技术查询映射至 `github` 分类，论文与学术查询映射至 `research`，并支持 `tbs` 时效、域名限制与 Clean Markdown 抓取。
-* **Parallel**：双层语义优化（`objective` 软引导 + `search_queries` 纯净词）与 `source_policy` 域名/时效过滤。
-* **Tavily**：支持 `basic` / `advanced` / `fast` / `ultra-fast` 搜索深度；`basic`、`advanced`、`fast` 模式支持 `chunks_per_source` 分块控制，并映射 `news` / `finance` 话题、日期区间、国家与域名约束。
-* **Brave Search**：LLM Context 预提取端点，支持 `pd/pw/pm/py` 时效、国家与搜索语言。
-* **You.com**：原生 **`boost_domains`** 软加权支持，时效与地区国家过滤。
-* **Jina**：搜索关键词降噪与 ReaderLM-v2 高精度 Markdown 正文解析。
-* **SearXNG**：自建元搜索支持 `categories` (it/science/news) 与 `time_range`。
-* **Keenable**：Web 搜索，支持 `site` 域名限定与 `published_after` / `published_before` 日期过滤、**原生页面抓取 (`/v1/fetch`)** 与响应头额度追踪 (`x-ratelimit-*`)。
-* **Serper (Google 搜索)**：实时 Google 搜索 API，支持丰富摘要提取、快速回答 (`answerBox`)、国家 (`gl`)、语言 (`hl`)、时效 (`tbs`) 与域名限定 (`site:` / `-site:`)。
-* **原生与通用正文提取 (`web_fetch`)**：配置 Tavily、Exa、Firecrawl、Parallel、You.com、Jina、Keenable 时自动优先调用其原生云端提取接口；未配置或失败时，以及使用 SearXNG / Brave 时，自动平滑回退至**插件内置通用 HTTP 抓取器**（基于 Defuddle 纯本地 Markdown 解析与 SSRF / DNS 安全防护，超长文档自动生成并前置 Markdown 目录大纲），无需额外配置或购买第三方 Fetch Key。
+- **10 大主流搜索引擎深度适配**：对 Exa、Tavily、Firecrawl、Parallel、Brave、You.com、Jina、Keenable、Serper (Google Search)、SearXNG 进行深度原生参数编译，拒绝功能降级。
+- **高弹性多源并发检索**：
+  - **单源 (Single)**：按配置依次尝试，故障平滑回退，最省配额。
+  - **对冲 (Hedged)**：首选源响应迟缓（>1.2s）时自动并发唤醒备选源，先到先得并取消冗余任务，消弭长尾延迟。
+  - **融合 (Fused)**：并发请求双源，采用倒数排名融合（RRF）合并去重，召回更全面。
+- **6 大智能路由策略**：支持 **顺序**、**轮询**、**随机**，以及基于实测指标的 **自适应 (Adaptive)**、**最快 (Fastest)** 与 **最省 (Cheapest)** 路由。
+- **小红书与 Twitter / X 平台直连**：基于本地浏览器专用 Profile 直连社媒平台，0 浏览器扩展、0 外部体积打包，安全解析真实笔记正文、图片信息与评论回复树。
+- **长文档自动大纲目录 (TOC)**：内置提取器针对超长文档（超过 8,000 字符）自动提取 Markdown 层级并前置目录大纲，辅助大模型高效通读与精准定位。
+- **自定义搜索源与一键预设**：支持声明式接入企业内部私有知识库或任意 RESTful API，提供 Serper、SearXNG、Elasticsearch / OpenSearch 和 Tavily 兼容网关一键模板。
+- **企业级出站防护 (SSRF Defense)**：公网安全放行、私网访问显式授权提示、底层硬核阻断云厂商元数据（169.254 / IMDSv6）与本地链路地址。
+- **多级容灾与稳定性**：多 API Key 自动轮换与负载、429 冷却窗口、故障断路器、短周期结果缓存与并发合并，保障生产环境稳定。
+- **独立 MCP Server**：检索内核完全解耦，支持以标准 stdio MCP 协议供 Cursor、Claude Code、Windsurf 等任意外部 Agent 调用。
+- **会话级快捷控制**：输入框集成联网控制面板（智能联网、始终联网、完全断网），支持 `Alt+S` 快捷键极速切换。
 
 ---
 
-## 平台搜索源（小红书与 Twitter / X）
+## 快速上手
 
-区别于通用搜索引擎，插件通过专用浏览器会话直接连接社媒平台：
+### 1. 安装插件
 
-* **原生独立浏览器会话架构**：
-  * 基于本机已安装的 Edge / Chrome 专用 Profile 与 CDP 通信。
-  * **0 浏览器扩展、0 Playwright / Chromium 外部打包**。Cookie 由专用浏览器 Profile 管理，插件不会将其写入配置、日志或中转服务；浏览器仍会按正常认证流程发送给对应平台。
+在 DSH 环境中运行：
 
-* **小红书**：
-  * **笔记详情与评论抓取 (`web_fetch`)**：通过专用浏览器 Profile 解析 `__INITIAL_STATE__` 结构化数据并自动 DOM 兜底，保留完整 `xsec_token` 签名 URL；页面成功加载评论数据时，同时逐条提取一级评论与已返回的楼中楼回复。
-  * **站内搜索发现 (`web_search`)**：默认使用已登录浏览器，从 `/explore` 的真实搜索框进入，只输入清洗后的主题词，不带平台名或 `site:` 限定；同时区分登录墙、安全验证和真实退出登录。排查浏览器问题时可通过 `XHS_NATIVE_SEARCH=0` 临时关闭。
+```bash
+# 安装插件
+dsh plugin --profile web add github:A3Boy/dsh-web-tools
 
-* **Twitter / X**：
-  * **原生搜索、推文详情与回复**：通过 CDP 捕获 X Web 客户端自身的 GraphQL 数据流（SearchTimeline / TweetDetail），结构化解析目标推文及其回复树，并以 DOM 作为补充与兜底；支持 `from:`、`since:`、`until:` 等搜索算子。
+# 后续升级插件
+dsh plugin --profile web update dsh-web-tools
+```
 
-单次详情抓取最多附带 30 条评论或回复，单条内容最多保留 800 个字符；仍有后续分页或楼中楼内容时会明确标记为截断，避免无界占用模型上下文。
+### 2. 配置与启动
 
-> **能力边界说明**：对于正文主要位于图片中的小红书笔记，目前会返回标题、文字描述、互动数据、图片数量以及页面已加载的评论，但暂不识别图片中的文字，也不会自动抓取全部评论分页。
+重启 DSH Web 实例（`dsh web`），在左侧导航栏点击：**Settings** → **Web Search**。
 
-Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选择平台，插件会在实际站内搜索前移除它；例如 `小红书: DeepSeek Harness` 最终输入小红书搜索框的是 `DeepSeek Harness`。
+- 在搜索源列表中，填入你已有的任意 Provider API Key（如 Tavily、Exa、Serper、Brave 等，自建 SearXNG 无需 Key）。
+- 勾选启用的搜索源，拖拽或调整 fallback 顺序。
+- 点击任意源下方的「测试搜索」，即可实时验证网络连通性与检索耗时。
 
-* **通用 Web 降级 (Web Fallback)**：平台来源未启用、运行时暂不可用或发生可重试故障时，改由已配置的通用搜索或抓取 Provider 处理；登录失效、访问受限、站内搜索受限、无效详情地址等非重试错误会直接返回，不会用索引内容冒充原生站内结果、详情或评论。
-* **登录态自动验证**：Cookie 只作为第一层门槛。小红书要求同时存在 `a1` 与 `web_session`，随后还会通过交互浏览器稳定检查 `/explore` 的真实页面状态；可见登录墙会使旧 Session 立即失效并重新显示登录入口。搜索提交后的独立登录墙会直接标记为 `search-restricted`，不会再用网页索引结果掩盖站内搜索失败。
+### 3. 会话中开箱即用
+
+DSH 模型侧无需任何配置，正常提问即可触发联网检索：
+- **快捷键切换**：在聊天输入框按下 `Alt+S`，可快速在「智能联网（按需）」、「始终联网（强求证）」与「关闭联网（硬隔离）」三档之间循环切换。
+- **指定社媒检索**：在问题前加上 `小红书:` 或 `X:` 前缀（例如 `小红书: 杭州周末徒步路线推荐`），系统将自动导向社媒专用会话检索。
+
+---
+
+## 进阶功能与调度机制
+
+### 1. 多源并发检索方式
+
+在设置面板中，你可以自由选择一次搜索调度 Provider 的工作方式：
+
+- **单源模式 (Single)**：默认行为。优先请求首选源，如果首选源遭遇网络故障、超时、429 或返回 0 条结果，自动降级至备选源。最节省配额。
+- **对冲模式 (Hedged)**：首选源发出后，如果 1.2 秒内未返回，系统会自动唤醒第二顺位的备选源并行检索。哪一路先成功返回即采纳该结果，同时自动**取消**另一路未完成的请求。在快查询上零额外开销，在慢查询上彻底斩断 p95/p99 尾部延迟。
+- **融合模式 (Fused)**：同时向两个健康的 Provider 发起并发检索，并使用 **RRF (Reciprocal Rank Fusion)** 算法对两组结果去重后重新排序，并在前端标注「融合结果」徽标。适合需要高召回率的深度研究场景。
+
+### 2. 6 种起始路由策略
+
+- **顺序 (Ordered)**：始终优先调用排列在第一位的首选源。
+- **轮询 (Round-Robin)**：在多个已启用的搜索源之间均匀轮换初始请求。
+- **随机 (Random)**：完全随机挑选健康的初始源。
+- **自适应 (Adaptive)**：根据最近 24 小时的实际请求成功率与时延指标，动态优先调度最优搜索源（实测数据不足时平滑过渡到顺序模式）。
+- **最快 (Fastest)**：优先选择实测平均响应时间最短的 Provider。
+- **最省 (Cheapest)**：按成本档位优先调度（自建 SearXNG -> 普惠搜索 API -> 按量计费的深度抓取 API）。
+
+### 3. 独立 MCP 服务 (适用于 Cursor / Claude Code)
+
+本项目的检索内核已完全解耦。你可以脱离 DSH，将其作为独立的 stdio MCP Server 供任意现代 AI 编程助手使用：
+
+```bash
+# 全局安装后直接运行
+dsh-web-tools-mcp
+
+# 或在仓库源码目录下运行
+npm install && npm run build
+node bin/mcp-server.js
+```
+
+对外暴露 `web_search`（关键词搜索）与 `web_fetch`（正文抓取）两个工具。服务通过环境变量读取各 API 密钥（如 `EXA_API_KEY`、`TAVILY_API_KEY`、`SERPER_API_KEY` 等），支持通过 `WEB_TOOLS_ROUTING_POLICY` 配置路由策略。
+
+---
+
+## 社交媒体检索（小红书与 Twitter / X）
+
+区别于传统的第三方抓取代理，本插件采用**本地专用浏览器 Profile 架构**：
+
+- **免安装外部打包**：直接复用本地 Edge 或 Chrome 浏览器，不需要额外下载巨大的 Chromium 或 Playwright 二进制，不安装任何第三方浏览器扩展。
+- **独立凭证隔离**：账号登录状态保存在独立的本地数据目录中，Cookie 绝不写入配置文件或发送到第三方中转。
+- **结构化深度解析**：
+  - **小红书**：自动进入真实搜索框检索，支持笔记详情抓取，逐条解析多级评论与已返回的楼中楼回复。
+  - **Twitter / X**：捕获客户端原生 GraphQL 数据流，结构化还原推文内容、转推、媒体与回复讨论树。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/platformSessions.png" width="900" alt="小红书与 Twitter X 登录态自动验证" />
@@ -144,218 +178,59 @@ Agent 使用 `小红书:` 或 `X:` 作为平台路由前缀。前缀只负责选
 
 ---
 
-## 自定义搜索源与地址覆盖 (Issue #9)
-
-除了内置的 10 大搜索源与社交媒体平台外，插件完整支持**自定义搜索源 (Custom Search Providers)** 与**内置源地址自定义**：
-
-* **一键快速预设模板**：
-  * 支持一键载入常用搜索后端配置：**Serper (Google 搜索)**、**SearXNG (自建元搜索)**、**Elasticsearch / OpenSearch**（带多字段全文检索 bodyTemplate）以及 **Tavily 兼容网关**。
-* **内置源地址覆盖与恢复**：
-  * 全部 10 大内置搜索源（Exa、Tavily、Firecrawl、Brave、You、Parallel、Jina、Keenable、Serper、SearXNG）均支持自定义服务地址（例如自建 API 网关、代理镜像）。
-  * 精确保留路径前缀（如 `/v1`、`/v2`），并在跨域名变更时进行凭证保护提示，支持随时一键恢复官方默认地址。
-* **三条并列接入路径（单弹窗渐进式配置）**：
-  * **兼容已有搜索接口**：遵循标准 Tavily JSON POST 规范，免配任何字段映射，适合快速接入各开源代理镜像或兼容网关。
-  * **使用协议模板**：预设 SearXNG JSON 等标准元搜索协议（`GET /search?format=json`），默认开箱免密钥，自动映射结果。
-  * **自定义 JSON 接口**：支持自研知识库、内网搜索网关或任意未收录的 RESTful API，开放完整自定义能力：
-    * **自定义请求头 (Headers)**：自由添加额外的 HTTP 请求头，支持 `{{apiKey}}`、`{{query}}` 占位符。
-    * **嵌套 JSON 请求体模板 (`bodyTemplate`)**：POST 模式下支持编写任意嵌套的 JSON 请求体（如 `{"query": "{{query}}", "limit": "{{maxResults}}"}`），无需编写脚本代码。
-    * **URL 参数模板 (`paramsTemplate`)**：GET 或 Query 编码下支持灵活的 URL 查询参数模板与占位符映射。
-    * **声明式结果字段映射**：非执行式点路径映射（`itemsPath`、`urlPath`、`titlePath`、`snippetPath` 等），严格防御原型污染。
-    * **单次安全插值**：采用全局单次正则替换，杜绝用户搜索词内嵌占位符导致的凭证泄漏隐患。
-    * **实时语法校验**：JSON 请求体模板输入错误时前端实时标红提示，并禁用测试与保存，杜绝残留旧配置。
-* **凭证与密钥轮换**：
-  * 支持 Bearer Token、自定义 API Key Header、HTTP Basic（账号密码独立存储并带写入失败回滚补偿）或无需认证模式。
-  * 凭证由 DSH 凭证服务统一安全管理，配置视图中永不回显真实密钥，支持多 Key 轮换与健康冷却隔离。
-* **草稿测试与搜索调度**：
-  * 支持在保存前对草稿即时发起「测试搜索」，验证连通性、延迟与结果解析，测试不会污染正式环境的健康状态与熔断计数。
-  * 保存后可一键加入当前搜索策略，与内置搜索源共同享受顺序/轮询/随机路由与自动 Fallback 容灾。
-* **分级安全授权与出站防护 (SSRF Defense)**：
-  * **开箱即用免确认**：公网 HTTPS 目标及默认自建 SearXNG（`127.0.0.1:8080`、`localhost:8080`）内置预授权，零多余弹窗。
-  * **操作员一键确认 (409 Conflict 机制)**：对本地私网（RFC 1918）、未加密明文 HTTP 以及内网 DNS 解析到私有 IP 的自定义域名（通过 `resolvesToPrivateIp()` 自动探查），在测试或保存时弹出确认提示，用户点击确认后仅为该特定 `host:port` 签发出站许可，坚决拒绝静默自动授权。
-  * **共享端点授权生命周期自动管理**：系统通过 `managedBy: "custom-source"` 与引用计数跟踪授权；多个搜索源共享同一内网地址时安全复用，最后一个源删除或移走后自动撤销，绝不残留孤立授权，同时绝对不影响系统预设规则。
-  * **云元数据与链路本地硬拦截（绝对不可豁免）**：`169.254.0.0/16`、`fe80::/10` 全段（涵盖 `fe80::` 至 `febf::`）、IPv4-mapped 十六进制与点分十进制变体（`::ffff:a9fe:a9fe` 等）与 IMDSv6 地址在底层传输层无条件拦截，即使用户手动赋予授权也直接阻断。
-  * **代理自适应与套接字绑定**：Windows 系统代理环境下，公网自定义 API 自动通过 `undici.ProxyAgent` 隧道出站；内网与回环请求强制直连并锁定 DNS 预检 IP，杜绝 DNS Rebinding 风险。
-  * **配置平面对端校验**：管理接口基于真实 TCP Socket `remoteAddress` 进行物理层校验，严格防范 Host 请求头伪造。
-
----
-
-## 调度策略与容灾机制
-
-* **多 API Key 负载与容灾**：支持为单个 Provider 配置多个 API Key，并发调用优先分配低 `inFlight` 的 Key，鉴权失败自动切换备用 Key。
-* **确定性 Provider Fallback**：遇到网络异常、超时、5xx 服务端错误、429 限流或配额耗尽时，自动降级至链条中的下一搜索源。
-* **429 Retry-After 临时冷却**：遭遇限流并携带 `Retry-After` 时触发零请求冷却，避免在冷却期内产生无效请求。
-* **故障熔断**：同一 Provider 连续 3 次超时、网络或服务端错误后暂停调用 30 秒；恢复时只放行一个探测请求，探测失败则冷却翻倍，最长 5 分钟。鉴权失败和调用方取消不计入熔断。
-* **短时结果缓存**：通用搜索缓存 60 秒、网页抓取缓存 5 分钟，相同并发请求合并；每类最多缓存 100 条，搜索与抓取分别限制为 2 MiB、4 MiB 的序列化内容。失败和空结果不缓存，小红书 / X 平台源不缓存。设置卡片的手动搜索测试绕过结果缓存；插件内修改凭据会清理缓存，配置变化使用独立缓存键。缓存命中不会推进轮询或产生真实 Provider 请求。
-* **搜索路由策略**：`web_search` 支持六种起始 Provider 策略，可在设置卡片中切换：**顺序**（始终从第一项开始）、**轮询**（每次查询轮换起始项）、**随机**、**自适应**（按最近 24 小时的成功率与延迟综合排序，数据不足时回落到你配置的顺序）、**最快**（按实测平均耗时）与**最省**（按计费档次：自建 SearXNG → 低价 API → 按量计费的深度抓取）。`web_fetch` 始终按可抓取 Provider 的确定性链条执行。指标类策略在没有实测数据时绝不会退化为随机。
-* **多源检索方式**：同一设置区决定一次搜索最多使用几个 Provider：
-  * **单源**（默认）——依次尝试，最省配额，与旧行为完全一致。
-  * **对冲**——首选源超过 1.2 秒仍未返回时并发唤醒第二个源，先返回者胜出，另一个请求会被**取消**，不再继续消耗配额。在不增加快查询开销的前提下压低 p95 / p99 尾延迟。
-  * **融合**——同时请求两个源并用 **RRF（倒数排名融合）** 合并排序；URL 规范化会去除跟踪参数、`www.`、尾斜杠并重排查询参数。召回更全，代价约为双倍配额。若两路都失败，配置链条的其余 Provider 仍会作为兜底执行。
-  * 被取消的尝试（包括对冲中落败的一方）只记为诊断信息，不计入 Provider 失败，因此不会把健康的源在自适应排序中降权。
-* **会话级联网控制 (Search Mode)**：输入框集成单入口紧凑切换器（单按钮 + 极简下拉菜单），提供三档确定性检索模式（默认「智能联网」，支持 `Alt+S` 快捷键循环切换）：
-  * **智能联网 (Smart)**：弹性语义决策。由 Agent 根据上下文问题意图，自主判断是否调起外部网络检索。
-  * **始终联网 (Always)**：强一致性知识校验。要求 Agent 每轮对话至少完成一次有效的外部检索或内容深抓，确保回答具备外部权威可溯源依据。
-  * **关闭联网 (Off)**：确定性物理隔离。彻底抛弃依赖弱提示词（System Prompt）容易被模型忽略的弊端，采用**底层运行时三重物理拦截**（从可用工具集中动态剔除 `web_search` / `web_fetch`、单调守卫 Monotonic Guard 强行阻断历史惯性调用、首轮注入运行时断网说明），由宿主环境硬性判定，确保绝不产生外部网络请求。
-
-<div align="center">
-  <table>
-    <thead>
-      <tr>
-        <th align="center">交互菜单 (Picker Menu)</th>
-        <th align="center">三态激活视觉呈现 (Active States)</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td align="center" width="55%">
-          <img src="assets/search-mode-menu.png" width="290" alt="联网模式切换菜单" />
-        </td>
-        <td align="center" width="45%">
-          <img src="assets/search-mode-smart.png" height="28" alt="智能联网 (Smart)" /><br/>
-          <sub><b>智能联网</b>：按需自适应检索（默认）</sub><br/><br/>
-          <img src="assets/search-mode-always.png" height="28" alt="始终联网 (Always)" /><br/>
-          <sub><b>始终联网</b>：强求证高亮激活</sub><br/><br/>
-          <img src="assets/search-mode-off.png" height="28" alt="关闭联网 (Off)" /><br/>
-          <sub><b>关闭联网</b>：运行时硬性阻断</sub>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-
-* **智能代理分流与内网直连 (Intranet Proxy Bypass)**：完整支持 Windows 系统代理及 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` 环境变量。内置 **DNS 预检与私网智能旁路**，公网请求正常走代理通道，而本地回环及解析至私网地址（RFC 1918）的自建搜索源（如局域网自建 SearXNG 或私有网关）自动采用底层直连拨号，彻底消弭开启系统代理时内网服务不可达的拓扑冲突。
-
----
-
-## 独立 MCP Server
-
-检索内核也可以脱离 DSH，以 stdio MCP 服务的形式运行，任意支持 MCP 的 Agent 都能直接调用（Claude Code、Cursor、Windsurf 等）。对外提供 `web_search`（`query`、`maxResults`）与 `web_fetch`（`url`）两个工具，并协商 MCP 协议版本 `2025-06-18`、`2025-03-26`、`2024-11-05`。
-
-```bash
-# 全局安装后，bin 已在 PATH 中：
-dsh-web-tools-mcp
-
-# 或者直接从源码目录运行：
-npm install && npm run build
-node bin/mcp-server.js
-```
-
-> `npx dsh-web-tools-mcp` 是无效写法：npx 会把第一个参数当成**包名**。请使用已安装的 bin，或 `npx -p dsh-web-tools dsh-web-tools-mcp`。
-
-密钥从环境变量读取（`EXA_API_KEY`、`TAVILY_API_KEY`、`BRAVE_API_KEY`、`SERPER_API_KEY`、`FIRECRAWL_API_KEY`、`KEENABLE_API_KEY`、`YOU_API_KEY`、`JINA_API_KEY`、`PARALLEL_API_KEY`，自建实例用 `SEARXNG_URL`）——MCP 服务不读取 DSH 的凭据库。
-
-| 环境变量 | 默认值 | 含义 |
-|---|---|---|
-| `WEB_TOOLS_DEFAULT_PROVIDER` | `exa` | 链条中的首个 Provider |
-| `WEB_TOOLS_ROUTING_POLICY` | `adaptive` | 起始路由策略（`ordered`/`round-robin`/`random`/`adaptive`/`fastest`/`cheapest`） |
-| `WEB_TOOLS_TIMEOUT_MS` | `10000` | 单 Provider 单次尝试预算 |
-| `WEB_TOOLS_REQUEST_TIMEOUT_MS` | `60000` | 单次工具调用的硬上限 |
-
----
-
-## 安装与更新
-
-**DSH 版本支持**：`0.1.0-rc.6` 起，包含 `0.2.0-rc.x` 与 `0.2.1-rc.x`（`latest` / `next` 两条线均已验证）。版本要求写在 `peerDependencies` 中，DSH 会据此判断插件能否激活；升级 DSH 后若插件未激活，先执行一次 `dsh plugin --profile web update dsh-web-tools`。
-
-```bash
-# 安装插件
-dsh plugin --profile web add github:A3Boy/dsh-web-tools
-
-# 更新插件
-dsh plugin --profile web update dsh-web-tools
-
-# 卸载插件
-dsh plugin --profile web remove dsh-web-tools
-
-```
-
-重启 `dsh web`，在左侧侧边栏进入：`Settings` → `Web Search`。
-
----
-
 ## Provider 支持矩阵
 
-| Provider | 搜索 (Search) | 抓取/提取 (Fetch / Extract) | 核心特性与深度适配能力 | 配额查询 (Quota) |
-| --- | --- | --- | --- | --- |
-| [Exa](https://exa.ai) | 支持 | 支持，`/contents` | 语义检索 (`auto` / `fast` / `deep`)、垂直分类映射、Query-aware 高亮切片、ISO 日期范围与域名限制 | 控制台自查 |
-| [Tavily](https://tavily.com) | 支持 | 支持，`/extract` | 搜索深度 (`basic` / `advanced` / `fast` / `ultra-fast`)，前三种模式支持分块控制，并映射 `news` / `finance`、日期、国家与域名参数 | 官方 API |
-| [Firecrawl](https://firecrawl.dev) | 支持 | 支持，`/scrape` | 技术查询映射 `github` 分类、学术查询映射 `research`，支持 `tbs`、域名限制与 Clean Markdown 提取 | 官方 API |
-| [Parallel](https://parallel.ai) | 支持 | 支持，`/v1/extract` | 双层语义检索 (`advanced` / `basic` / `turbo`)、`objective` 软引导、`source_policy` 域名/时效过滤 | 控制台自查 |
-| [Brave Search](https://brave.com/search/api/) | 支持 | — | 默认优先 LLM Context 预提取模式，支持时效/区域语言过滤，不支持时自动回退 Classic 搜索 | 响应头自动捕获 |
-| [You.com](https://you.com) | 支持 | 支持，`/v1/contents` | 搜索高亮片段提取、原生 **`boost_domains`** 软加权、时效与国家过滤、Markdown 正文接口 | 官方 API |
-| [Jina](https://jina.ai) | 支持 | 支持，Reader | 搜索关键词降噪、ReaderLM-v2 高精度 Markdown 转换、Token 预算控制 | 尽力解析 |
-| [SearXNG](https://docs.searxng.org) | 支持 | — | 开源自托管元搜索引擎，映射 `categories` (it/science/news) 与受支持的 `time_range`，适配器无需 API Key | 由自建实例决定 |
-| [Keenable](https://keenable.ai) | 支持 | 支持，`/v1/fetch` | Web 搜索 API（`X-API-Key`），将首个限定域名映射为 `site`，时效日期映射为 `published_after` / `published_before`，返回 `published_at`；原生 Markdown 正文提取 (`/v1/fetch`) | 每次调用用量 + 控制台余额 |
+| Provider | 网页搜索 (Search) | 网页抓取 (Fetch) | 原生特色与核心适配能力 | 配额与用量说明 |
+| :--- | :---: | :---: | :--- | :--- |
+| **[Exa](https://exa.ai)** | 支持 | 支持 | 神经网络语义检索、垂直分类映射、Query 高亮切片、ISO 日期范围与域名限制 | 控制台查询 |
+| **[Tavily](https://tavily.com)** | 支持 | 支持 | 深度模式切换、分块控制、新闻/金融话题分类、国家与域名过滤 | 官方 API 实时查询 |
+| **[Serper](https://serper.dev)** | 支持 | — | 实时 Google 搜索，支持 `answerBox` 快速解答、时效 `tbs`、地区语言与域名限制 | 控制台查询 |
+| **[Firecrawl](https://firecrawl.dev)** | 支持 | 支持 | 技术查询映射 `github`、学术查询映射 `research`，支持 Clean Markdown 抓取 | 官方 API 实时查询 |
+| **[Parallel](https://parallel.ai)** | 支持 | 支持 | 双层语义检索、`objective` 软引导意图、`source_policy` 域名/时效过滤 | 控制台查询 |
+| **[Brave](https://brave.com/search/api/)** | 支持 | — | 优先使用 LLM Context 预提取摘要，支持时效/区域语言过滤 | 响应头自动捕获 |
+| **[Keenable](https://keenable.ai)** | 支持 | 支持 | `site` 域名限定与发布时间过滤；原生 Markdown 页面抓取 (`/v1/fetch`) | 响应头与每次用量台账 |
+| **[You.com](https://you.com)** | 支持 | 支持 | 搜索高亮片段提取、原生 `boost_domains` 域名软加权、时效与国家过滤 | 官方 API 实时查询 |
+| **[Jina](https://jina.ai)** | 支持 | 支持 | 关键词降噪与 ReaderLM-v2 高精度 Markdown 转换 | 响应头尽力解析 |
+| **[SearXNG](https://docs.searxng.org)** | 支持 | — | 开源自建元搜索，原生分类与时效过滤，免 API Key | 自建实例管理 |
 
-### 快速选型指南
-
-新安装默认首选 Provider 为 **Exa**；已有安装继续沿用已保存的 Provider 配置。
-
-| 需求场景 | 推荐首选 | 说明 |
-| --- | --- | --- |
-| **社媒内容发现 / 详情抓取** | **小红书 / Twitter / X** | 两个平台均支持已登录站内搜索、详情抓取，以及实际返回的评论或回复 |
-| **语义检索 / 技术文档** | **Exa** | 支持语义模式、分类、日期、域名与高亮参数 |
-| **预提取搜索上下文** | **Brave Search** | 优先使用 LLM Context，失败时回退 Classic Search |
-| **可调深度搜索与正文提取** | **Tavily** / **Parallel** | 提供 Provider 原生深度档位与内容提取接口 |
-| **正文转 Markdown** | **Firecrawl** / **Jina** | 支持正文提取、主内容过滤或 Reader 转换 |
-| **时效、地区与域名偏好** | **You.com** | 支持 freshness、地区语言和 `boost_domains` 参数 |
-| **自托管元搜索** | **SearXNG** | 使用用户自己的 SearXNG 地址，适配器不要求 API Key |
-| **Agent 检索 / 精炼摘要提取** | **Keenable** | 支持原生 `site` 域名限定与 `published_after` / `published_before` 发布日期过滤，高质量网页摘要抽取 |
+> **网页抓取说明**：配置 Tavily、Exa、Firecrawl、Keenable 等支持抓取的源时，优先调用其云端抓取接口；若未配置或提取失败，插件会自动平滑回退至**内置通用抓取器**（基于 Defuddle 纯本地 Markdown 解析，超长长篇自动生成 TOC 大纲），保障内容始终可读。
 
 ---
 
-## 本地开发
+## 常见问题 (FAQ)
+
+### 1. 自建 SearXNG 提示 403 或无结果？
+使用 Docker 或自建 SearXNG 时，请确保开启了 JSON 接口支持：
+- 打开 SearXNG 容器中的 `settings.yml`，在 `search.formats` 下增加 `- json`：
+  ```yaml
+  search:
+    formats:
+      - html
+      - json  # 必须包含，用于 API 请求
+  ```
+- 修改后重启容器生效。在插件面板中填写实例地址（如 `http://127.0.0.1:8080`），API Key 留空即可。
+
+### 2. 为什么部分长网页阅读速度明显提升？
+插件内置了超长内容自适应处理机制：当单篇网页正文超过 8,000 字符时，内置提取器会自动扫描文档标题并前置生成 Markdown 目录大纲（Table of Contents），帮助大模型第一时间纵览全文结构，大幅降低上下文检索幻觉。
+
+### 3. 多源检索会消耗双倍额度吗？
+- **单源 (Single)**：只有在首选源报错或无结果时才会尝试第二源，正常情况下仅消耗单份配额。
+- **对冲 (Hedged)**：首选源响应快（<1.2s）时第二源从不启动；仅当首选源超时卡顿时才启动双路，且先返回者会立即终止对方，最大化控制配额损耗。
+- **融合 (Fused)**：会并发请求两家搜索源以换取更全的召回与重排结果，会消耗双份配额。
+
+---
+
+## 本地开发与测试
 
 ```bash
 npm install          # 安装依赖
-npm test             # 运行测试套件
-npm run typecheck    # 类型检查
-npm run build        # 编译构建 (产物输出至 lib/)
+npm test             # 运行 520+ 单元与集成测试套件
+npm run typecheck    # 严格 TypeScript 类型检查
+npm run build        # 构建输出至 lib/ 目录
 ```
 
 ---
 
-## 常见问题
-
-### 自建 SearXNG 配置与排错
-
-使用 Docker 或自托管 SearXNG 时，若提示 `no usable provider` 或返回 403 拒绝访问，请检查以下两项配置：
-
-1. **必须开启 JSON 格式输出**：SearXNG 默认仅启用了 HTML 输出。编辑 SearXNG 的 `settings.yml` 文件，在 `search.formats` 中增加 `- json`：
-   ```yaml
-   search:
-     formats:
-       - html
-       - json # 必须包含 json，供 API 接口调用
-   ```
-   修改后重启 SearXNG 容器（例如 `docker restart searxng`）生效。
-2. **免 Key 访问**：SearXNG 属于自建免 Key 搜索源，插件面板中无需填写 API Key（留空即可）。在 `Base URL` 中填入你的 SearXNG 实例地址（如 `http://127.0.0.1:8080`），点击「测试搜索」即可验证连通性。
-
-### 缓存与重新安装
-
-若使用本地包或软链接升级遇到缓存问题，可前往 Profile 目录重新安装：
-
-```bash
-cd ~/.dsh/profiles/web && npm install
-```
-
-Exa 和 Parallel 的余额需要在 Provider 控制台查看；Brave 的配额信息来自实际搜索响应头。配额展示仅用于状态说明，不影响正常检索与降级。
-
-Keenable 没有公开的余额查询接口。但每次计费的 `/v1/search`、`/v1/fetch` 响应都带 `usage` 对象（`sku`、`credits`、`paid`），插件按 Key 把这些消耗累加成本月台账，显示为 **已消耗积分**。若想直接显示组织余额，可以复用控制台使用的 BFF 接口（需要控制台会话）：
-
-```bash
-# 长期有效：自动向 Supabase 刷新
-export KEENABLE_REFRESH_TOKEN="<supabase refresh token>"
-# 或短期（约 1 小时）
-export KEENABLE_SESSION_TOKEN="<supabase access token>"
-```
-
-`https://api.keenable.ai/bff/organization/balance` 是**未公开**的控制台接口（不接受 API Key），因此该接入属于尽力而为：会话过期或接口变动时，卡片会自动回退到本地台账。
-
-小红书和 Twitter / X 分别使用独立的本地浏览器 Profile。插件不会把原始 Cookie 导出到配置、日志或第三方中转服务；浏览器会按正常登录与访问流程将 Cookie 发送给对应的平台域名。
-
----
-
-## 许可
+## 许可证
 
 [MIT](LICENSE) © A3Boy
