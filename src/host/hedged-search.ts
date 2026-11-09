@@ -75,6 +75,10 @@ interface Lane {
   sources: Source[];
   error?: unknown;
   latencyMs: number;
+  /** Wall-clock start, used to report a cancelled lane's elapsed time. */
+  startedAt: number;
+  /** Whether this lane already produced its `attempts` entry. */
+  recorded: boolean;
   promise?: Promise<void>;
 }
 
@@ -145,6 +149,8 @@ export async function runHedgedSearch(
     status: "pending",
     sources: [],
     latencyMs: 0,
+    startedAt: 0,
+    recorded: false,
   });
 
   const primary = makeLane("primary", providers[0]);
@@ -158,6 +164,7 @@ export async function runHedgedSearch(
     else deadline.signal.addEventListener("abort", () => lane.controller.abort(deadline.signal.reason), { once: true });
 
     const startedAt = Date.now();
+    lane.startedAt = startedAt;
     lane.promise = (async () => {
       try {
         const res = await searchFn(lane.provider, lane.controller.signal, lane.role);
@@ -170,16 +177,21 @@ export async function runHedgedSearch(
         lane.error = error;
       } finally {
         lane.done = true;
-        attempts.push({
-          provider: lane.provider,
-          latencyMs: lane.latencyMs,
-          outcome:
-            lane.status === "success"
-              ? "success"
-              : lane.status === "empty"
-                ? "empty"
-                : `failed:${errorCodeOf(lane.error)}`,
-        });
+        // A lane cancelled by the winner was already recorded as such; do not
+        // append a second, misleading "failed:aborted" entry for it.
+        if (!lane.recorded) {
+          lane.recorded = true;
+          attempts.push({
+            provider: lane.provider,
+            latencyMs: lane.latencyMs,
+            outcome:
+              lane.status === "success"
+                ? "success"
+                : lane.status === "empty"
+                  ? "empty"
+                  : `failed:${errorCodeOf(lane.error)}`,
+          });
+        }
         changed();
       }
     })();
@@ -230,13 +242,32 @@ export async function runHedgedSearch(
     throw primary.error ?? secondary.error ?? abortError();
   };
 
-  const finishSingle = (lane: Lane): MultiSourceResult => ({
-    sources: plainSources(lane.sources),
-    backend: lane.provider,
-    hedgedLaunched: secondary.started,
-    fused: false,
-    attempts,
-  });
+  /**
+   * Finish with one winning lane.
+   *
+   * The losing lane is aborted in the caller's `finally`, but that abort settles
+   * asynchronously — after the response has already been serialized. Record it
+   * here as `cancelled` so the settings card's attempt ledger explains why a
+   * second provider's time was spent without a result.
+   */
+  const finishSingle = (lane: Lane): MultiSourceResult => {
+    const loser = lane === primary ? secondary : primary;
+    if (loser.started && !loser.done && !loser.recorded) {
+      loser.recorded = true;
+      attempts.push({
+        provider: loser.provider,
+        latencyMs: loser.startedAt > 0 ? Date.now() - loser.startedAt : 0,
+        outcome: "cancelled",
+      });
+    }
+    return {
+      sources: plainSources(lane.sources),
+      backend: lane.provider,
+      hedgedLaunched: secondary.started,
+      fused: false,
+      attempts,
+    };
+  };
 
   try {
     if (mode === "fused") {

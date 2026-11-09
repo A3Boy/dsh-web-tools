@@ -47,6 +47,11 @@ test("hedged: a slow primary triggers the second lane and the first success wins
   assert.equal(outcome.hedgedLaunched, true);
   assert.equal(outcome.backend, "p2");
   assert.equal(outcome.sources[0].url, "https://p2.example/fast");
+  // The ledger must explain the loser's spent time instead of omitting it.
+  assert.deepEqual(
+    outcome.attempts.map((a) => `${a.provider}:${a.outcome}`).sort(),
+    ["p1:cancelled", "p2:success"],
+  );
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(primaryAborted, true, "the losing lane must be cancelled, not left running");
 });

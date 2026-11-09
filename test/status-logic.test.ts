@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — client status/summary logic tests (plain node, no tsx).
  *
  * Verifies the provider state model that drives the settings-page dots:
@@ -147,6 +147,8 @@ test("quotaSummary formats credits / usd / tokens via the t() template", () => {
 test("outcomeLabel maps raw Host outcomes to human copy keys", () => {
   const t = (key: string) => `[${key}]`;
   assert.equal(outcomeLabel(t, "success"), "[successOutcome]");
+  assert.equal(outcomeLabel(t, "empty"), "[emptyOutcome]");
+  assert.equal(outcomeLabel(t, "cancelled"), "[cancelledOutcome]");
   assert.equal(outcomeLabel(t, "failed:rate-limit"), "[rateLimitedOutcome]");
   assert.equal(outcomeLabel(t, "failed:auth"), "[authOutcome]");
   assert.equal(outcomeLabel(t, "failed:timeout"), "[timeoutOutcome]");
@@ -154,6 +156,7 @@ test("outcomeLabel maps raw Host outcomes to human copy keys", () => {
   assert.equal(outcomeLabel(t, "skipped-no-healthy-keys"), "[skippedNoHealthyKeysOutcome]");
   assert.equal(outcomeLabel(t, "skipped-cooldown"), "[skippedCooldownOutcome]");
   assert.equal(outcomeLabel(t, "skipped-no-adapter"), "[skippedNoAdapterOutcome]");
+  assert.equal(outcomeLabel(t, "skipped-disabled"), "[skippedDisabledOutcome]");
   assert.equal(outcomeLabel(t, "failed:something-weird"), "something-weird");
 });
 

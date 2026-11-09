@@ -347,6 +347,9 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 
   const attempts = result?.attempts ?? [];
   const label = (name: string) => config.providers.find((p) => p.name === name)?.label ?? name;
+  /** A fused answer reports `a+b`; label both sides instead of showing the raw id. */
+  const backendLabel = (backend?: string) =>
+    (backend ?? "").split("+").filter(Boolean).map(label).join(" + ");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -372,8 +375,24 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: stateColor.success, fontSize: 13 }}>
               <StateDot state="done" size={8} />
               <span style={{ fontWeight: 600 }}>
-                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {((result.latencyMs ?? 0) / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
+                {t("usingProviderPrefix")}{backendLabel(result.backend)} · {((result.latencyMs ?? 0) / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
               </span>
+              {result.fused && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    padding: "2px 7px",
+                    borderRadius: 4,
+                    background: surface.layer2,
+                    color: text.secondary,
+                    border: `1px solid ${surface.border}`,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {t("fusedBadge")}
+                </span>
+              )}
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
               </span>

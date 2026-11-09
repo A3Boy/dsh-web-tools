@@ -219,6 +219,9 @@ export function quotaMetaLine(t: TFunc, q: QuotaView | undefined): string {
 /** Human-readable attempt outcome (from Host `attempts[].outcome`). */
 export function outcomeLabel(t: TFunc, outcome: string): string {
   if (outcome === "success") return t("successOutcome");
+  if (outcome === "empty") return t("emptyOutcome");
+  // A hedged/fused loser that was cancelled on purpose.
+  if (outcome === "cancelled") return t("cancelledOutcome");
   if (outcome.startsWith("failed:")) {
     const code = outcome.slice("failed:".length);
     switch (code) {
@@ -241,6 +244,7 @@ export function outcomeLabel(t: TFunc, outcome: string): string {
       case "skipped-no-healthy-keys": return t("skippedNoHealthyKeysOutcome");
       case "skipped-cooldown": return t("skippedCooldownOutcome");
       case "skipped-no-adapter": return t("skippedNoAdapterOutcome");
+      case "skipped-disabled": return t("skippedDisabledOutcome");
       default: return t("unknownOutcome");
     }
   }

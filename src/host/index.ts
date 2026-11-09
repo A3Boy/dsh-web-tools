@@ -473,6 +473,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       return {
         ok: true,
         backend: (result as unknown as { backend?: string }).backend,
+        fused: (result as unknown as { fused?: boolean }).fused === true,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),

@@ -125,6 +125,8 @@ export interface QuotaView {
 export interface TestSearchView {
     ok: boolean;
     backend?: string;
+    /** True when the answer merged two providers with RRF. */
+    fused?: boolean;
     latencyMs?: number;
     resultCount?: number;
     results?: Array<{
