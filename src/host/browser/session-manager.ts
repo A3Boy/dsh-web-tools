@@ -173,24 +173,23 @@ export class SessionManager implements NativeBrowserRuntime {
       // dedicated profile still contains valid cookies. Operations must verify
       // the real profile so the next search can self-heal without another login.
       const session = await this.acquireSession(platform, mode, undefined, signal);
-      const isAuth = await this.internalCheckAuth(session, signal);
-      if (isAuth) {
-        this.profileStore.saveMetadata(platform, {
-          platform,
-          sessionEstablished: true,
-          browserKind: session.browser.kind,
-          lastVerifiedAt: Date.now(),
-        });
-        return true;
-      } else {
-        this.profileStore.saveMetadata(platform, {
-          platform,
-          sessionEstablished: false,
-          browserKind: session.browser.kind,
-          lastVerifiedAt: Date.now(),
-        });
-        return false;
+      let isAuth = await this.internalCheckAuth(session, signal);
+      if (!isAuth && !signal?.aborted) {
+        // A browser that was just launched (status probes and the first search
+        // after a restart both do this) can answer the very first probe before
+        // its first page has settled, which reads as "signed out" for a profile
+        // that is perfectly valid. One settle retry separates "cold" from
+        // "really logged out" — a truly signed-out profile fails both.
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (!signal?.aborted) isAuth = await this.internalCheckAuth(session, signal);
       }
+      this.profileStore.saveMetadata(platform, {
+        platform,
+        sessionEstablished: isAuth,
+        browserKind: session.browser.kind,
+        lastVerifiedAt: Date.now(),
+      });
+      return isAuth;
     } catch {
       return false;
     }
