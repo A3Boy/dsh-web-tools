@@ -1,5 +1,7 @@
 import { type WebSearchProviderLike, type WebFetchProviderLike } from "../host/registry.ts";
 import type { SearchRoutingPolicy } from "../host/routing-policy.ts";
+import { SpecializedSourceRegistry } from "../host/sources/registry.ts";
+import type { NativeBrowserRuntime } from "../host/browser/types.ts";
 export interface McpServerOptions {
     env?: Record<string, string | undefined>;
     defaultProvider?: string;
@@ -11,6 +13,8 @@ export interface McpServerOptions {
     outStream?: NodeJS.WritableStream;
     searchProvider?: WebSearchProviderLike;
     fetchProvider?: WebFetchProviderLike;
+    sourceRegistry?: SpecializedSourceRegistry;
+    nativeRuntime?: NativeBrowserRuntime;
 }
 export declare class McpServer {
     private readonly searchProvider;
@@ -18,6 +22,7 @@ export declare class McpServer {
     private readonly inStream;
     private readonly outStream;
     private readonly requestTimeoutMs;
+    private nativeRuntime?;
     private rl?;
     constructor(options?: McpServerOptions);
     /** Start listening for JSON-RPC messages on the input stream. */

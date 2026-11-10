@@ -17,6 +17,13 @@ import { createSearchProvider, createFetchProvider, type WebSearchProviderLike, 
 import { Stats } from "../host/stats.ts";
 import type { SearchRoutingPolicy } from "../host/routing-policy.ts";
 import { CURRENT_VERSION } from "../shared/version.ts";
+import { SpecializedSourceRegistry } from "../host/sources/registry.ts";
+import { XiaohongshuSource } from "../host/sources/xiaohongshu.ts";
+import { XSource } from "../host/sources/x.ts";
+import { createNativeBrowserRuntime } from "../host/browser/index.ts";
+import type { NativeBrowserRuntime } from "../host/browser/types.ts";
+import { extractSearchHints } from "../host/search-hints.ts";
+import { describeDegradation, toRoutedFetchResponse } from "../host/index.ts";
 
 /**
  * MCP protocol revisions this server understands, newest first. The server
@@ -37,6 +44,8 @@ export interface McpServerOptions {
   outStream?: NodeJS.WritableStream;
   searchProvider?: WebSearchProviderLike;
   fetchProvider?: WebFetchProviderLike;
+  sourceRegistry?: SpecializedSourceRegistry;
+  nativeRuntime?: NativeBrowserRuntime;
 }
 
 const ENV_KEY_MAPPINGS: Record<string, string[]> = {
@@ -57,6 +66,7 @@ export class McpServer {
   private readonly inStream: NodeJS.ReadableStream;
   private readonly outStream: NodeJS.WritableStream;
   private readonly requestTimeoutMs: number;
+  private nativeRuntime?: NativeBrowserRuntime;
   private rl?: readline.Interface;
 
   constructor(options: McpServerOptions = {}) {
@@ -102,7 +112,7 @@ export class McpServer {
       return "";
     };
 
-    this.searchProvider = options.searchProvider ?? createSearchProvider(
+    const generalSearchProvider = options.searchProvider ?? createSearchProvider(
       resolveConfig,
       resolveKeys,
       {
@@ -111,7 +121,7 @@ export class McpServer {
       },
     );
 
-    this.fetchProvider = options.fetchProvider ?? createFetchProvider(
+    const generalFetchProvider = options.fetchProvider ?? createFetchProvider(
       resolveConfig,
       resolveKeys,
       undefined,
@@ -123,6 +133,57 @@ export class McpServer {
         record: (e) => stats.record({ ...e, at: Date.now() }),
       },
     );
+
+    const nativeRuntime = options.nativeRuntime ?? createNativeBrowserRuntime();
+    this.nativeRuntime = nativeRuntime;
+
+    const sourceRegistry = options.sourceRegistry ?? new SpecializedSourceRegistry();
+    if (!options.sourceRegistry) {
+      sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
+      const xhsSource = new XiaohongshuSource(nativeRuntime);
+      const xSource = new XSource(nativeRuntime);
+      sourceRegistry.registerSource(xhsSource);
+      sourceRegistry.registerSource(xSource);
+    }
+
+    this.searchProvider = {
+      id: "mcp-routed-search",
+      available: () => generalSearchProvider.available(),
+      search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
+        const hints = extractSearchHints(request.query);
+        const outcome = await sourceRegistry.search(
+          request.query,
+          { maxResults: request.maxResults, hints },
+          signal,
+        );
+        if (outcome.error) {
+          throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
+        }
+        return {
+          ...(outcome.degraded ? { content: describeDegradation(outcome.degraded), degraded: outcome.degraded } : {}),
+          ...(outcome.diagnostics ? { diagnostics: outcome.diagnostics } : {}),
+          sources: outcome.items.map((item) => ({
+            url: item.url,
+            title: item.title,
+            snippet: item.snippet,
+            publishedAt: item.publishedAt,
+          })),
+          truncated: false,
+          ...(outcome.backend !== undefined ? { backend: outcome.backend } : {}),
+          ...(outcome.attempts !== undefined ? { attempts: outcome.attempts } : {}),
+          ...(outcome.fused !== undefined ? { fused: outcome.fused } : {}),
+        };
+      },
+    };
+
+    this.fetchProvider = {
+      id: "mcp-routed-fetch",
+      available: () => generalFetchProvider.available(),
+      fetch: async (request: { url: string }, signal?: AbortSignal) => {
+        const outcome = await sourceRegistry.fetch(request.url, signal);
+        return toRoutedFetchResponse(request.url, outcome);
+      },
+    };
   }
 
   /** Start listening for JSON-RPC messages on the input stream. */
@@ -154,6 +215,10 @@ export class McpServer {
     if (this.rl) {
       this.rl.close();
       this.rl = undefined;
+    }
+    if (this.nativeRuntime) {
+      this.nativeRuntime.dispose().catch(() => {});
+      this.nativeRuntime = undefined;
     }
   }
 
@@ -314,7 +379,7 @@ export class McpServer {
             let formattedText = "";
 
             if (res.sources && res.sources.length > 0) {
-              formattedText = res.sources
+              const list = res.sources
                 .map((s, idx) => {
                   const title = s.title ? `[${s.title}](${s.url})` : s.url;
                   const snippet = s.snippet ? `\n   ${s.snippet}` : "";
@@ -322,6 +387,7 @@ export class McpServer {
                   return `${idx + 1}. ${title}${date}${snippet}`;
                 })
                 .join("\n\n");
+              formattedText = res.content ? `${res.content}\n\n${list}` : list;
             } else if (res.content) {
               formattedText = res.content;
             } else {
@@ -359,7 +425,9 @@ export class McpServer {
               res.metadata?.publishedAt ? `*Published: ${res.metadata.publishedAt}*` : "",
             ].filter(Boolean);
 
-            const text = headerParts.length > 0 ? `${headerParts.join("\n")}\n\n${content}` : content;
+            const text = headerParts.length > 0 && !content.startsWith("# ")
+              ? `${headerParts.join("\n")}\n\n${content}`
+              : content;
 
             this.sendResponse(id, {
               content: [{ type: "text", text }],
