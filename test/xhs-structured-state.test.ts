@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { extractXhsSearchState, extractXhsDetailState, extractXhsCommentState } from "../src/host/sources/browser-scripts/xiaohongshu.ts";
 import { buildXhsNoteUrl } from "../src/host/sources/xiaohongshu/query.ts";
-import { parseXhsMetricNumber, isNoteFeed, normalizeXhsFeed } from "../src/host/sources/xiaohongshu/normalize.ts";
+import { parseXhsMetricNumber, isNoteFeed, normalizeXhsFeed, firstLine } from "../src/host/sources/xiaohongshu/normalize.ts";
 import type { XhsRawSearchFeed } from "../src/host/sources/xiaohongshu/types.ts";
 
 test("parseXhsMetricNumber: accurately parses standard, K, 万, and 万+ formats", () => {
@@ -253,4 +253,25 @@ test("extractXhsDetailState: unwraps reactive detail maps and extracts hydrated 
       has_more: true,
     },
   });
+});
+
+test("normalizeXhsFeed: no title falls back to the body's first line", () => {
+  const item = normalizeXhsFeed({
+    id: "note777",
+    modelType: "note",
+    noteCard: {
+      desc: "\n  今天去紫光园吃了烤鸭，真的皮脆肉嫩太绝了。\n后面还有很多碎碎念",
+      user: { nickname: "吃货" },
+    },
+  });
+  assert.ok(item);
+  assert.equal(item!.title, "今天去紫光园吃了烤鸭，真的皮脆肉嫩太绝了。");
+  assert.ok(item!.snippet!.startsWith("今天去紫光园"));
+
+  const empty = normalizeXhsFeed({ id: "note888", modelType: "note", noteCard: {} });
+  assert.equal(empty!.title, "小红书笔记");
+
+  assert.equal(firstLine("  \n  a  \n b "), "a");
+  assert.equal(firstLine(undefined), "");
+  assert.equal(firstLine("x".repeat(100)).length, 60);
 });

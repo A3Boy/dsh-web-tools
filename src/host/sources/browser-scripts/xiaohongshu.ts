@@ -55,6 +55,16 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
     return undefined;
   }
 
+  /** First non-empty line, collapsed and truncated (title substitute). */
+  function firstLine(text: string | null | undefined): string {
+    if (!text) return "";
+    const line = text
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .find((part) => part.length > 0);
+    return (line ?? "").replace(/\s+/g, " ").slice(0, 60);
+  }
+
   const results: XhsNoteExtraction[] = [];
   const noteElements = Array.from(document.querySelectorAll("section.note-item"));
 
@@ -94,13 +104,17 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
 
     const imgEl = el.querySelector("img.cover") || el.querySelector("img");
     const coverImage = imgEl ? (imgEl.getAttribute("src") || imgEl.getAttribute("data-src") || undefined) : undefined;
+    // Search cards without a title still carry the note text in the cover's
+    // alt attribute; use it instead of an opaque placeholder.
+    const altText = imgEl ? imgEl.getAttribute("alt") : undefined;
+    const resolvedTitle = title || firstLine(altText) || "小红书笔记";
 
-    if (title || id) {
+    if (title || altText || id) {
       results.push({
         id,
-        title: title || "无标题笔记",
+        title: resolvedTitle,
         url: fullUrl,
-        snippet: title,
+        snippet: title || firstLine(altText),
         authorName,
         authorUrl,
         likes,
