@@ -413,26 +413,52 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         const schemaRecognized = isSearchTimelineResponse(outcome.json);
         if (schemaRecognized) {
           const graphItems = extractTweetsFromSearchTimeline(outcome.json);
-          if (graphItems.length >= maxResults) {
-            return { items: graphItems.slice(0, maxResults), retrievalMode: "native-browser" };
-          }
-
-          // Thin GraphQL results (or valid 0 tweets): supplement via a short
-          // DOM pass and merge. 2s/2 scrolls — the GraphQL items are already
-          // the primary source, so this only fills gaps.
-          const domItems = await collectTweetsViaDom(page, maxResults, signal, {
-            selectorTimeoutMs: 2000,
-            maxScrolls: 2,
-          });
           const mergedMap = new Map<string, SourceItem>();
-          for (const item of graphItems) {
-            mergedMap.set(item.id, item);
-          }
-          for (const item of domItems) {
-            if (!mergedMap.has(item.id)) {
-              mergedMap.set(item.id, item);
+          for (const item of graphItems) mergedMap.set(item.id, item);
+
+          // Thin GraphQL results: supplement via a short DOM pass (2s/2 scrolls).
+          if (mergedMap.size < maxResults) {
+            const domItems = await collectTweetsViaDom(page, maxResults, signal, {
+              selectorTimeoutMs: 2000,
+              maxScrolls: 2,
+            });
+            for (const item of domItems) {
+              if (!mergedMap.has(item.id)) mergedMap.set(item.id, item);
             }
           }
+
+          // DEEPER PAGES: scrolling makes x.com issue the next SearchTimeline
+          // (with a bottom cursor); capture and merge it instead of forging a
+          // GraphQL request ourselves.
+          let stagnant = 0;
+          for (let pageNo = 0; pageNo < 2 && mergedMap.size < maxResults && !signal?.aborted; pageNo++) {
+            const before = mergedMap.size;
+            let next: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
+            try {
+              next = await page.beginJsonCapture({
+                urlIncludes: "/SearchTimeline",
+                timeoutMs: 6000,
+                signal,
+              });
+              await page.scrollBy(1600, signal);
+              const res = await next.wait();
+              if (res?.state === "captured" && isSearchTimelineResponse(res.json)) {
+                for (const item of extractTweetsFromSearchTimeline(res.json)) {
+                  if (!mergedMap.has(item.id)) mergedMap.set(item.id, item);
+                }
+              }
+            } catch {
+              break;
+            } finally {
+              next?.cancel();
+            }
+            if (mergedMap.size === before) {
+              stagnant++;
+              if (stagnant >= 1) break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+
           return { items: Array.from(mergedMap.values()).slice(0, maxResults), retrievalMode: "native-browser" };
         }
 

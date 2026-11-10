@@ -56,5 +56,14 @@ export declare class XiaohongshuSource implements SpecializedSource {
     private searchViaApi;
     private nativeSearch;
     fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome>;
+    /**
+     * Capture the NEXT comment page that the page loads by itself.
+     *
+     * Scrolling the comment list (or the window) makes the site issue its own
+     * signed `/api/sns/web/v2/comment/page` request; we capture that response
+     * instead of forging one (a forged call answers 500 — no x-s-common).
+     * Returns [] when there is nothing more or the scroll triggered no request.
+     */
+    private collectNextCommentPage;
     private rememberNoteUrl;
 }
