@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   formatMediaSection,
   pickHighestBitrateMp4,
+  resolveXhsOriginalImage,
   toOriginalXImageUrl,
   withMediaSection,
 } from "../src/host/sources/media.ts";
@@ -45,4 +46,15 @@ test("media: the section lists images, video and tags; empty media adds nothing"
   assert.equal(withMediaSection("正文", {}), "正文");
   assert.equal(withMediaSection(undefined, { videoUrl: "u" }), "[Media]\nVideo (MP4): u");
   assert.ok(withMediaSection("正文", { images: ["i"] })!.startsWith("正文\n\n[Media]"));
+});
+
+test("media: 小红书 image URLs map to the watermark-free CDN node", () => {
+  const mapped = resolveXhsOriginalImage(
+    "https://sns-webpic-qc.xhscdn.com/202601/abc/1040g2sg31b7d9n3l00005o1a1a1a1a1!nd_dft_wlteh_webp_3",
+  );
+  assert.equal(mapped, "https://sns-img-hw.xhscdn.com/1040g2sg31b7d9n3l00005o1a1a1a1a1?imageView2/2/w/format/png");
+
+  const untouched = "https://ci.xiaohongshu.com/cover666.jpg";
+  assert.equal(resolveXhsOriginalImage(untouched), untouched);
+  assert.equal(resolveXhsOriginalImage(undefined), undefined);
 });

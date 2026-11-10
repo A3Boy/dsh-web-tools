@@ -10,8 +10,16 @@
 import type { SourceItem } from "./types.ts";
 /** Original-size variant for an X media URL (X serves `?name=orig`). */
 export declare function toOriginalXImageUrl(rawUrl: string): string;
-/** Highest-bitrate MP4 among X's `video_info.variants`. */
-export declare function pickHighestBitrateMp4(variants: Array<{
+/**
+ * Map a 小红书 CDN image URL to the watermark-free original node.
+ *
+ * Web images come from `sns-webpic`/`sns-img` with a `!nd_dft_wlteh_webp_3`
+ * suffix (WebP, cropped, watermarked). The `1040g…` file id delivered to the
+ * public Huawei CDN node serves the same asset at full size without the
+ * watermark. Anything that does not match the id pattern is returned unchanged.
+ */
+export declare function resolveXhsOriginalImage(rawUrl?: string): string | undefined;
+/** Highest-bitrate MP4 among X's `video_info.variants`. */ export declare function pickHighestBitrateMp4(variants: Array<{
     content_type?: string;
     bitrate?: number;
     url?: string;

@@ -16,8 +16,22 @@ export function toOriginalXImageUrl(rawUrl: string): string {
   return `${base}?format=jpg&name=orig`;
 }
 
-/** Highest-bitrate MP4 among X's `video_info.variants`. */
-export function pickHighestBitrateMp4(
+/**
+ * Map a 小红书 CDN image URL to the watermark-free original node.
+ *
+ * Web images come from `sns-webpic`/`sns-img` with a `!nd_dft_wlteh_webp_3`
+ * suffix (WebP, cropped, watermarked). The `1040g…` file id delivered to the
+ * public Huawei CDN node serves the same asset at full size without the
+ * watermark. Anything that does not match the id pattern is returned unchanged.
+ */
+export function resolveXhsOriginalImage(rawUrl?: string): string | undefined {
+  if (!rawUrl) return undefined;
+  const match = rawUrl.match(/(1040g[^!?/]+)/);
+  if (!match) return rawUrl;
+  return `https://sns-img-hw.xhscdn.com/${match[1]}?imageView2/2/w/format/png`;
+}
+
+/** Highest-bitrate MP4 among X's `video_info.variants`. */export function pickHighestBitrateMp4(
   variants: Array<{ content_type?: string; bitrate?: number; url?: string }> | undefined,
 ): string | undefined {
   if (!Array.isArray(variants)) return undefined;

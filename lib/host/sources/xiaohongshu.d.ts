@@ -65,5 +65,14 @@ export declare class XiaohongshuSource implements SpecializedSource {
      * Returns [] when there is nothing more or the scroll triggered no request.
      */
     private collectNextCommentPage;
+    /**
+     * Click up to five "expand replies" controls so the SPA hydrates sub-comments.
+     *
+     * A DOM `.click()` is enough: the site's own framework dispatches its signed
+     * sub-comment request. No pointer simulation, no coordinate guessing.
+     *
+     * @returns how many controls were clicked (0 when none are present).
+     */
+    private expandCommentThreads;
     private rememberNoteUrl;
 }

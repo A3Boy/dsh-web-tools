@@ -12,7 +12,7 @@ import { extractXhsComments } from "./xiaohongshu/comments.ts";
 import { navigateXhsSearchViaUi } from "./xiaohongshu/ui-search.ts";
 import { appendCommentsToItem } from "./comments.ts";
 import { verifyPlatformSession } from "./auth.ts";
-import { withMediaSection } from "./media.ts";
+import { resolveXhsOriginalImage, withMediaSection } from "./media.ts";
 import { xhsSearchNotesViaApi } from "./browser-scripts/xhs-api.ts";
 import type {
   SpecializedSource,
@@ -93,7 +93,7 @@ export function mapXhsApiNote(note: Record<string, any>): SourceItem | null {
     likes: parseXhsCount(interact?.liked_count ?? interact?.likedCount),
     collects: parseXhsCount(interact?.collected_count ?? interact?.collectedCount),
     replies: parseXhsCount(interact?.comment_count ?? interact?.commentCount),
-    coverImage: cover?.url_default ?? cover?.urlDefault ?? cover?.url_pre ?? cover?.urlPre,
+    coverImage: resolveXhsOriginalImage(cover?.url_default ?? cover?.urlDefault ?? cover?.url_pre ?? cover?.urlPre),
     platform: "xiaohongshu",
   };
 }
@@ -729,7 +729,7 @@ export class XiaohongshuSource implements SpecializedSource {
         likes: detail.likes,
         collects: detail.collects,
         replies: detail.comments,
-        images: detail.images,
+        images: detail.images?.map((u: string) => resolveXhsOriginalImage(u) ?? u),
         videoUrl: detail.videoUrl,
         tags: detail.tags,
         platform: "xiaohongshu",
@@ -774,6 +774,24 @@ export class XiaohongshuSource implements SpecializedSource {
       // page. Scrolling the comment list makes the site request the next page
       // itself (signed), which we capture — forging /comment/page would 500.
       if (commentsTruncated && commentList.length > 0) {
+        // First expand the "展开更多回复" controls on the top threads: a DOM
+        // .click() lets the SPA issue its own sub-comment request, no pointer
+        // simulation needed. Only the first five are opened to bound the work.
+        const expanded = await this.expandCommentThreads(page, signal);
+        if (expanded > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const refreshed = await page.call(extractXhsCommentState, [noteId], signal);
+            if (refreshed) {
+              const parsed = extractXhsComments(refreshed);
+              const seen = new Set(commentList.map((c) => c.id));
+              commentList = commentList.concat(parsed.comments.filter((c) => c.id && !seen.has(c.id)));
+            }
+          } catch {
+            // Expansion is best-effort; the first page is still valid.
+          }
+        }
+
         for (let pageNo = 0; pageNo < 2 && !signal?.aborted; pageNo++) {
           const more = await this.collectNextCommentPage(page, signal);
           if (more.length === 0) break;
@@ -848,6 +866,35 @@ export class XiaohongshuSource implements SpecializedSource {
       return [];
     } finally {
       capture?.cancel();
+    }
+  }
+
+  /**
+   * Click up to five "expand replies" controls so the SPA hydrates sub-comments.
+   *
+   * A DOM `.click()` is enough: the site's own framework dispatches its signed
+   * sub-comment request. No pointer simulation, no coordinate guessing.
+   *
+   * @returns how many controls were clicked (0 when none are present).
+   */
+  private async expandCommentThreads(page: CdpPageLease, signal?: AbortSignal): Promise<number> {
+    try {
+      const clicked = await page.evaluate<number>(
+        `(() => {
+          const nodes = Array.from(document.querySelectorAll("span, div, button, a"));
+          const buttons = nodes.filter((el) => {
+            if (el.children.length > 0) return false;
+            const text = (el.textContent || "").trim();
+            return /展开.*回复|更多回复|展开更多|查看全部回复/.test(text);
+          }).slice(0, 5);
+          for (const b of buttons) { try { b.click(); } catch {} }
+          return buttons.length;
+        })()`,
+        signal,
+      );
+      return typeof clicked === "number" ? clicked : 0;
+    } catch {
+      return 0;
     }
   }
 
