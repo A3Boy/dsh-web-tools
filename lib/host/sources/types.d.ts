@@ -57,6 +57,10 @@ export interface SourceItem {
     comments?: SourceComment[];
     commentsTruncated?: boolean;
     images?: string[];
+    /** Direct MP4 URL when the post carries a video. */
+    videoUrl?: string;
+    /** Hashtags / topic tags, without the leading `#`. */
+    tags?: string[];
     coverImage?: string;
     platform: SpecializedPlatformId | "general";
 }

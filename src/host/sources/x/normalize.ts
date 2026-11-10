@@ -1,4 +1,5 @@
 import type { SourceComment, SourceItem } from "../types.ts";
+import { pickHighestBitrateMp4, toOriginalXImageUrl } from "../media.ts";
 import type {
   XSearchTimelineResponse,
   XTimelineInstruction,
@@ -105,9 +106,14 @@ export function normalizeTweet(tweet: XTweetResult): SourceItem | undefined {
   const handle = user?.core?.screen_name;
 
   const media = legacy?.extended_entities?.media || [];
+  // `media_url_https` is the display variant; `?name=orig` is the full-size one.
   const images = media
     .map((m) => m.media_url_https)
-    .filter((u): u is string => Boolean(u));
+    .filter((u): u is string => Boolean(u))
+    .map(toOriginalXImageUrl);
+  const videoUrl = media
+    .map((m: any) => pickHighestBitrateMp4(m?.video_info?.variants))
+    .find((u): u is string => Boolean(u));
 
   return {
     id,
@@ -129,6 +135,7 @@ export function normalizeTweet(tweet: XTweetResult): SourceItem | undefined {
     retweets: legacy?.retweet_count,
     replies: legacy?.reply_count,
     images: images.length > 0 ? images : undefined,
+    videoUrl,
     coverImage: images[0],
     platform: "x",
   };

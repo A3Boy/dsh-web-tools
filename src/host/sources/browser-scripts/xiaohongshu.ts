@@ -137,6 +137,8 @@ export function extractXhsDetailState(noteId: string): {
   collects?: number;
   comments?: number;
   images?: string[];
+  videoUrl?: string;
+  tags?: string[];
 } {
   const state = (window as any).__INITIAL_STATE__;
   const rawMap = state?.note?.noteDetailMap;
@@ -190,6 +192,20 @@ export function extractXhsDetailState(noteId: string): {
         .filter(Boolean)
     : undefined;
 
+  // Video notes carry a direct MP4 (no app watermark) on the CDN.
+  const videoUrl: string | undefined =
+    note.video?.media?.stream?.h264?.[0]?.masterUrl ||
+    note.video?.consumer?.originVideoKey
+      ? note.video?.media?.stream?.h264?.[0]?.masterUrl ||
+        `https://sns-video-hw.xhscdn.com/${note.video.consumer.originVideoKey}`
+      : undefined;
+
+  const tags: string[] | undefined = Array.isArray(note.tagList)
+    ? note.tagList
+        .map((tag: any) => (typeof tag?.name === "string" ? tag.name.trim() : ""))
+        .filter((name: string) => name.length > 0)
+    : undefined;
+
   return {
     available: true,
     title: note.title || note.displayTitle,
@@ -201,6 +217,8 @@ export function extractXhsDetailState(noteId: string): {
     collects: parseCount(interact?.collectedCount),
     comments: parseCount(interact?.commentCount),
     images: images && images.length > 0 ? images : undefined,
+    videoUrl,
+    tags: tags && tags.length > 0 ? tags : undefined,
   };
 }
 

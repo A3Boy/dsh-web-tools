@@ -13,6 +13,7 @@ import {
 } from "./x/normalize.ts";
 import { appendCommentsToItem } from "./comments.ts";
 import { verifyPlatformSession } from "./auth.ts";
+import { withMediaSection } from "./media.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import type {
   SpecializedSource,
@@ -567,6 +568,9 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         const target = extractTweetFromTweetDetail(outcome.json, targetTweetId);
         if (target) {
           const comments = extractCommentsFromTweetDetail(outcome.json, targetTweetId);
+          // Original-size images / highest-bitrate MP4 belong in the text: the
+          // fetch result otherwise shows only the copy.
+          target.text = withMediaSection(target.text, target);
           return {
             item: appendCommentsToItem(target, comments, {
               heading: "Replies",

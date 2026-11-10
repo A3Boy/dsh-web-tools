@@ -12,6 +12,7 @@ import { extractXhsComments } from "./xiaohongshu/comments.ts";
 import { navigateXhsSearchViaUi } from "./xiaohongshu/ui-search.ts";
 import { appendCommentsToItem } from "./comments.ts";
 import { verifyPlatformSession } from "./auth.ts";
+import { withMediaSection } from "./media.ts";
 import { xhsSearchNotesViaApi } from "./browser-scripts/xhs-api.ts";
 import type {
   SpecializedSource,
@@ -683,8 +684,11 @@ export class XiaohongshuSource implements SpecializedSource {
         collects: detail.collects,
         replies: detail.comments,
         images: detail.images,
+        videoUrl: detail.videoUrl,
+        tags: detail.tags,
         platform: "xiaohongshu",
       };
+      item.text = withMediaSection(item.text, item);
 
       // The detail page hydrates its initial comment page into noteDetailMap.
       // Prefer that deterministic state over waiting for a network request that
