@@ -19,6 +19,13 @@ export declare class XSource implements SpecializedSource {
     search(query: string, req?: SourceSearchRequest, signal?: AbortSignal): Promise<SourceSearchOutcome>;
     /** One navigation + capture attempt against a concrete search URL. */
     private searchOnce;
+    /**
+     * Click x.com's inline "Something went wrong → Retry" panel if it is shown.
+     *
+     * The timeline request is sometimes rejected server-side; the SPA renders a
+     * retry button and waits forever for a click. Returns whether one was found.
+     */
+    private clickXRetryIfPresent;
     fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome>;
 }
 export {};

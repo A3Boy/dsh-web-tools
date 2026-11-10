@@ -129,6 +129,17 @@ export class CdpPage implements CdpPageLease {
     return this.evaluate<T>(expression, signal);
   }
 
+  /**
+   * Bring the tab to the foreground.
+   *
+   * A background/minimized tab has its timers and rendering throttled, which
+   * can leave a heavy SPA (x.com) showing its shell without issuing the data
+   * requests the shell depends on.
+   */
+  async bringToFront(signal?: AbortSignal): Promise<void> {
+    await this.client.send("Page.bringToFront", {}, this.sessionId, signal);
+  }
+
   async focus(selector: string, signal?: AbortSignal): Promise<boolean> {
     return this.evaluate<boolean>(
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return document.activeElement === el; })()`,

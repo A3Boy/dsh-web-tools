@@ -500,11 +500,50 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         };
       }
 
-      // Hydrated page: the timeline may still be in flight (common through a
-      // proxy). Give it real time to paint before falling back to a short scan.
+      // Hydrated page: the timeline is often deferred until the viewport
+      // intersects the feed container (and a minimized window throttles idle
+      // work). Nudge it with real scrolls WHILE a late capture is listening,
+      // instead of idling for the selector.
+      if (hydrated) {
+        // Foreground + built-in retry: x.com renders an inline "出错了 / 重试"
+        // (Something went wrong / Retry) panel when its timeline request is
+        // rejected, and does NOT retry by itself. Clicking that button is a
+        // normal user action, not a forged request.
+        try {
+          await page.bringToFront?.(signal);
+        } catch {
+          // Foregrounding is best-effort.
+        }
+        const retried = await this.clickXRetryIfPresent(page, signal);
+
+        let late: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
+        try {
+          late = await page.beginJsonCapture({
+            urlIncludes: "/SearchTimeline",
+            timeoutMs: retried ? 9000 : 6000,
+            signal,
+          });
+          for (let i = 0; i < 3 && !signal?.aborted; i++) {
+            await page.scrollBy(500, signal);
+            await new Promise((resolve) => setTimeout(resolve, 600));
+          }
+          const lateOutcome = await late.wait();
+          if (lateOutcome?.state === "captured" && isSearchTimelineResponse(lateOutcome.json)) {
+            const lateItems = extractTweetsFromSearchTimeline(lateOutcome.json);
+            if (lateItems.length > 0) {
+              return { items: lateItems.slice(0, maxResults), retrievalMode: "native-browser" };
+            }
+          }
+        } catch {
+          // Fall through to the DOM scan.
+        } finally {
+          late?.cancel();
+        }
+      }
+
       const domItems = await collectTweetsViaDom(page, maxResults, signal, {
-        selectorTimeoutMs: hydrated ? 9000 : 2000,
-        maxScrolls: hydrated ? 3 : 2,
+        selectorTimeoutMs: hydrated ? 2500 : 2000,
+        maxScrolls: hydrated ? 2 : 2,
       });
       if (domItems.length > 0) {
         return { items: domItems, retrievalMode: "native-browser" };
@@ -536,6 +575,33 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     } finally {
       capture?.cancel();
       await page.close();
+    }
+  }
+
+  /**
+   * Click x.com's inline "Something went wrong → Retry" panel if it is shown.
+   *
+   * The timeline request is sometimes rejected server-side; the SPA renders a
+   * retry button and waits forever for a click. Returns whether one was found.
+   */
+  private async clickXRetryIfPresent(page: CdpPageLease, signal?: AbortSignal): Promise<boolean> {
+    try {
+      const clicked = await page.evaluate<boolean>(
+        `(() => {
+          const nodes = Array.from(document.querySelectorAll('[role="button"], button, div, span'));
+          const target = nodes.find((el) => {
+            const text = (el.textContent || "").trim();
+            return /^(重试|Retry|Try again)$/i.test(text) && el.children.length === 0;
+          });
+          if (!target) return false;
+          target.click();
+          return true;
+        })()`,
+        signal,
+      );
+      return clicked === true;
+    } catch {
+      return false;
     }
   }
 
