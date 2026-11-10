@@ -573,7 +573,12 @@ export class SessionManager implements NativeBrowserRuntime {
             };
             const pageCount = (info.targetInfos ?? []).filter((t) => t.type === "page").length;
             if (pageCount <= 1) {
-              await session.cdp.send("Page.navigate", { url: "about:blank" }, sessionId);
+              // Last tab: do NOT blank it. Navigating to about:blank made the
+              // window look crashed to anyone watching the search, and closing
+              // it would terminate the browser. Leave the page on its results
+              // and just drop the CDP session; the next operation's sweep
+              // replaces it.
+              await session.cdp.send("Target.detachFromTarget", { sessionId });
             } else {
               await session.cdp.send("Target.closeTarget", { targetId });
             }
