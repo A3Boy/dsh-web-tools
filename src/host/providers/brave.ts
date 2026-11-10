@@ -177,7 +177,18 @@ export const BraveProvider: ProviderAdapter = {
         if (!u) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url: u };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        if (typeof r.description === "string" && r.description) s.snippet = r.description;
+        const parts: string[] = [];
+        if (typeof r.description === "string" && r.description.trim()) {
+          parts.push(r.description.trim());
+        }
+        if (Array.isArray(r.extra_snippets) && r.extra_snippets.length > 0) {
+          const extra = r.extra_snippets.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+          if (extra.length > 0) parts.push(extra.join(" "));
+        }
+        if (parts.length > 0) {
+          const joined = parts.join("\n");
+          s.snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+        }
         if (typeof r.age === "string" && r.age) s.publishedAt = r.age;
         return s;
       })

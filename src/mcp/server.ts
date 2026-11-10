@@ -13,7 +13,16 @@
  */
 import readline from "node:readline";
 import { Readable } from "node:stream";
-import { createSearchProvider, createFetchProvider, type WebSearchProviderLike, type WebFetchProviderLike } from "../host/registry.ts";
+import {
+  createSearchProvider,
+  createFetchProvider,
+  createPoolStore,
+  type WebSearchProviderLike,
+  type WebFetchProviderLike,
+} from "../host/registry.ts";
+import { createProviderHealthStore } from "../host/provider-health.ts";
+import { createCachedSearchProvider, createCachedFetchProvider } from "../host/cached-web.ts";
+import { fingerprint as configFingerprint } from "../host/result-cache.ts";
 import { Stats } from "../host/stats.ts";
 import type { SearchRoutingPolicy } from "../host/routing-policy.ts";
 import { CURRENT_VERSION } from "../shared/version.ts";
@@ -21,9 +30,14 @@ import { SpecializedSourceRegistry } from "../host/sources/registry.ts";
 import { XiaohongshuSource } from "../host/sources/xiaohongshu.ts";
 import { XSource } from "../host/sources/x.ts";
 import { createNativeBrowserRuntime } from "../host/browser/index.ts";
-import type { NativeBrowserRuntime } from "../host/browser/types.ts";
+import type { NativeBrowserRuntime, BrowserPlatform } from "../host/browser/types.ts";
 import { extractSearchHints } from "../host/search-hints.ts";
-import { describeDegradation, toRoutedFetchResponse } from "../host/index.ts";
+import { isRetrievalStrategy, type RetrievalStrategy } from "../shared/api-types.ts";
+import {
+  describeDegradation,
+  toRoutedFetchResponse,
+  formatPlatformSnippet,
+} from "../host/sources/routed-response.ts";
 
 /**
  * MCP protocol revisions this server understands, newest first. The server
@@ -37,6 +51,7 @@ export interface McpServerOptions {
   env?: Record<string, string | undefined>;
   defaultProvider?: string;
   routingPolicy?: SearchRoutingPolicy;
+  retrievalStrategy?: RetrievalStrategy;
   timeoutMs?: number;
   /** Hard ceiling for ONE tools/call (search or fetch). Default: 60s. */
   requestTimeoutMs?: number;
@@ -89,12 +104,18 @@ export class McpServer {
     const stats = new Stats();
     const defaultProvider = options.defaultProvider ?? env.WEB_TOOLS_DEFAULT_PROVIDER ?? "exa";
     const routingPolicy = (options.routingPolicy ?? env.WEB_TOOLS_ROUTING_POLICY ?? "adaptive") as SearchRoutingPolicy;
+    const retrievalStrategy: RetrievalStrategy = (
+      options.retrievalStrategy ??
+      (isRetrievalStrategy(env.WEB_TOOLS_RETRIEVAL_STRATEGY) ? env.WEB_TOOLS_RETRIEVAL_STRATEGY : undefined) ??
+      "hedged"
+    ) as RetrievalStrategy;
     const timeoutMs = options.timeoutMs ?? (env.WEB_TOOLS_TIMEOUT_MS ? parseInt(env.WEB_TOOLS_TIMEOUT_MS, 10) : 10000);
 
     const resolveConfig = () => ({
       enabled: true,
       defaultProvider,
       searchRoutingPolicy: routingPolicy,
+      retrievalStrategy,
       providerAttemptTimeoutMs: timeoutMs,
       fallbackOrder: ["exa", "tavily", "brave", "serper", "firecrawl", "keenable", "you", "jina", "parallel", "searxng"],
       providerBaseUrls: {
@@ -112,27 +133,37 @@ export class McpServer {
       return "";
     };
 
-    const generalSearchProvider = options.searchProvider ?? createSearchProvider(
+    const poolStore = createPoolStore(resolveKeys);
+    const healthStore = createProviderHealthStore();
+
+    const rawSearchProvider = options.searchProvider ?? createSearchProvider(
       resolveConfig,
       resolveKeys,
       {
         record: (e) => stats.record({ ...e, at: Date.now() }),
         summary: () => stats.summary(),
       },
+      undefined,
+      poolStore,
+      healthStore,
     );
 
-    const generalFetchProvider = options.fetchProvider ?? createFetchProvider(
+    const rawFetchProvider = options.fetchProvider ?? createFetchProvider(
       resolveConfig,
       resolveKeys,
       undefined,
-      undefined,
-      undefined,
+      poolStore,
+      healthStore,
       undefined,
       undefined,
       {
         record: (e) => stats.record({ ...e, at: Date.now() }),
       },
     );
+
+    const cacheFingerprint = () => configFingerprint({ runtime: resolveConfig() });
+    const generalSearchProvider = createCachedSearchProvider(rawSearchProvider, { fingerprint: cacheFingerprint });
+    const generalFetchProvider = createCachedFetchProvider(rawFetchProvider, { fingerprint: cacheFingerprint });
 
     const nativeRuntime = options.nativeRuntime ?? createNativeBrowserRuntime();
     this.nativeRuntime = nativeRuntime;
@@ -165,7 +196,7 @@ export class McpServer {
           sources: outcome.items.map((item) => ({
             url: item.url,
             title: item.title,
-            snippet: item.snippet,
+            snippet: formatPlatformSnippet(item),
             publishedAt: item.publishedAt,
           })),
           truncated: false,
@@ -455,8 +486,95 @@ export class McpServer {
   }
 }
 
-/** CLI entrypoint helper for running the MCP server directly via stdio. */
-export function runMcpServer(options: McpServerOptions = {}): McpServer {
+function printHelp(): void {
+  console.log(`dsh-web-tools-mcp v${CURRENT_VERSION}
+Model Context Protocol (MCP) Server for multi-provider web search & extraction.
+
+Usage:
+  dsh-web-tools-mcp                    Start JSON-RPC stdio MCP server
+  dsh-web-tools-mcp --status           Check Xiaohongshu & X login status
+  dsh-web-tools-mcp --login <platform> Interactively sign in (xiaohongshu | x)
+  dsh-web-tools-mcp --version          Print version
+  dsh-web-tools-mcp --help             Show this help message
+
+Environment Variables:
+  EXA_API_KEY, TAVILY_API_KEY, BRAVE_API_KEY, SERPER_API_KEY,
+  FIRECRAWL_API_KEY, KEENABLE_API_KEY, YOU_API_KEY, JINA_API_KEY,
+  PARALLEL_API_KEY, SEARXNG_URL
+  WEB_TOOLS_DEFAULT_PROVIDER   Default search provider (default: exa)
+  WEB_TOOLS_RETRIEVAL_STRATEGY single | hedged | fused (default: hedged)
+  WEB_TOOLS_ROUTING_POLICY     adaptive | ordered | round-robin (default: adaptive)
+  WEB_TOOLS_TIMEOUT_MS         Provider attempt timeout in ms (default: 10000)
+`);
+}
+
+async function printPlatformStatus(runtimeOverride?: NativeBrowserRuntime): Promise<void> {
+  const runtime = runtimeOverride ?? createNativeBrowserRuntime();
+  console.log(`dsh-web-tools-mcp v${CURRENT_VERSION} — Platform Authentication Status:`);
+  try {
+    for (const platform of ["xiaohongshu", "x"] as const) {
+      const status = await runtime.status(platform);
+      const name = platform === "xiaohongshu" ? "Xiaohongshu (小红书)" : "X (Twitter)";
+      const auth = status.authenticated
+        ? `authenticated (${status.accountLabel || "logged in"})`
+        : `not authenticated (${status.authState})`;
+      console.log(`  - ${name}: ${auth}`);
+      if (!status.authenticated) {
+        console.log(`    Run \`dsh-web-tools-mcp --login ${platform}\` to open a browser and sign in.`);
+      }
+    }
+  } finally {
+    await runtime.dispose?.();
+  }
+}
+
+async function runInteractiveLogin(platform: BrowserPlatform, runtimeOverride?: NativeBrowserRuntime): Promise<void> {
+  const runtime = runtimeOverride ?? createNativeBrowserRuntime();
+  const name = platform === "xiaohongshu" ? "Xiaohongshu (小红书)" : "X (Twitter)";
+  console.log(`Launching browser for ${name} interactive login...`);
+  console.log(`Please complete the login in the opened browser window.`);
+  try {
+    const status = await runtime.login(platform);
+    if (status.authenticated) {
+      console.log(`Successfully authenticated to ${name}!`);
+      console.log(`Session persisted to profile. Standalone MCP can now perform native ${name} search & fetch.`);
+    } else {
+      console.log(`Login incomplete or aborted. Auth state: ${status.authState}`);
+    }
+  } catch (err: any) {
+    console.error(`Login error: ${err.message ?? String(err)}`);
+    process.exit(1);
+  } finally {
+    await runtime.dispose?.();
+  }
+}
+
+/** CLI entrypoint helper for running the MCP server or executing CLI commands. */
+export async function runMcpServer(options: McpServerOptions = {}): Promise<McpServer | undefined> {
+  const args = process.argv.slice(2);
+  if (args.includes("--help") || args.includes("-h")) {
+    printHelp();
+    return undefined;
+  }
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(`dsh-web-tools-mcp v${CURRENT_VERSION}`);
+    return undefined;
+  }
+  if (args.includes("--status")) {
+    await printPlatformStatus(options.nativeRuntime);
+    return undefined;
+  }
+  const loginIdx = args.findIndex((a) => a === "--login");
+  if (loginIdx !== -1) {
+    const rawPlatform = args[loginIdx + 1]?.toLowerCase();
+    if (rawPlatform !== "xiaohongshu" && rawPlatform !== "x") {
+      console.error("Usage: dsh-web-tools-mcp --login <xiaohongshu|x>");
+      process.exit(1);
+    }
+    await runInteractiveLogin(rawPlatform as BrowserPlatform, options.nativeRuntime);
+    return undefined;
+  }
+
   const server = new McpServer(options);
   server.start();
   return server;

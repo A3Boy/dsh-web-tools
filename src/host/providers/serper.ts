@@ -71,6 +71,26 @@ export function buildSerperSearchBody(
   return body;
 }
 
+/** Extract answerBox answer or knowledgeGraph description as top-level content. */
+export function extractSerperContent(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as Record<string, unknown>;
+  if (b.answerBox && typeof b.answerBox === "object") {
+    const ab = b.answerBox as Record<string, unknown>;
+    const ans = typeof ab.answer === "string" ? ab.answer : typeof ab.snippet === "string" ? ab.snippet : "";
+    if (ans.trim()) return ans.trim();
+  }
+  if (b.knowledgeGraph && typeof b.knowledgeGraph === "object") {
+    const kg = b.knowledgeGraph as Record<string, unknown>;
+    const desc = typeof kg.description === "string" ? kg.description : "";
+    if (desc.trim()) {
+      const title = typeof kg.title === "string" ? kg.title : "";
+      return title ? `${title}: ${desc.trim()}` : desc.trim();
+    }
+  }
+  return undefined;
+}
+
 /** Parse Serper's organic results & answer box into normalized Sources. */
 export function parseSerperSearchJson(body: unknown, limit: number): Source[] {
   if (!body || typeof body !== "object") return [];
@@ -97,7 +117,17 @@ export function parseSerperSearchJson(body: unknown, limit: number): Source[] {
       if (!url) continue;
       const s: Source = { url };
       if (typeof item.title === "string" && item.title) s.title = item.title;
-      if (typeof item.snippet === "string" && item.snippet) s.snippet = item.snippet;
+      let snippet = typeof item.snippet === "string" ? item.snippet : "";
+      if (item.attributes && typeof item.attributes === "object") {
+        const attrPairs = Object.entries(item.attributes as Record<string, unknown>)
+          .filter(([, v]) => typeof v === "string" && v.trim())
+          .map(([k, v]) => `${k}: ${v}`);
+        if (attrPairs.length > 0) {
+          const attrText = attrPairs.join(" | ");
+          snippet = snippet ? `${snippet}\n${attrText}` : attrText;
+        }
+      }
+      if (snippet) s.snippet = snippet;
       if (typeof item.date === "string" && item.date) s.publishedAt = item.date;
       sources.push(s);
     }
@@ -135,7 +165,11 @@ export const SerperProvider: ProviderAdapter = {
     } catch {
       throw providerError("invalid-response", "Serper returned a non-JSON search response");
     }
-    return { sources: parseSerperSearchJson(resBody, limit) };
+    const content = extractSerperContent(resBody);
+    return {
+      sources: parseSerperSearchJson(resBody, limit),
+      ...(content ? { content } : {}),
+    };
   },
 
   async fetch(_url, _apiKey, _baseUrl, _signal) {

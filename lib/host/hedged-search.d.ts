@@ -28,6 +28,7 @@ export type LaneRole = "primary" | "secondary";
 export interface ProviderSearchFn {
     (providerName: string, signal: AbortSignal, lane: LaneRole): Promise<{
         sources: Source[];
+        content?: string;
     }>;
 }
 export type MultiSourceMode = "hedged" | "fused";
@@ -48,6 +49,7 @@ export interface LaneAttempt {
     outcome: string;
 }
 export interface MultiSourceResult {
+    content?: string;
     sources: Source[];
     /** `a` or `a+b` for a fused answer. */
     backend: string;

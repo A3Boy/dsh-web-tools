@@ -29,7 +29,7 @@ export type LaneRole = "primary" | "secondary";
 
 /** One provider call as the executor sees it. */
 export interface ProviderSearchFn {
-  (providerName: string, signal: AbortSignal, lane: LaneRole): Promise<{ sources: Source[] }>;
+  (providerName: string, signal: AbortSignal, lane: LaneRole): Promise<{ sources: Source[]; content?: string }>;
 }
 
 export type MultiSourceMode = "hedged" | "fused";
@@ -53,6 +53,7 @@ export interface LaneAttempt {
 }
 
 export interface MultiSourceResult {
+  content?: string;
   sources: Source[];
   /** `a` or `a+b` for a fused answer. */
   backend: string;
@@ -73,6 +74,7 @@ interface Lane {
   done: boolean;
   status: LaneStatus;
   sources: Source[];
+  content?: string;
   error?: unknown;
   latencyMs: number;
   /** Wall-clock start, used to report a cancelled lane's elapsed time. */
@@ -170,6 +172,7 @@ export async function runHedgedSearch(
         const res = await searchFn(lane.provider, lane.controller.signal, lane.role);
         lane.latencyMs = Date.now() - startedAt;
         lane.sources = res?.sources ?? [];
+        lane.content = res?.content;
         lane.status = lane.sources.length > 0 ? "success" : "empty";
       } catch (error) {
         lane.latencyMs = Date.now() - startedAt;
@@ -233,6 +236,7 @@ export async function runHedgedSearch(
     if (emptyLane) {
       return {
         sources: [],
+        ...(emptyLane.content !== undefined ? { content: emptyLane.content } : {}),
         backend: emptyLane.provider,
         hedgedLaunched: secondary.started,
         fused: false,
@@ -262,6 +266,7 @@ export async function runHedgedSearch(
     }
     return {
       sources: plainSources(lane.sources),
+      ...(lane.content !== undefined ? { content: lane.content } : {}),
       backend: lane.provider,
       hedgedLaunched: secondary.started,
       fused: false,
@@ -288,8 +293,10 @@ export async function runHedgedSearch(
         const fused = reciprocalRankFusion(
           winners.map((lane) => ({ provider: lane.provider, sources: lane.sources })),
         );
+        const topContent = winners.find((w) => w.content)?.content;
         return {
           sources: plainSources(fused),
+          ...(topContent !== undefined ? { content: topContent } : {}),
           backend: `${winners[0].provider}+${winners[1].provider}`,
           hedgedLaunched: true,
           fused: true,

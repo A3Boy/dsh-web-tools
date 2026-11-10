@@ -128,8 +128,12 @@ export const YouProvider: ProviderAdapter = {
             .join("\n\n")
             .trim();
           if (joined) snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
-        } else if (Array.isArray(r.snippets) && typeof r.snippets[0] === "string") {
-          snippet = r.snippets[0];
+        } else if (Array.isArray(r.snippets) && r.snippets.length > 0) {
+          const valid = r.snippets.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+          if (valid.length > 0) {
+            const joined = valid.join("\n");
+            snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+          }
         } else if (typeof r.description === "string") {
           snippet = r.description;
         }

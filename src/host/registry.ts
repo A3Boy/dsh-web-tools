@@ -55,23 +55,25 @@ export interface WebSearchProviderLike {
   }>;
 }
 
+export interface WebFetchResponse {
+  url: string;
+  statusCode: number;
+  body: { kind: "html" | "text"; content: string };
+  truncated: boolean;
+  backend?: string;
+  metadata?: {
+    title?: string;
+    author?: string;
+    publishedAt?: string;
+    description?: string;
+  };
+}
+
 /** Structural mirror of the seam's WebFetchProvider contract. */
 export interface WebFetchProviderLike {
   id: string;
   available(): boolean;
-  fetch(request: { url: string }, signal?: AbortSignal): Promise<{
-    url: string;
-    statusCode: number;
-    body: { kind: "html" | "text"; content: string };
-    truncated: boolean;
-    backend?: string;
-    metadata?: {
-      title?: string;
-      author?: string;
-      publishedAt?: string;
-      description?: string;
-    };
-  }>;
+  fetch(request: { url: string }, signal?: AbortSignal): Promise<WebFetchResponse>;
 }
 
 /** A classified failure the executor throws (WebError-compatible shape). */
@@ -518,6 +520,7 @@ export function createSearchProvider(
         });
         return {
           sources: multi.sources,
+          ...(multi.content !== undefined ? { content: multi.content } : {}),
           truncated: false,
           attempts: multi.attempts.map((attempt: LaneAttempt) => ({
             provider: attempt.provider,

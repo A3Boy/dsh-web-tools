@@ -19,4 +19,4 @@ if (!existsSync(fileURLToPath(built))) {
 }
 
 const { runMcpServer } = await import(built.href);
-runMcpServer();
+await runMcpServer();

@@ -13,7 +13,7 @@
 import type { WebToolsContext } from "./context-types.ts";
 import { type WebToolsSettings } from "./config.ts";
 import { PROVIDER_ID } from "./registry.ts";
-import type { SourceDegradation, SourceFetchOutcome } from "./sources/types.ts";
+import { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet } from "./sources/routed-response.ts";
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "dsh-web-tools";
 /** Services required by this plugin. */
@@ -24,22 +24,6 @@ export declare const inject: string[];
  * resolving plugin config); an empty object would crash at load.
  */
 export declare const Config: import("@deepseek-ai/schemastery").default<WebToolsSettings>;
-export declare function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome): {
-    url: string;
-    statusCode: number;
-    body: {
-        kind: "text";
-        content: string;
-    };
-    truncated: boolean;
-};
-/**
- * One-line, model-facing explanation of a degraded platform search.
- *
- * The web_search tool renders `content` above the source list, so this is the
- * only place where an agent (and the operator reading the transcript) can learn
- * that these are site:-filtered web results rather than in-app posts.
- */
-export declare function describeDegradation(d: SourceDegradation): string;
+export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet };
 export declare function apply(ctx: WebToolsContext, config?: unknown): void;
 export { PROVIDER_ID };

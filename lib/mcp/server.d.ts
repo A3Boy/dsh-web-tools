@@ -2,10 +2,12 @@ import { type WebSearchProviderLike, type WebFetchProviderLike } from "../host/r
 import type { SearchRoutingPolicy } from "../host/routing-policy.ts";
 import { SpecializedSourceRegistry } from "../host/sources/registry.ts";
 import type { NativeBrowserRuntime } from "../host/browser/types.ts";
+import { type RetrievalStrategy } from "../shared/api-types.ts";
 export interface McpServerOptions {
     env?: Record<string, string | undefined>;
     defaultProvider?: string;
     routingPolicy?: SearchRoutingPolicy;
+    retrievalStrategy?: RetrievalStrategy;
     timeoutMs?: number;
     /** Hard ceiling for ONE tools/call (search or fetch). Default: 60s. */
     requestTimeoutMs?: number;
@@ -39,5 +41,5 @@ export declare class McpServer {
     private sendError;
     private handleMessage;
 }
-/** CLI entrypoint helper for running the MCP server directly via stdio. */
-export declare function runMcpServer(options?: McpServerOptions): McpServer;
+/** CLI entrypoint helper for running the MCP server or executing CLI commands. */
+export declare function runMcpServer(options?: McpServerOptions): Promise<McpServer | undefined>;

@@ -21,6 +21,8 @@ export declare const SERPER_META: {
 export declare function mapSerperFreshness(hints?: Readonly<SearchHints>): string | undefined;
 /** Build the `/search` request body for Serper. Pure, for tests. */
 export declare function buildSerperSearchBody(query: string, limit: number, hints?: SearchHints): Record<string, unknown>;
+/** Extract answerBox answer or knowledgeGraph description as top-level content. */
+export declare function extractSerperContent(body: unknown): string | undefined;
 /** Parse Serper's organic results & answer box into normalized Sources. */
 export declare function parseSerperSearchJson(body: unknown, limit: number): Source[];
 export declare const SerperProvider: ProviderAdapter;

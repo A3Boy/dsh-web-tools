@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID, WebToolsWebError } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
@@ -59,7 +59,11 @@ import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
 import { extractSearchHints } from "./search-hints.ts";
-import type { SourceDegradation, SourceFetchOutcome } from "./sources/types.ts";
+import {
+  toRoutedFetchResponse,
+  describeDegradation,
+  formatPlatformSnippet,
+} from "./sources/routed-response.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -79,75 +83,7 @@ const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
 
-export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) {
-  if (outcome.error) {
-    const error = new WebToolsWebError(
-      `platform fetch failed (${outcome.error.code}): ${outcome.error.message}`,
-    );
-    if (outcome.error.code === "aborted") error.code = "WEB_ABORTED";
-    throw error;
-  }
-
-  const item = outcome.item;
-  const rawContent = item?.text?.trim();
-  if (!item || !rawContent) {
-    throw new WebToolsWebError(`platform fetch returned empty content for ${url}`);
-  }
-
-  const sections: string[] = [];
-  if (item.title?.trim() && !rawContent.startsWith(item.title.trim())) {
-    sections.push(`# ${item.title.trim()}`);
-  }
-
-  const metadata: string[] = [];
-  const author = item.author?.handle || item.author?.name;
-  if (author) metadata.push(`Author: ${author}`);
-  if (item.publishedAt) metadata.push(`Published: ${item.publishedAt}`);
-  const engagement = [
-    typeof item.likes === "number" ? `likes ${item.likes}` : undefined,
-    typeof item.collects === "number" ? `collects ${item.collects}` : undefined,
-    typeof item.retweets === "number" ? `retweets ${item.retweets}` : undefined,
-    typeof item.replies === "number" ? `comments/replies ${item.replies}` : undefined,
-  ].filter(Boolean);
-  if (engagement.length > 0) metadata.push(`Engagement: ${engagement.join(", ")}`);
-  if (metadata.length > 0) sections.push(metadata.join("\n"));
-  sections.push(rawContent);
-  if (item.images?.length) sections.push(`Images: ${item.images.length} attached`);
-  const content = sections.join("\n\n");
-
-  return {
-    url,
-    statusCode: 200,
-    body: { kind: "text" as const, content },
-    truncated: false,
-  };
-}
-
-const PLATFORM_DISPLAY_NAME: Record<string, string> = {
-  xiaohongshu: "Xiaohongshu",
-  x: "X (Twitter)",
-};
-
-/**
- * One-line, model-facing explanation of a degraded platform search.
- *
- * The web_search tool renders `content` above the source list, so this is the
- * only place where an agent (and the operator reading the transcript) can learn
- * that these are site:-filtered web results rather than in-app posts.
- */
-export function describeDegradation(d: SourceDegradation): string {
-  const platform = d.platform ? PLATFORM_DISPLAY_NAME[d.platform] ?? d.platform : "the platform";
-  const reason =
-    d.code === "auth-required" || d.code === "auth-expired"
-      ? `there is no signed-in ${platform} browser session`
-      : d.code === "platform-disabled"
-        ? `${platform} is disabled in the dsh-web-tools settings card`
-        : `${platform} native search failed (${d.code})`;
-  return (
-    `Note: ${reason}, so the results below come from a site:-filtered general web search — ` +
-    `they may be older and are not in-app content. Sign in to ${platform} in the dsh-web-tools settings card for native results.`
-  );
-}
+export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet };
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -394,7 +330,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         sources: outcome.items.map((item) => ({
           url: item.url,
           title: item.title,
-          snippet: item.snippet,
+          snippet: formatPlatformSnippet(item),
           publishedAt: item.publishedAt,
         })),
         truncated: false,

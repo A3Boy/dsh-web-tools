@@ -25,6 +25,7 @@ export const DEFAULT_TAVILY_OPTIONS: Required<TavilyProviderOptions> = {
   searchDepth: "basic",
   chunksPerSource: 3,
   autoParameters: false,
+  includeAnswer: true,
   fetchExtractDepth: "basic",
 };
 
@@ -84,6 +85,9 @@ export function sanitizeProviderOptions(
       }
       if (typeof raw.autoParameters === "boolean") {
         out.autoParameters = raw.autoParameters;
+      }
+      if (typeof raw.includeAnswer === "boolean") {
+        out.includeAnswer = raw.includeAnswer;
       }
       if (typeof raw.fetchExtractDepth === "string" && ["basic", "advanced"].includes(raw.fetchExtractDepth)) {
         out.fetchExtractDepth = raw.fetchExtractDepth;

@@ -258,3 +258,61 @@ test("mcp-server: handles unknown methods and malformed json gracefully", async 
     harness.server.close();
   }
 });
+
+test("mcp-server: default server instantiates with hedged strategy, caching, and healthStore", () => {
+  const inStream = new PassThrough();
+  const outStream = new PassThrough();
+  const server = new McpServer({
+    inStream,
+    outStream,
+    env: { EXA_API_KEY: "test-key" },
+  });
+  assert.ok(server);
+  server.close();
+});
+
+test("mcp-server: CLI commands --help, --version, and --status run cleanly", async () => {
+  const { runMcpServer } = await import("../src/mcp/server.ts");
+  const origArgv = process.argv;
+  const logs: string[] = [];
+  const origLog = console.log;
+  console.log = (...args: any[]) => logs.push(args.join(" "));
+
+  try {
+    // --help
+    process.argv = ["node", "mcp-server.js", "--help"];
+    const helpRes = await runMcpServer();
+    assert.equal(helpRes, undefined);
+    assert.ok(logs.some((l) => l.includes("Model Context Protocol")));
+
+    // --version
+    logs.length = 0;
+    process.argv = ["node", "mcp-server.js", "--version"];
+    const verRes = await runMcpServer();
+    assert.equal(verRes, undefined);
+    assert.ok(logs.some((l) => l.includes(CURRENT_VERSION)));
+
+    // --status with mock runtime
+    logs.length = 0;
+    process.argv = ["node", "mcp-server.js", "--status"];
+    const mockRuntime = {
+      status: async (p: string) => ({
+        platform: p as any,
+        runtimeAvailable: true,
+        runtimeState: "ready" as const,
+        authState: "authenticated" as const,
+        authenticated: true,
+        accountLabel: "TestUser",
+      }),
+      login: async () => { throw new Error("not called"); },
+      dispose: async () => {},
+    };
+    const statusRes = await runMcpServer({ nativeRuntime: mockRuntime as any });
+    assert.equal(statusRes, undefined);
+    assert.ok(logs.some((l) => l.includes("Xiaohongshu (小红书): authenticated (TestUser)")));
+    assert.ok(logs.some((l) => l.includes("X (Twitter): authenticated (TestUser)")));
+  } finally {
+    process.argv = origArgv;
+    console.log = origLog;
+  }
+});

@@ -180,12 +180,22 @@ export const ExaProvider: ProviderAdapter = {
         if (!url) return null;
         const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // highlights[] is query-relevant extractive markup (preferred over raw text for agent density)
+        const parts: string[] = [];
+        if (typeof r.author === "string" && r.author.trim()) {
+          parts.push(`[Author: ${r.author.trim()}]`);
+        }
+        if (typeof r.summary === "string" && r.summary.trim()) {
+          parts.push(`Summary: ${r.summary.trim()}`);
+        }
         if (Array.isArray(r.highlights) && r.highlights.length > 0) {
           const joined = r.highlights.filter((h): h is string => typeof h === "string").join("\n\n").trim();
-          if (joined) s.snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
-        } else if (typeof r.text === "string" && r.text) {
-          s.snippet = r.text.length > 600 ? r.text.slice(0, 600) + "…" : r.text;
+          if (joined) parts.push(joined);
+        } else if (typeof r.text === "string" && r.text.trim()) {
+          parts.push(r.text.trim());
+        }
+        const fullSnippet = parts.join("\n\n").trim();
+        if (fullSnippet) {
+          s.snippet = fullSnippet.length > 1500 ? fullSnippet.slice(0, 1500) + "…" : fullSnippet;
         }
         if (typeof r.publishedDate === "string" && r.publishedDate) s.publishedAt = r.publishedDate;
         return s;

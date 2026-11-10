@@ -43,28 +43,29 @@ export interface WebSearchProviderLike {
         diagnostics?: string[];
     }>;
 }
+export interface WebFetchResponse {
+    url: string;
+    statusCode: number;
+    body: {
+        kind: "html" | "text";
+        content: string;
+    };
+    truncated: boolean;
+    backend?: string;
+    metadata?: {
+        title?: string;
+        author?: string;
+        publishedAt?: string;
+        description?: string;
+    };
+}
 /** Structural mirror of the seam's WebFetchProvider contract. */
 export interface WebFetchProviderLike {
     id: string;
     available(): boolean;
     fetch(request: {
         url: string;
-    }, signal?: AbortSignal): Promise<{
-        url: string;
-        statusCode: number;
-        body: {
-            kind: "html" | "text";
-            content: string;
-        };
-        truncated: boolean;
-        backend?: string;
-        metadata?: {
-            title?: string;
-            author?: string;
-            publishedAt?: string;
-            description?: string;
-        };
-    }>;
+    }, signal?: AbortSignal): Promise<WebFetchResponse>;
 }
 /** A classified failure the executor throws (WebError-compatible shape). */
 export declare class WebToolsWebError extends Error {

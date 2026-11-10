@@ -132,17 +132,25 @@ export function parseJinaSearchJson(body: unknown, maxResults: number): Source[]
   for (const item of data) {
     if (sources.length >= maxResults) break;
     if (!item || typeof item !== "object") continue;
-    const { url, title, description, publishedTime } = item as {
+    const { url, title, description, content, publishedTime } = item as {
       url?: unknown;
       title?: unknown;
       description?: unknown;
+      content?: unknown;
       publishedTime?: unknown;
     };
     if (typeof url !== "string" || url.length === 0) continue;
+    let snippet: string | undefined;
+    if (typeof description === "string" && description.trim()) {
+      snippet = description.trim();
+    } else if (typeof content === "string" && content.trim()) {
+      const trimmed = content.trim();
+      snippet = trimmed.length > 1500 ? trimmed.slice(0, 1500) + "…" : trimmed;
+    }
     sources.push({
       url,
       ...(typeof title === "string" && title ? { title } : {}),
-      ...(typeof description === "string" && description ? { snippet: description } : {}),
+      ...(snippet ? { snippet } : {}),
       ...(typeof publishedTime === "string" && publishedTime ? { publishedAt: publishedTime } : {}),
     });
   }

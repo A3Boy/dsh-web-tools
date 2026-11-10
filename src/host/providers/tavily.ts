@@ -128,7 +128,7 @@ export function buildTavilySearchBody(
   const requestBody: Record<string, unknown> = {
     query: cleanQ,
     max_results,
-    include_answer: false,
+    include_answer: options?.includeAnswer ?? true,
   };
 
   if (options?.autoParameters) {
@@ -267,7 +267,11 @@ export const TavilyProvider: ProviderAdapter = {
         return s;
       })
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
-    return { sources };
+    const content = typeof raw?.answer === "string" && raw.answer.trim() ? raw.answer.trim() : undefined;
+    return {
+      sources,
+      ...(content ? { content } : {}),
+    };
   },
 
   async fetch(url, apiKey, _baseUrl, contextOrSignal) {
