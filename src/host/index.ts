@@ -642,6 +642,61 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     "dsh-web-tools: keenable usage persistence",
   );
 
+  // ---- Platform session keep-alive ----------------------------------------
+  // 小红书 `web_session` and X `auth_token` expire when the profile is idle for
+  // a long time, so a signed-in setup silently degrades to web results after a
+  // day. A low-frequency visit to each signed-in platform lets the site refresh
+  // its own cookies. Only platforms that currently report a usable session are
+  // touched, and `sessionKeepAliveHours = 0` disables the sweep entirely.
+  ctx.effect(
+    () => {
+      let disposed = false;
+      let timer: NodeJS.Timeout | undefined;
+
+      const sweep = async () => {
+        if (disposed) return;
+        const hours = readConfig().sessionKeepAliveHours ?? 8;
+        if (!Number.isFinite(hours) || hours <= 0) return;
+        try {
+          const statuses = await sourceRegistry.getPlatformStatuses();
+          for (const status of statuses) {
+            if (disposed) return;
+            if (!status.enabled || !status.sessionEstablished || !status.authenticated) continue;
+            const url = status.id === "xiaohongshu"
+              ? "https://www.xiaohongshu.com/explore"
+              : "https://x.com/home";
+            try {
+              const page = await nativeRuntime.openPage(status.id, url, undefined, "interactive");
+              await page.close();
+            } catch {
+              // A failed refresh must never disturb the runtime.
+            }
+          }
+        } catch {
+          // Status probing is best-effort.
+        }
+      };
+
+      const schedule = () => {
+        if (disposed) return;
+        const hours = readConfig().sessionKeepAliveHours ?? 8;
+        if (!Number.isFinite(hours) || hours <= 0) return;
+        timer = setTimeout(async () => {
+          await sweep();
+          schedule();
+        }, hours * 3600_000);
+        timer.unref?.();
+      };
+
+      schedule();
+      return () => {
+        disposed = true;
+        if (timer) clearTimeout(timer);
+      };
+    },
+    "dsh-web-tools: platform session keep-alive",
+  );
+
   // ---- Search Mode (per-session "required web search" turn policy) ---------
   // Host-owned state riding the provider seam: `available()` means the search
   // provider service is enabled with a chain provider. Messages use the

@@ -45,6 +45,7 @@ export declare const DEFAULT_SETTINGS: {
     keenableUsageCache: Record<string, KeenableUsageBucket>;
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     retrievalStrategy: ToolRetrievalStrategy;
+    sessionKeepAliveHours: number;
     customProviders: CustomProviderConfig[];
     /** Operator-granted outbound destinations for internal gateways / private IPs. */
     outboundAuthorizations: OutboundAuthorization[];
@@ -67,6 +68,8 @@ export interface WebToolsSettings {
     searchRoutingPolicy: ToolSearchRoutingPolicy;
     /** Cross-provider retrieval strategy (see shared api-types). */
     retrievalStrategy: ToolRetrievalStrategy;
+    /** Hours between platform session keep-alive visits (0 = disabled). */
+    sessionKeepAliveHours: number;
     /** Operator-defined custom search sources (Issue #9). */
     customProviders: CustomProviderConfig[];
     /** Operator-granted outbound destinations for internal gateways / private IPs. */

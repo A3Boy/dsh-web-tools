@@ -67,6 +67,10 @@ export const DEFAULT_SETTINGS = {
   // "fused" runs two providers and merges them with RRF (more coverage, more
   // cost). Default stays "single" so upgrading never silently doubles spend.
   retrievalStrategy: "single" as ToolRetrievalStrategy,
+  // Platform session keep-alive: every N hours, visit the signed-in platform
+  // once in the existing browser profile so the site refreshes its cookies
+  // (小红书 web_session / X auth_token expire when unused). 0 disables it.
+  sessionKeepAliveHours: 8,
   // Operator-defined search sources (Issue #9). Kept in their OWN array rather
   // than merged into providerBaseUrls/providerEnabled: a merge would force a
   // migration of every existing profile for no benefit, and custom sources
@@ -97,6 +101,8 @@ export interface WebToolsSettings {
   searchRoutingPolicy: ToolSearchRoutingPolicy;
   /** Cross-provider retrieval strategy (see shared api-types). */
   retrievalStrategy: ToolRetrievalStrategy;
+  /** Hours between platform session keep-alive visits (0 = disabled). */
+  sessionKeepAliveHours: number;
   /** Operator-defined custom search sources (Issue #9). */
   customProviders: CustomProviderConfig[];
   /** Operator-granted outbound destinations for internal gateways / private IPs. */
@@ -128,6 +134,7 @@ export const Config: z<WebToolsSettings> = z.object({
     z.const("hedged"),
     z.const("fused"),
   ]),
+  sessionKeepAliveHours: z.number().step(1).min(0).max(168),
   // Validated structurally on load; a bad entry is dropped, never thrown, so a
   // hand-edited profile cannot make the plugin fail to register.
   customProviders: z.array(z.any()),
