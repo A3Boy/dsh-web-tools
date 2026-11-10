@@ -468,11 +468,17 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       }
 
       // Capture failed or schema unrecognized → inspect the page BEFORE any
-      // scrolling. An unhydrated shell has no tweets and no API traffic: DOM
-      // scraping cannot help, so fail fast (this is also what bounds the
-      // operation to ~10s instead of 30s).
+      // scrolling.
       const snapshot = await readXPageSnapshot(page, signal);
-      if (snapshot && snapshot.tweets === 0 && snapshot.graphql === 0) {
+      // "Hydrated" matters: a page that has rendered the search chrome (tabs,
+      // account menu) is simply still LOADING the timeline, not broken. Only a
+      // page with no app chrome at all deserves the fast failure.
+      const hydrated =
+        snapshot?.loggedIn === true ||
+        /搜索|search/i.test(snapshot?.title ?? "") ||
+        /热门|最新|Search|Latest/i.test(snapshot?.text ?? "");
+
+      if (snapshot && snapshot.tweets === 0 && snapshot.graphql === 0 && !hydrated) {
         if (isLoggedOutShell(snapshot)) {
           return {
             items: [],
@@ -494,10 +500,11 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         };
       }
 
-      // Hydrated page with an unrecognized envelope → short DOM fallback.
+      // Hydrated page: the timeline may still be in flight (common through a
+      // proxy). Give it real time to paint before falling back to a short scan.
       const domItems = await collectTweetsViaDom(page, maxResults, signal, {
-        selectorTimeoutMs: 2000,
-        maxScrolls: 2,
+        selectorTimeoutMs: hydrated ? 9000 : 2000,
+        maxScrolls: hydrated ? 3 : 2,
       });
       if (domItems.length > 0) {
         return { items: domItems, retrievalMode: "native-browser" };
