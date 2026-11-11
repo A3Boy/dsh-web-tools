@@ -75,9 +75,16 @@ export function describeDegradation(d: SourceDegradation, target: "dsh" | "mcp" 
       ? `there is no signed-in ${platform} browser session`
       : d.code === "platform-disabled"
         ? `${platform} is disabled in configuration`
-        : `${platform} native search failed (${d.code})`;
-  const action =
-    target === "mcp"
+        : d.code === "parse-failed" || d.code === "blocked"
+          // The platform served an error/verification page instead of results.
+          // Saying "sign in" here sends the user down the wrong path.
+          ? `${platform} returned an error page instead of search results (usually a rate limit, a captcha, or an IP block)`
+          : `${platform} native search failed (${d.code})`;
+  const authRelated =
+    d.code === "auth-required" || d.code === "auth-expired" || d.code === "platform-disabled";
+  const action = !authRelated
+    ? "Retry later; if it keeps happening, the platform is rejecting this network."
+    : target === "mcp"
       ? `Run \`dsh-web-tools-mcp --login ${d.platform ?? "xiaohongshu"}\` to sign in for native results.`
       : `Sign in to ${platform} in the dsh-web-tools settings card for native results.`;
   return (

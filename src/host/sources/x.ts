@@ -45,6 +45,8 @@ interface XPageSnapshot {
   loggedIn: boolean;
   /** A "Log in / Sign up" call-to-action is on screen. */
   loginCta: boolean;
+  /** The site's inline "Something went wrong" panel is on screen. */
+  errorPanel?: boolean;
   readyState: string;
 }
 
@@ -71,6 +73,10 @@ async function readXPageSnapshot(page: CdpPageLease, signal?: AbortSignal): Prom
         const loginCta = !!document.querySelector('a[href="/login"], a[href="/i/flow/login"]')
           || bodyText.indexOf("sign in to x") !== -1
           || bodyText.indexOf("log in to x") !== -1;
+        // x.com renders an inline error panel ("出错了。请尝试重新加载。" /
+        // "Something went wrong. Try reloading.") when its timeline request is
+        // rejected. That is a platform-side error, not a login or parse issue.
+        const errorPanel = /出错了|请尝试重新加载|something went wrong|try reloading/i.test(bodyText);
         return {
           href: location.href,
           title: document.title || "",
@@ -115,6 +121,7 @@ function describeXPageSnapshot(info: XPageSnapshot): string {
     `graphql=${info.graphql}`,
     `loggedIn=${info.loggedIn}`,
     `loginCta=${info.loginCta}`,
+    ...(info.errorPanel ? ["errorPanel=true"] : []),
   ];
   if (info.title) bits.push(`title=${info.title.slice(0, 60)}`);
   if (info.text) bits.push(`text=${info.text.slice(0, 120)}`);
@@ -591,7 +598,11 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
           const nodes = Array.from(document.querySelectorAll('[role="button"], button, div, span'));
           const target = nodes.find((el) => {
             const text = (el.textContent || "").trim();
-            return /^(重试|Retry|Try again)$/i.test(text) && el.children.length === 0;
+            if (text.length === 0 || text.length > 20) return false;
+            if (!/重试|retry|try again/i.test(text)) return false;
+            return el.tagName === "BUTTON"
+              || el.getAttribute("role") === "button"
+              || el.children.length === 0;
           });
           if (!target) return false;
           target.click();
