@@ -29,6 +29,23 @@ export class CdpPage implements CdpPageLease {
 
     await this.client.send("Page.enable", {}, this.sessionId, signal);
     await this.client.send("Runtime.enable", {}, this.sessionId, signal);
+    try {
+      await this.client.send(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+          source: `
+            try {
+              Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+                configurable: true,
+              });
+            } catch {}
+          `,
+        },
+        this.sessionId,
+        signal,
+      );
+    } catch {}
 
     // Send the navigation command
     await this.client.send("Page.navigate", { url }, this.sessionId, signal, timeoutMs);

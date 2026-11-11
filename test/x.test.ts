@@ -597,3 +597,70 @@ test("XSource: authenticated fetch falls back to the public endpoint when the br
 
   setSyndicationFetcher(async () => null);
 });
+
+test("XSource: automatically recovers from '出错了。请尝试重新加载。' error panel via retry capture", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
+  );
+
+  let captureIndex = 0;
+  const page: CdpPageLease = {
+    targetId: "t-error-panel",
+    sessionId: "s-error-panel",
+    navigate: async () => {},
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async (script: string) => {
+      if (typeof script === "string" && script.includes("SideNav_AccountSwitcher_Button")) {
+        // readXPageSnapshot
+        return {
+          href: "https://x.com/search?q=test",
+          title: "搜索 / X",
+          text: "出错了。请尝试重新加载。",
+          tweets: 0,
+          graphql: 0,
+          loggedIn: true,
+          loginCta: false,
+          errorPanel: true,
+          readyState: "complete",
+        };
+      }
+      if (typeof script === "string" && script.includes("重新加载")) {
+        // clickXRetryIfPresent
+        return true;
+      }
+      return "";
+    },
+    call: async () => [],
+    scrollBy: async () => {},
+    beginJsonCapture: async () => {
+      const idx = ++captureIndex;
+      return {
+        wait: async () => {
+          if (idx === 1) {
+            // First pass fails / times out because of the error panel
+            return { state: "timeout" as const };
+          }
+          // Second pass (the late retry capture) catches the reload!
+          return {
+            state: "captured" as const,
+            status: 200,
+            json: fixture,
+            url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+          };
+        },
+        cancel: () => {},
+      };
+    },
+    close: async () => {},
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+  const res = await xSource.search("test query");
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3);
+  assert.equal(captureIndex, 2, "must have triggered the late retry capture");
+});

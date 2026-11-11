@@ -23,6 +23,7 @@ export function buildSafeLaunchArgs(
     `--remote-debugging-port=${port}`,
     `--no-first-run`,
     `--no-default-browser-check`,
+    `--disable-blink-features=AutomationControlled`,
   ];
 
   if (headless) {

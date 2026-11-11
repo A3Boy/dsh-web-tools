@@ -85,6 +85,7 @@ async function readXPageSnapshot(page: CdpPageLease, signal?: AbortSignal): Prom
           graphql,
           loggedIn,
           loginCta,
+          errorPanel,
           readyState: document.readyState,
         };
       })()`,
@@ -346,6 +347,9 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     // either — retrying the other tab would just double the wait.
     if (top.error?.message.includes("did not hydrate")) return top;
 
+    // Smooth pause before switching to Latest tab to prevent consecutive burst rate limits
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
     // Pass 2 — "Latest". Niche or CJK keywords frequently have no Top matches
     // while the chronological tab still does. Without this retry the router
     // degraded to a `site:x.com` web search, which matches tokens loosely and
@@ -382,6 +386,10 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
         timeoutMs: 6000,
         signal,
       });
+      // Bring tab to front early so Chromium does not throttle background execution
+      try {
+        await page.bringToFront?.(signal);
+      } catch {}
       // Direct navigation only. A /home warm-up is a full hard reload, so it
       // does NOT preserve the hydrated app — it just costs another 4-6s. The
       // snapshot below detects an unhydrated shell and reports it instead.
@@ -512,33 +520,56 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       // work). Nudge it with real scrolls WHILE a late capture is listening,
       // instead of idling for the selector.
       if (hydrated) {
-        // Foreground + built-in retry: x.com renders an inline "出错了 / 重试"
-        // (Something went wrong / Retry) panel when its timeline request is
-        // rejected, and does NOT retry by itself. Clicking that button is a
-        // normal user action, not a forged request.
+        // Foreground + built-in retry: x.com renders an inline "出错了。请尝试重新加载。"
+        // (Something went wrong. Try reloading.) panel when its timeline request is
+        // rejected, and does NOT retry by itself.
         try {
           await page.bringToFront?.(signal);
         } catch {
           // Foregrounding is best-effort.
         }
-        const retried = await this.clickXRetryIfPresent(page, signal);
 
         let late: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
         try {
+          // Listen FIRST so we never miss the SearchTimeline request fired by clicking reload/retry
           late = await page.beginJsonCapture({
             urlIncludes: "/SearchTimeline",
-            timeoutMs: retried ? 9000 : 6000,
+            timeoutMs: 9000,
             signal,
           });
-          for (let i = 0; i < 3 && !signal?.aborted; i++) {
-            await page.scrollBy(500, signal);
-            await new Promise((resolve) => setTimeout(resolve, 600));
+
+          // 1. Try clicking the inline "重新加载 / 重试" button
+          let retried = await this.clickXRetryIfPresent(page, signal);
+
+          // 2. If error panel is visible but button was not found, soft-reload the search page
+          if (!retried && snapshot?.errorPanel) {
+            try {
+              await page.navigate(searchUrl, signal);
+              retried = true;
+            } catch {}
           }
-          const lateOutcome = await late.wait();
-          if (lateOutcome?.state === "captured" && isSearchTimelineResponse(lateOutcome.json)) {
-            const lateItems = extractTweetsFromSearchTimeline(lateOutcome.json);
-            if (lateItems.length > 0) {
-              return { items: lateItems.slice(0, maxResults), retrievalMode: "native-browser" };
+
+          if (retried) {
+            // Give X React a tiny tick to initiate the request
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            const lateOutcome = await late.wait();
+            if (lateOutcome?.state === "captured" && isSearchTimelineResponse(lateOutcome.json)) {
+              const lateItems = extractTweetsFromSearchTimeline(lateOutcome.json);
+              if (lateItems.length > 0) {
+                return { items: lateItems.slice(0, maxResults), retrievalMode: "native-browser" };
+              }
+            }
+          } else {
+            for (let i = 0; i < 3 && !signal?.aborted; i++) {
+              await page.scrollBy(500, signal);
+              await new Promise((resolve) => setTimeout(resolve, 600));
+            }
+            const lateOutcome = await late.wait();
+            if (lateOutcome?.state === "captured" && isSearchTimelineResponse(lateOutcome.json)) {
+              const lateItems = extractTweetsFromSearchTimeline(lateOutcome.json);
+              if (lateItems.length > 0) {
+                return { items: lateItems.slice(0, maxResults), retrievalMode: "native-browser" };
+              }
             }
           }
         } catch {
@@ -595,11 +626,14 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     try {
       const clicked = await page.evaluate<boolean>(
         `(() => {
-          const nodes = Array.from(document.querySelectorAll('[role="button"], button, div, span'));
+          const nodes = Array.from(document.querySelectorAll('[role="button"], button, div, span, [data-testid]'));
           const target = nodes.find((el) => {
+            const testid = (el.getAttribute("data-testid") || "").toLowerCase();
+            if (testid.includes("retry") || testid.includes("empty_state")) return true;
             const text = (el.textContent || "").trim();
-            if (text.length === 0 || text.length > 20) return false;
-            if (!/重试|retry|try again/i.test(text)) return false;
+            if (text.length === 0 || text.length > 25) return false;
+            // Covers Chinese "重新加载", "重试", "刷新", English "Retry", "Try again", "Reload"
+            if (!/重新加载|重试|刷新|retry|try again|reload/i.test(text)) return false;
             return el.tagName === "BUTTON"
               || el.getAttribute("role") === "button"
               || el.children.length === 0;
