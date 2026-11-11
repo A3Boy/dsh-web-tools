@@ -18,6 +18,7 @@
  * @module
  */
 import { WebToolsSection } from "./WebToolsSection.tsx";
+import { SocialPostPicker } from "./SocialPostPicker.tsx";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
@@ -116,6 +117,21 @@ export function apply(ctx: any) {
         label: () => t("searchModeLabel"),
       },
       SearchModeControl,
+    ),
+  );
+
+  // The human face of a platform search: a post picker instead of markdown.
+  // It takes the `web_search` key at a higher priority than the shell's generic
+  // web row, because this repository's own result text carries covers and
+  // engagement that the generic row cannot present.
+  ctx.slots.inject("tool.call.toolview", () =>
+    ctx.slots.register(
+      {
+        name: "tool.call.toolview",
+        key: "web_search",
+        priority: 50,
+      },
+      SocialPostPicker,
     ),
   );
 }

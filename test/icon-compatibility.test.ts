@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import React from "react";
 import { ICON_ALIASES, NULL_ICON, resolveIcon, type IconAliasSpec } from "../src/client/compat-icons.ts";
 
-test("ICON_ALIASES maps all 10 renamed icons to their stroke-suffixed artwork", () => {
+test("ICON_ALIASES maps every renamed icon to its stroke-suffixed artwork", () => {
   const expectedOldNames = [
     "IconChevronDownOutline14",
     "IconChevronRightOutline14",
@@ -31,9 +31,12 @@ test("ICON_ALIASES maps all 10 renamed icons to their stroke-suffixed artwork", 
     "IconSearchOutline16",
     "IconSettingsOutline16",
     "IconTrashOutline16",
+    "IconLikeOutline14",
+    "IconRefreshOutline14",
+    "IconRightUpOutline14",
   ];
 
-  assert.equal(ICON_ALIASES.length, 10);
+  assert.equal(ICON_ALIASES.length, 13);
   for (const name of expectedOldNames) {
     const found = ICON_ALIASES.find(([legacy]) => legacy === name);
     assert.ok(found, `must include ${name}`);
