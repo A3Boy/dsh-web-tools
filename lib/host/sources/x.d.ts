@@ -27,5 +27,7 @@ export declare class XSource implements SpecializedSource {
      */
     private clickXRetryIfPresent;
     fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome>;
+    /** Rich fetch: full tweet detail (replies, originals, MP4) through the browser. */
+    private fetchViaBrowser;
 }
 export {};

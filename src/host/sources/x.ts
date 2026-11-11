@@ -622,20 +622,41 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       return { error: { code: "parse-failed", message: `Invalid X status URL: "${url}"`, retryable: false } };
     }
 
-    // Fast public path FIRST: no login, no browser, no paid API. The endpoint
-    // behind X's own embed widget returns the tweet JSON in milliseconds, so a
-    // signed-out profile can still read a public post.
+    const isAuth = await verifyPlatformSession(this.runtime, "x", signal, "interactive");
+
+    // RICH FIRST when signed in: only the browser path carries the reply tree,
+    // the original-size images and the MP4 source. The public endpoint below is
+    // a fast fallback that returns the text alone.
+    let browserOutcome: SourceFetchOutcome | undefined;
+    if (isAuth) {
+      browserOutcome = await this.fetchViaBrowser(url, targetTweetId, signal);
+      if (browserOutcome && !browserOutcome.error) return browserOutcome;
+      if (
+        browserOutcome?.error &&
+        (browserOutcome.error.code === "aborted" || browserOutcome.error.code === "blocked")
+      ) {
+        return browserOutcome;
+      }
+    }
+
+    // FAST FALLBACK: no login, no browser, no paid API — the endpoint behind
+    // X's own embed widget. Text only (no replies/media).
     const syndicated = await syndicationFetcher(targetTweetId, signal);
     if (syndicated) {
       const item = mapSyndicationTweet(syndicated, url);
       if (item) return { item, retrievalMode: "public-api" };
     }
 
-    const isAuth = await verifyPlatformSession(this.runtime, "x", signal, "interactive");
-    if (!isAuth) {
-      return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
-    }
+    if (browserOutcome) return browserOutcome;
+    return { error: { code: "auth-required", message: "Twitter / X session is not authenticated", retryable: false } };
+  }
 
+  /** Rich fetch: full tweet detail (replies, originals, MP4) through the browser. */
+  private async fetchViaBrowser(
+    url: string,
+    targetTweetId: string,
+    signal?: AbortSignal,
+  ): Promise<SourceFetchOutcome> {
     let page;
     let capture;
     try {

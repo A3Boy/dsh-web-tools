@@ -571,3 +571,29 @@ test("XSource: the public syndication endpoint serves a tweet without any sessio
 
   setSyndicationFetcher(async () => null);
 });
+
+test("XSource: authenticated fetch falls back to the public endpoint when the browser path fails", async () => {
+  setSyndicationFetcher(async () => ({
+    id_str: "555",
+    text: "fallback text",
+    user: { name: "用户", screen_name: "tester" },
+  }));
+  const runtime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({ platform: "x", runtimeAvailable: true, runtimeState: "ready", authState: "authenticated", authenticated: true }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => { throw new Error("browser down"); },
+    createPage: async () => { throw new Error("browser down"); },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  } as any;
+
+  const res = await new XSource(runtime).fetch("https://x.com/tester/status/555");
+  assert.equal(res.retrievalMode, "public-api");
+  assert.equal(res.item?.text, "fallback text");
+
+  setSyndicationFetcher(async () => null);
+});
