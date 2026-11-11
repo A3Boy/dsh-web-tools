@@ -535,12 +535,7 @@ export class SessionManager implements NativeBrowserRuntime {
     try {
       const session = await this.acquireSession(platform, mode, undefined, signal);
 
-      // Sweep leftovers from earlier operations BEFORE opening our tab. The
-      // site itself opens search tabs (and a crashed Edge restores old ones),
-      // so tabs accumulated one per search. The internal new-tab page is left
-      // alone: closing the last tab would terminate the browser.
-      await this.closePlatformPagesInternal(session.cdp, platform, undefined, signal);
-
+      // 1. Create the new tab FIRST so Chromium never reaches 0 open tabs (which would terminate the browser)
       const createRes = await session.cdp.send<{ targetId: string }>(
         "Target.createTarget",
         { url: "about:blank" },
@@ -548,6 +543,9 @@ export class SessionManager implements NativeBrowserRuntime {
         signal,
       );
       const targetId = createRes.targetId;
+
+      // 2. Sweep leftovers from earlier operations while PRESERVING our newly created tab
+      await this.closePlatformPagesInternal(session.cdp, platform, targetId, signal);
 
       const attachRes = await session.cdp.send<{ sessionId: string }>(
         "Target.attachToTarget",

@@ -644,8 +644,13 @@ test("rich-fields: native search content announces covers in source order", () =
   assert.ok(response.content!.includes("1. https://img/cover-a.png"));
   assert.ok(response.content!.includes("3. https://img/first-c.png"));
   assert.ok(!response.content!.includes("2. "), "a source without a cover must not get a placeholder line");
+  assert.ok(
+    response.content!.includes("Human-in-the-Loop Guidance for Assistant"),
+    "must provide assistant guidance to present cards and ask user for deep-fetch choices",
+  );
 
   // Degraded results are general web hits; their covers must not be advertised.
   const degraded = toRoutedSearchResponse({ ...outcome, degraded: { code: "auth-required", platform: "xiaohongshu" } });
   assert.ok(!/Covers \(index/.test(degraded.content ?? ""));
+  assert.ok(!/Human-in-the-Loop/.test(degraded.content ?? ""));
 });

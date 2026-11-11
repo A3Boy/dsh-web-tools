@@ -664,3 +664,85 @@ test("XSource: automatically recovers from '出错了。请尝试重新加载。
   assert.equal(res.items.length, 3);
   assert.equal(captureIndex, 2, "must have triggered the late retry capture");
 });
+
+test("XSource: un-stalls hanging splash screen via reload and late capture", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
+  );
+
+  let captureIndex = 0;
+  let reloadsCount = 0;
+  const page: CdpPageLease = {
+    targetId: "t-splash",
+    sessionId: "s-splash",
+    navigate: async () => {},
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async (script: string) => {
+      if (typeof script === "string" && script.includes("location.reload")) {
+        reloadsCount++;
+        return "";
+      }
+      if (typeof script === "string" && script.includes("SideNav_AccountSwitcher_Button")) {
+        // First snapshot checks show unhydrated splash screen
+        if (reloadsCount === 0) {
+          return {
+            href: "https://x.com/search?q=test",
+            title: "X",
+            text: "",
+            tweets: 0,
+            graphql: 0,
+            loggedIn: false,
+            loginCta: false,
+            errorPanel: false,
+            readyState: "complete",
+          };
+        }
+        return {
+          href: "https://x.com/search?q=test",
+          title: "搜索 / X",
+          text: "搜索结果",
+          tweets: 3,
+          graphql: 1,
+          loggedIn: true,
+          loginCta: false,
+          errorPanel: false,
+          readyState: "complete",
+        };
+      }
+      return "";
+    },
+    call: async () => [],
+    scrollBy: async () => {},
+    beginJsonCapture: async () => {
+      const idx = ++captureIndex;
+      return {
+        wait: async () => {
+          if (idx === 1) {
+            // Initial capture times out because splash screen stalled
+            return { state: "timeout" as const };
+          }
+          // The late capture from reload catches SearchTimeline
+          return {
+            state: "captured" as const,
+            status: 200,
+            json: fixture,
+            url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+          };
+        },
+        cancel: () => {},
+      };
+    },
+    close: async () => {},
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+  const res = await xSource.search("test splash query");
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3);
+  assert.equal(reloadsCount, 1, "must have triggered window.location.reload() to un-stall");
+  assert.equal(captureIndex, 2, "must have captured SearchTimeline after reload");
+});
