@@ -22,3 +22,14 @@ export { parseSearchResult, shortCount, relativeDate, type PostPreview };
 export declare function SocialPostPicker(props: any): React.DetailedReactHTMLElement<{
     className: string;
 }, HTMLElement> | null;
+/**
+ * The picker rendered in the Turn tail.
+ *
+ * The `web_search` key of `tool.call.toolview` is already occupied by the
+ * shell's own row and cannot be shadowed from a plugin (both registrations
+ * coexist and the shell's stays active), so the same card is mounted where a
+ * plugin is guaranteed to render: below the answer, fed by the Turn's tool
+ * result.
+ * @param props - Turn-tail props: `turn` plus the standard `inputActions`/`useChat`.
+ */
+export declare function TurnTailPicker(props: any): React.FunctionComponentElement<any> | null;

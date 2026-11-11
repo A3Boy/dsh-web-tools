@@ -18,7 +18,7 @@
  * @module
  */
 import { WebToolsSection } from "./WebToolsSection.tsx";
-import { SocialPostPicker } from "./SocialPostPicker.ts";
+import { TurnTailPicker } from "./SocialPostPicker.ts";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
@@ -121,20 +121,11 @@ export function apply(ctx: any) {
   );
 
   // The human face of a platform search: a post picker instead of markdown.
-  // It takes the `web_search` key with priority -10 (in DSH slot system, lowest
-  // renders, so -10 shadows the generic WebRow which registers at default 0).
-  ctx.slots.inject("tool.call.toolview", () =>
-    ctx.slots.register(
-      {
-        name: "tool.call.toolview",
-        key: "web_search",
-        priority: 100,
-      },
-      SocialPostPicker,
-    ),
-  );
-
-  // Also register into conversation.chat.turnTail for end-of-turn presentation.
+  // Mounted in the Turn tail, NOT at the `web_search` tool key: that key is
+  // already held by the shell's own row and a plugin registration merely
+  // coexists with it (the shell's entry stays active at any priority), so the
+  // picker would never render there. The tail is a plugin-owned seat and hands
+  // us the Turn whose tool result the card reads.
   ctx.slots.inject("conversation.chat.turnTail", () =>
     ctx.slots.register(
       {
@@ -143,7 +134,7 @@ export function apply(ctx: any) {
         order: 10,
         label: "帖子推荐",
       },
-      SocialPostPicker,
+      TurnTailPicker,
     ),
   );
 }
