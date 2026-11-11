@@ -30,7 +30,7 @@ export declare class McpServer {
     /** Start listening for JSON-RPC messages on the input stream. */
     start(): void;
     /** Close the server and stop listening. */
-    close(): void;
+    close(): Promise<void>;
     /**
      * Bound ONE tool call. A provider chain can legitimately spend several
      * per-attempt budgets in a row; without this ceiling a stalled backend would

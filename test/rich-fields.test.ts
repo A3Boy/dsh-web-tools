@@ -15,6 +15,9 @@ import {
 import { truncate, toSingleLine, SNIPPET_MAX, SUMMARY_MAX } from "../src/host/text-limits.ts";
 import { SpecializedSourceRegistry } from "../src/host/sources/registry.ts";
 import { createSearchProvider } from "../src/host/registry.ts";
+import { extractSearchHints } from "../src/host/search-hints.ts";
+import { XiaohongshuSource } from "../src/host/sources/xiaohongshu.ts";
+import type { NativeBrowserRuntime } from "../src/host/browser/types.ts";
 
 test("rich-fields: TavilyProvider extracts raw.answer to top-level content and populates summary", async () => {
   const origFetch = globalThis.fetch;
@@ -337,4 +340,271 @@ test("rich-fields: END-TO-END pipeline preserves content, publishedAt, and summa
   assert.equal(mcpResponse.content, "Quick Answer: The speed of light is ~300,000 km/s.");
   assert.equal(mcpResponse.sources[0].summary, "The speed of light in vacuum is approximately 299,792 km/s.\nConstant: c | Measured: 1983");
   assert.equal(mcpResponse.sources[0].publishedAt, "2026-05-01T00:00:00Z");
+});
+
+test("rich-fields: platform degradation preserves general provider summary, publishedAt, and top-level content", async () => {
+  const fakeRuntime: NativeBrowserRuntime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({
+      platform: "xiaohongshu",
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authState: "unauthenticated",
+      authenticated: false,
+    }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => false,
+    verifyAuthenticationForOperation: async () => false,
+    openPage: async () => { throw new Error("not called"); },
+    createPage: async () => { throw new Error("not called"); },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  };
+
+  const longFallbackSummary =
+    "Detailed guide to Hangzhou West Lake tea houses: 1. Longjing Village private house with scenic terrace. 2. Maojiabu quiet waterside pavilions with traditional Longjing brewing. 3. Faxi Temple valley tea rooms with vegetarian lunch and peaceful atmosphere. ".repeat(2);
+
+  const mockFallbackProvider = {
+    id: "mock-general",
+    available: () => true,
+    search: async () => ({
+      content: "Synthesized direct overview from general search backend.",
+      sources: [
+        {
+          url: "https://www.xiaohongshu.com/discovery/item/66668888",
+          title: "Hangzhou West Lake Tea Guide",
+          snippet: "A comprehensive guide to the best tea houses around West Lake Hangzhou.",
+          summary: longFallbackSummary,
+          publishedAt: "2026-04-12T10:00:00Z",
+        },
+      ],
+      truncated: false,
+    }),
+  };
+
+  const registry = new SpecializedSourceRegistry();
+  const xhsSource = new XiaohongshuSource(fakeRuntime);
+  registry.registerSource(xhsSource);
+  registry.setFallbackProviders(mockFallbackProvider as any, undefined as any);
+
+  // Search platform topic requiring native source
+  const hints = extractSearchHints("小红书 杭州西湖茶室推荐");
+  const outcome = await registry.search("小红书 杭州西湖茶室推荐", { hints });
+  assert.equal(outcome.retrievalMode, "degraded-web");
+  assert.equal(outcome.degraded?.code, "auth-required");
+  assert.equal(outcome.degraded?.platform, "xiaohongshu");
+  assert.equal(outcome.content, "Synthesized direct overview from general search backend.");
+  assert.equal(outcome.items.length, 1);
+  assert.equal(outcome.items[0].platform, "xiaohongshu");
+  assert.equal(outcome.items[0].summary, longFallbackSummary);
+  assert.equal(outcome.items[0].publishedAt, "2026-04-12T10:00:00Z");
+
+  // DSH Response mapping
+  const dshRes = toRoutedSearchResponse(outcome, { target: "dsh" });
+  assert.ok(dshRes.content?.includes("there is no signed-in Xiaohongshu browser session"));
+  assert.ok(dshRes.content?.includes("Synthesized direct overview from general search backend."));
+  assert.equal(dshRes.sources.length, 1);
+  assert.equal(dshRes.sources[0].summary, longFallbackSummary);
+  assert.equal(dshRes.sources[0].snippet, "A comprehensive guide to the best tea houses around West Lake Hangzhou.");
+  assert.equal(dshRes.sources[0].publishedAt, "2026-04-12T10:00:00Z");
+
+  // MCP Response mapping
+  const mcpRes = toRoutedSearchResponse(outcome, { target: "mcp" });
+  assert.ok(mcpRes.content?.includes("dsh-web-tools-mcp --login xiaohongshu"));
+  assert.ok(mcpRes.content?.includes("Synthesized direct overview from general search backend."));
+  assert.equal(mcpRes.sources[0].summary, longFallbackSummary);
+  assert.equal(mcpRes.sources[0].publishedAt, "2026-04-12T10:00:00Z");
+});
+
+test("rich-fields: fused retrieval strategy preserves longer summary and direct content end-to-end", async () => {
+  const mockAdapter1 = {
+    name: "source-a",
+    label: "Source A",
+    description: "Mock A",
+    credSuffix: "A",
+    fetchCapable: false,
+    needsBaseUrl: false,
+    async search() {
+      return {
+        content: "Direct answer from Source A.",
+        sources: [
+          {
+            url: "https://example.com/shared",
+            title: "Shared Article",
+            snippet: "Short snippet from A.",
+            summary: "Short summary.",
+            publishedAt: "2026-01-01",
+          },
+        ],
+      };
+    },
+  };
+
+  const longerSummary =
+    "Much more comprehensive and informative summary provided by Source B, containing rich descriptions, data points, and context about the topic.".repeat(3);
+
+  const mockAdapter2 = {
+    name: "source-b",
+    label: "Source B",
+    description: "Mock B",
+    credSuffix: "B",
+    fetchCapable: false,
+    needsBaseUrl: false,
+    async search() {
+      return {
+        content: "Direct answer from Source B.",
+        sources: [
+          {
+            url: "https://example.com/shared",
+            title: "Shared Article Full Title",
+            snippet: "Snippet from B.",
+            summary: longerSummary,
+            publishedAt: "2026-01-01",
+          },
+        ],
+      };
+    },
+  };
+
+  const runtimeConfig = () => ({
+    enabled: true,
+    defaultProvider: "source-a",
+    fallbackOrder: ["source-b"],
+    retrievalStrategy: "fused" as const,
+    enabledProviders: {},
+    providerBaseUrls: {},
+    providerAttemptTimeoutMs: 5000,
+  });
+
+  const searchProvider = createSearchProvider(runtimeConfig, async () => "key", { record: () => {} }, {
+    "source-a": mockAdapter1 as any,
+    "source-b": mockAdapter2 as any,
+  });
+
+  const registry = new SpecializedSourceRegistry();
+  registry.setFallbackProviders(searchProvider, undefined as any);
+
+  const outcome = await registry.search("shared topic");
+  assert.equal(outcome.fused, true);
+  assert.equal(outcome.items.length, 1);
+  assert.equal(outcome.items[0].summary, longerSummary);
+
+  const routed = toRoutedSearchResponse(outcome, { target: "dsh" });
+  assert.equal(routed.sources.length, 1);
+  assert.equal(routed.sources[0].summary, truncate(longerSummary, SUMMARY_MAX));
+});
+
+test("rich-fields: all six providers enforce snippet <= 200 (single line) and summary <= 800 under long input", async () => {
+  const origFetch = globalThis.fetch;
+  const veryLongText = "A very long detailed narrative paragraph ".repeat(30); // ~1260 chars
+
+  try {
+    // 1. Tavily
+    globalThis.fetch = (async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({
+        results: [{ url: "https://tavily.com", title: "Tavily", content: "Line 1\nLine 2\n" + veryLongText }],
+      }),
+    })) as typeof globalThis.fetch;
+    const tavilyRes = await TavilyProvider.search("q", 1, "k", undefined);
+    assert.ok(Array.from(tavilyRes.sources[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!tavilyRes.sources[0].snippet!.includes("\n"));
+    assert.ok(Array.from(tavilyRes.sources[0].summary!).length <= SUMMARY_MAX);
+
+    // 2. Exa
+    globalThis.fetch = (async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({
+        results: [{
+          url: "https://exa.ai",
+          title: "Exa",
+          text: "Multi\nline\n" + veryLongText,
+          highlights: ["Highlight line 1\nHighlight line 2 " + veryLongText],
+        }],
+      }),
+    })) as typeof globalThis.fetch;
+    const exaRes = await ExaProvider.search("q", 1, "k", undefined);
+    assert.ok(Array.from(exaRes.sources[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!exaRes.sources[0].snippet!.includes("\n"));
+    assert.ok(Array.from(exaRes.sources[0].summary!).length <= SUMMARY_MAX);
+
+    // 3. Brave
+    globalThis.fetch = (async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({
+        web: {
+          results: [{
+            url: "https://brave.com",
+            title: "Brave",
+            description: "Description\nwith newline " + veryLongText,
+            extra_snippets: ["Extra 1\nExtra 2 " + veryLongText],
+          }],
+        },
+      }),
+    })) as typeof globalThis.fetch;
+    const braveRes = await BraveProvider.search("q", 1, "k", undefined, { options: { endpointPreference: "web-search" } });
+    assert.ok(Array.from(braveRes.sources[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!braveRes.sources[0].snippet!.includes("\n"));
+    assert.ok(Array.from(braveRes.sources[0].summary!).length <= SUMMARY_MAX);
+
+    // 4. Jina
+    const jinaParsed = parseJinaSearchJson({
+      data: [{
+        url: "https://jina.ai",
+        title: "Jina",
+        description: "Desc\nnewline " + veryLongText,
+        content: "Content\nnewline " + veryLongText,
+      }],
+    }, 1);
+    assert.ok(Array.from(jinaParsed[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!jinaParsed[0].snippet!.includes("\n"));
+    assert.ok(Array.from(jinaParsed[0].summary!).length <= SUMMARY_MAX);
+
+    // 5. Serper
+    globalThis.fetch = (async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({
+        organic: [{
+          link: "https://serper.dev",
+          title: "Serper",
+          snippet: "Snippet\nwith line " + veryLongText,
+          attributes: { "Detail 1": "Val 1\nVal 2 " + veryLongText },
+        }],
+      }),
+    })) as typeof globalThis.fetch;
+    const serperRes = await SerperProvider.search("q", 1, "k", undefined);
+    assert.ok(Array.from(serperRes.sources[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!serperRes.sources[0].snippet!.includes("\n"));
+    assert.ok(Array.from(serperRes.sources[0].summary!).length <= SUMMARY_MAX);
+
+    // 6. You
+    globalThis.fetch = (async () => ({
+      status: 200,
+      ok: true,
+      headers: { get: () => null },
+      json: async () => ({
+        hits: [{
+          url: "https://you.com",
+          title: "You",
+          snippets: ["Snippet line 1\nSnippet line 2 " + veryLongText, "Another snippet " + veryLongText],
+          description: "Desc\nwith line " + veryLongText,
+        }],
+      }),
+    })) as typeof globalThis.fetch;
+    const youRes = await YouProvider.search("q", 1, "k", undefined);
+    assert.ok(Array.from(youRes.sources[0].snippet!).length <= SNIPPET_MAX);
+    assert.ok(!youRes.sources[0].snippet!.includes("\n"));
+    assert.ok(Array.from(youRes.sources[0].summary!).length <= SUMMARY_MAX);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 });
