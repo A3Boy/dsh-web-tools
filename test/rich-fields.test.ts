@@ -240,6 +240,7 @@ test("rich-fields: platform formatting enforces single-line snippet ≤200 and r
     collects: 340,
     replies: 56,
     tags: ["food", "beijing"],
+    coverImage: "https://sns-img-hw.xhscdn.com/1040g-cover?imageView2/2/w/format/png",
     platform: "xiaohongshu" as const,
   };
 
@@ -254,6 +255,18 @@ test("rich-fields: platform formatting enforces single-line snippet ≤200 and r
   assert.ok(digest.includes("\n\n"));
   assert.ok(digest.includes("[@chef_john]"));
   assert.ok(digest.includes("Very detailed review of roast duck in Beijing."));
+  assert.ok(
+    digest.includes("Cover: https://sns-img-hw.xhscdn.com/1040g-cover"),
+    "the cover URL must reach the model-facing summary",
+  );
+
+  // No cover → no empty "Cover:" line.
+  const withoutCover = formatPlatformDigest({ ...item, coverImage: undefined });
+  assert.ok(!withoutCover.includes("Cover:"));
+
+  // images[0] is used when coverImage is absent.
+  const withImages = formatPlatformDigest({ ...item, coverImage: undefined, images: ["https://img/1.jpg"] });
+  assert.ok(withImages.includes("Cover: https://img/1.jpg"));
 });
 
 test("rich-fields: truncate never breaks Unicode code points / emoji surrogate pairs", () => {
@@ -607,4 +620,32 @@ test("rich-fields: all six providers enforce snippet <= 200 (single line) and su
   } finally {
     globalThis.fetch = origFetch;
   }
+});
+
+test("rich-fields: native search content announces covers in source order", () => {
+  const base = {
+    author: { name: "作者" },
+    likes: 12,
+    platform: "xiaohongshu" as const,
+    text: "正文",
+  };
+  const outcome = {
+    retrievalMode: "native-browser" as const,
+    items: [
+      { ...base, id: "a", url: "https://xhs/1", title: "一", coverImage: "https://img/cover-a.png" },
+      { ...base, id: "b", url: "https://xhs/2", title: "二" },
+      { ...base, id: "c", url: "https://xhs/3", title: "三", images: ["https://img/first-c.png"] },
+    ],
+  } as any;
+
+  const response = toRoutedSearchResponse(outcome);
+  assert.ok(response.content, "covers must reach the model-facing content");
+  assert.ok(response.content!.includes("Covers (index matches the source order below):"));
+  assert.ok(response.content!.includes("1. https://img/cover-a.png"));
+  assert.ok(response.content!.includes("3. https://img/first-c.png"));
+  assert.ok(!response.content!.includes("2. "), "a source without a cover must not get a placeholder line");
+
+  // Degraded results are general web hits; their covers must not be advertised.
+  const degraded = toRoutedSearchResponse({ ...outcome, degraded: { code: "auth-required", platform: "xiaohongshu" } });
+  assert.ok(!/Covers \(index/.test(degraded.content ?? ""));
 });

@@ -138,6 +138,13 @@ export function formatPlatformDigest(item: SourceItem): string {
   }
   if (parts.length > 0) sections.push(parts.join(" "));
 
+  // Cover image: the model-facing summary is what the agent turns into a
+  // candidate card, and a platform post is often judged by its picture, not its
+  // title. The URL is already extracted (and, for 小红书, already rewritten to
+  // the watermark-free node), so this costs no extra request.
+  const cover = item.coverImage || item.images?.[0];
+  if (cover) sections.push(`Cover: ${cover}`);
+
   const body = (item.text || item.snippet || "").trim();
   if (body) sections.push(body);
 
@@ -158,7 +165,27 @@ export function toRoutedSearchResponse(
 ) {
   const target = options.target ?? "dsh";
   const degradationNote = outcome.degraded ? describeDegradation(outcome.degraded, target) : undefined;
-  const mergedContent = [degradationNote, outcome.content].filter(Boolean).join("\n\n") || undefined;
+
+  // DSH's web_search renderer forwards only url/title/snippet/publishedAt of
+  // each source, so a per-source `summary` never reaches the model. Covers are
+  // therefore announced in the top-level content, indexed to match the source
+  // list, so the model can offer "which one should I read?" with pictures.
+  const nativeOverall =
+    !outcome.degraded &&
+    (outcome.retrievalMode === "native-browser" || outcome.retrievalMode === undefined);
+  const coverLines = nativeOverall
+    ? outcome.items
+        .map((item, index) => ({ item, position: index + 1 }))
+        .filter(({ item }) => item.platform !== "general" && (item.coverImage || item.images?.[0]))
+        .slice(0, 8)
+        .map(({ item, position }) => `${position}. ${item.coverImage || item.images?.[0]}`)
+    : [];
+  const coverBlock = coverLines.length > 0
+    ? `Covers (index matches the source order below):\n${coverLines.join("\n")}`
+    : undefined;
+
+  const mergedContent =
+    [degradationNote, outcome.content, coverBlock].filter(Boolean).join("\n\n") || undefined;
 
   return {
     ...(mergedContent ? { content: mergedContent } : {}),
