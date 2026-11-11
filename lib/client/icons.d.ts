@@ -8,6 +8,10 @@ export declare const IconRefreshOutline16: import("./compat-icons.ts").IconCompo
 export declare const IconSearchOutline16: import("./compat-icons.ts").IconComponent;
 export declare const IconSettingsOutline16: import("./compat-icons.ts").IconComponent;
 export declare const IconTrashOutline16: import("./compat-icons.ts").IconComponent;
+export declare const IconLikeOutline16: import("./compat-icons.ts").IconComponent;
 export declare const IconLikeOutline14: import("./compat-icons.ts").IconComponent;
 export declare const IconRefreshOutline14: import("./compat-icons.ts").IconComponent;
 export declare const IconRightUpOutline14: import("./compat-icons.ts").IconComponent;
+export declare const IconSparkle16: import("./compat-icons.ts").IconComponent;
+export declare const IconQueueOutline14: import("./compat-icons.ts").IconComponent;
+export declare const IconShareOutline16: import("./compat-icons.ts").IconComponent;

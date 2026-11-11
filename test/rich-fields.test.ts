@@ -248,7 +248,7 @@ test("rich-fields: platform formatting enforces single-line snippet ≤200 and r
   assert.ok(!snippet.includes("\n"), "Snippet must be single-line");
   assert.ok(Array.from(snippet).length <= SNIPPET_MAX, `Snippet must be <= ${SNIPPET_MAX}`);
   assert.ok(snippet.includes("[@chef_john]"));
-  assert.ok(snippet.includes("👍 1200 | ⭐ 340 | 💬 56"));
+  assert.ok(snippet.includes("likes 1200 | collects 340 | replies 56"));
 
   const digest = formatPlatformDigest(item);
   assert.ok(Array.from(digest).length <= SUMMARY_MAX, `Digest must be <= ${SUMMARY_MAX}`);
@@ -645,8 +645,8 @@ test("rich-fields: native search content announces covers in source order", () =
   assert.ok(response.content!.includes("3. https://img/first-c.png"));
   assert.ok(!response.content!.includes("2. "), "a source without a cover must not get a placeholder line");
   assert.ok(
-    response.content!.includes("Human-in-the-Loop Guidance for Assistant"),
-    "must provide assistant guidance to present cards and ask user for deep-fetch choices",
+    !response.content!.includes("Human-in-the-Loop Guidance for Assistant"),
+    "must not inject prompt guidance coercing the assistant into markdown card rendering",
   );
 
   // Degraded results are general web hits; their covers must not be advertised.

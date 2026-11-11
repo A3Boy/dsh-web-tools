@@ -44,10 +44,13 @@ export const ICON_ALIASES: readonly IconAliasSpec[] = [
   ["IconSearchOutline16", "IconSearchOutlineRegular", 16],
   ["IconSettingsOutline16", "IconSettingsOutlineRegular", 16],
   ["IconTrashOutline16", "IconTrashOutlineRegular", 16],
-  // Engagement metrics + the "open" affordance of the post picker.
-  ["IconLikeOutline14", "IconLikeOutlineRegular", 14],
+  // Engagement metrics + the "open" affordance of the post picker (all from primitives).
+  ["IconLikeOutline16", "IconLikeOutlineRegular", 16],
   ["IconRefreshOutline14", "IconRefreshOutlineRegular", 14],
   ["IconRightUpOutline14", "IconRightUpOutlineRegular", 14],
+  ["IconSparkle16", "IconSparkleRegular", 16],
+  ["IconQueueOutline14", "IconQueueOutlineRegular", 14],
+  ["IconShareOutline16", "IconShareOutlineRegular", 16],
 ];
 
 /** Any export usable as a component (function, or memo/forwardRef object). */

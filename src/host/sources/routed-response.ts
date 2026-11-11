@@ -102,10 +102,10 @@ export function formatPlatformSnippet(item: SourceItem): string {
   if (author) parts.push(`[${author}]`);
 
   const metrics: string[] = [];
-  if (typeof item.likes === "number") metrics.push(`👍 ${item.likes}`);
-  if (typeof item.collects === "number") metrics.push(`⭐ ${item.collects}`);
-  if (typeof item.retweets === "number") metrics.push(`🔁 ${item.retweets}`);
-  if (typeof item.replies === "number") metrics.push(`💬 ${item.replies}`);
+  if (typeof item.likes === "number") metrics.push(`likes ${item.likes}`);
+  if (typeof item.collects === "number") metrics.push(`collects ${item.collects}`);
+  if (typeof item.retweets === "number") metrics.push(`retweets ${item.retweets}`);
+  if (typeof item.replies === "number") metrics.push(`replies ${item.replies}`);
   if (metrics.length > 0) parts.push(metrics.join(" | "));
 
   if (item.tags && item.tags.length > 0) {
@@ -127,10 +127,10 @@ export function formatPlatformDigest(item: SourceItem): string {
   if (author) parts.push(`[${author}]`);
 
   const metrics: string[] = [];
-  if (typeof item.likes === "number") metrics.push(`👍 ${item.likes}`);
-  if (typeof item.collects === "number") metrics.push(`⭐ ${item.collects}`);
-  if (typeof item.retweets === "number") metrics.push(`🔁 ${item.retweets}`);
-  if (typeof item.replies === "number") metrics.push(`💬 ${item.replies}`);
+  if (typeof item.likes === "number") metrics.push(`likes ${item.likes}`);
+  if (typeof item.collects === "number") metrics.push(`collects ${item.collects}`);
+  if (typeof item.retweets === "number") metrics.push(`retweets ${item.retweets}`);
+  if (typeof item.replies === "number") metrics.push(`replies ${item.replies}`);
   if (metrics.length > 0) parts.push(metrics.join(" | "));
 
   if (item.tags && item.tags.length > 0) {
@@ -184,13 +184,8 @@ export function toRoutedSearchResponse(
     ? `Covers (index matches the source order below):\n${coverLines.join("\n")}`
     : undefined;
 
-  const agentHitlGuidance =
-    nativeOverall && outcome.items.some((i) => i.platform !== "general")
-      ? "💡 [Human-in-the-Loop Guidance for Assistant]: You retrieved native social platform posts. Present these posts clearly to the user with their cover image (e.g. ![Cover](url)), title, author, and engagement metrics (👍/⭐/💬), and invite the user to choose which specific post(s) they want you to read in depth via web_fetch."
-      : undefined;
-
   const mergedContent =
-    [degradationNote, outcome.content, coverBlock, agentHitlGuidance].filter(Boolean).join("\n\n") || undefined;
+    [degradationNote, outcome.content, coverBlock].filter(Boolean).join("\n\n") || undefined;
 
   return {
     ...(mergedContent ? { content: mergedContent } : {}),

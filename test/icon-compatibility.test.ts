@@ -31,12 +31,15 @@ test("ICON_ALIASES maps every renamed icon to its stroke-suffixed artwork", () =
     "IconSearchOutline16",
     "IconSettingsOutline16",
     "IconTrashOutline16",
-    "IconLikeOutline14",
+    "IconLikeOutline16",
     "IconRefreshOutline14",
     "IconRightUpOutline14",
+    "IconSparkle16",
+    "IconQueueOutline14",
+    "IconShareOutline16",
   ];
 
-  assert.equal(ICON_ALIASES.length, 13);
+  assert.equal(ICON_ALIASES.length, 16);
   for (const name of expectedOldNames) {
     const found = ICON_ALIASES.find(([legacy]) => legacy === name);
     assert.ok(found, `must include ${name}`);

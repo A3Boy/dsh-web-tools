@@ -1,47 +1,24 @@
 /**
- * dsh-web-tools — the `web_search` result card: a social-post picker.
+ * dsh-web-tools — the `web_search` result card: interactive SocialPostPicker.
  *
- * The agent gets a plain text result; this card is the HUMAN face of the same
- * call. It parses the text this repository itself produces (`Covers` block +
- * `Sources` list) into posts and renders a uniform, image-led list, so the user
- * picks a post to read instead of scanning a wall of markdown.
- *
- * Clicking 「深入了解」 does not fetch anything here: it sends a normal user
- * message ("详细读一下这篇：<url>") so the next Agent turn performs the read,
- * which keeps the model in charge of analysis.
+ * Implements the native post picker UI matching the design specification:
+ * - Header with total post count and platform distribution badge.
+ * - Horizontal cards with fixed-ratio cover images (or clean empty text post placeholder).
+ * - Platform badges (Xiaohongshu red, X dark), author, relative dates.
+ * - 2-line clamped title and summary.
+ * - Engagement stats with official primitives SVG icons (IconLikeOutline16, IconSparkle16,
+ *   IconQueueOutline14, IconRefreshOutline14) — ZERO emojis.
+ * - Action buttons: Primary [深入了解 ↗] triggering deep-reading in the next turn,
+ *   and Secondary [查看原帖] opening the post in a new tab.
+ * - Footer with summary and raw toggle.
  * @module
  */
 import * as React from "react";
-interface PlatformInfo {
-    label: string;
-    color: string;
-}
-interface PostPreview {
-    title: string;
-    url: string;
-    platform: PlatformInfo;
-    author?: string;
-    summary: string;
-    publishedAt?: string;
-    likes?: number;
-    collects?: number;
-    retweets?: number;
-    replies?: number;
-    cover?: string;
-}
+import { parseSearchResult, shortCount, relativeDate, type PostPreview } from "./social-post-picker-model.ts";
+export { parseSearchResult, shortCount, relativeDate, type PostPreview };
 /**
- * Parse the model-facing `web_search` text into post previews.
- * @param text - the tool result text (Covers block + Sources list).
- */
-export declare function parseSearchResult(text: string): {
-    posts: PostPreview[];
-    raw: string;
-};
-/**
- * The `web_search` tool result card.
- * @param props - slot props: `phase`/`block` for the call, plus `inputActions`.
+ * The `web_search` interactive post picker card component.
  */
 export declare function SocialPostPicker(props: any): React.DetailedReactHTMLElement<{
     className: string;
 }, HTMLElement> | null;
-export {};

@@ -18,7 +18,7 @@
  * @module
  */
 import { WebToolsSection } from "./WebToolsSection.tsx";
-import { SocialPostPicker } from "./SocialPostPicker.tsx";
+import { SocialPostPicker } from "./SocialPostPicker.ts";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
@@ -121,15 +121,27 @@ export function apply(ctx: any) {
   );
 
   // The human face of a platform search: a post picker instead of markdown.
-  // It takes the `web_search` key at a higher priority than the shell's generic
-  // web row, because this repository's own result text carries covers and
-  // engagement that the generic row cannot present.
+  // It takes the `web_search` key with priority -10 (in DSH slot system, lowest
+  // renders, so -10 shadows the generic WebRow which registers at default 0).
   ctx.slots.inject("tool.call.toolview", () =>
     ctx.slots.register(
       {
         name: "tool.call.toolview",
         key: "web_search",
-        priority: 50,
+        priority: -10,
+      },
+      SocialPostPicker,
+    ),
+  );
+
+  // Also register into conversation.chat.turnTail for end-of-turn presentation.
+  ctx.slots.inject("conversation.chat.turnTail", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.chat.turnTail",
+        id: "dsh-web-tools-social-picker",
+        order: 10,
+        label: "帖子推荐",
       },
       SocialPostPicker,
     ),
