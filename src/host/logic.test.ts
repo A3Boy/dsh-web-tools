@@ -154,12 +154,14 @@ test("parseJinaSearchJson: normalizes the official { data: [...] } envelope", ()
       url: "https://example.com/",
       title: "Example Domain",
       snippet: "This domain is for use in illustrative examples.",
+      summary: "full page text…",
       publishedAt: "2026-01-01T00:00:00Z",
     },
     {
       url: "https://example.org/",
       title: "Second Result",
       snippet: "Another snippet",
+      summary: "Another snippet",
     },
   ]);
 });

@@ -18,6 +18,7 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { BraveProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 const BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context";
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
@@ -125,11 +126,15 @@ export const BraveProvider: ProviderAdapter = {
           .map((g: Record<string, unknown>) => {
             const url = typeof g?.url === "string" ? g.url : "";
             if (!url) return null;
-            const s: { url: string; title?: string; snippet?: string } = { url };
+            const s: { url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string } = { url };
             if (typeof g.title === "string" && g.title) s.title = g.title;
             if (Array.isArray(g.snippets)) {
-              const text = g.snippets.filter((h: unknown): h is string => typeof h === "string").join("\n").trim();
-              if (text) s.snippet = text.length > 1200 ? text.slice(0, 1200) + "…" : text;
+              const valid = g.snippets.filter((h: unknown): h is string => typeof h === "string" && h.trim().length > 0);
+              if (valid.length > 0) {
+                const text = valid.join("\n").trim();
+                s.summary = truncate(text, SUMMARY_MAX);
+                s.snippet = truncate(toSingleLine(valid[0] ?? text), SNIPPET_MAX);
+              }
             }
             return s;
           })
@@ -175,19 +180,18 @@ export const BraveProvider: ProviderAdapter = {
       .map((r: Record<string, unknown>) => {
         const u = typeof r?.url === "string" ? r.url : "";
         if (!u) return null;
-        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url: u };
+        const s: { url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string } = { url: u };
         if (typeof r.title === "string" && r.title) s.title = r.title;
+        const desc = typeof r.description === "string" ? r.description.trim() : "";
         const parts: string[] = [];
-        if (typeof r.description === "string" && r.description.trim()) {
-          parts.push(r.description.trim());
-        }
+        if (desc) parts.push(desc);
         if (Array.isArray(r.extra_snippets) && r.extra_snippets.length > 0) {
           const extra = r.extra_snippets.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
           if (extra.length > 0) parts.push(extra.join(" "));
         }
         if (parts.length > 0) {
-          const joined = parts.join("\n");
-          s.snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+          s.summary = truncate(parts.join("\n"), SUMMARY_MAX);
+          s.snippet = truncate(toSingleLine(desc || parts[0]), SNIPPET_MAX);
         }
         if (typeof r.age === "string" && r.age) s.publishedAt = r.age;
         return s;

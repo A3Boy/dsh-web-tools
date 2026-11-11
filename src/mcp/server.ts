@@ -34,9 +34,8 @@ import type { NativeBrowserRuntime, BrowserPlatform } from "../host/browser/type
 import { extractSearchHints } from "../host/search-hints.ts";
 import { isRetrievalStrategy, type RetrievalStrategy } from "../shared/api-types.ts";
 import {
-  describeDegradation,
   toRoutedFetchResponse,
-  formatPlatformSnippet,
+  toRoutedSearchResponse,
 } from "../host/sources/routed-response.ts";
 
 /**
@@ -190,20 +189,7 @@ export class McpServer {
         if (outcome.error) {
           throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
         }
-        return {
-          ...(outcome.degraded ? { content: describeDegradation(outcome.degraded), degraded: outcome.degraded } : {}),
-          ...(outcome.diagnostics ? { diagnostics: outcome.diagnostics } : {}),
-          sources: outcome.items.map((item) => ({
-            url: item.url,
-            title: item.title,
-            snippet: formatPlatformSnippet(item),
-            publishedAt: item.publishedAt,
-          })),
-          truncated: false,
-          ...(outcome.backend !== undefined ? { backend: outcome.backend } : {}),
-          ...(outcome.attempts !== undefined ? { attempts: outcome.attempts } : {}),
-          ...(outcome.fused !== undefined ? { fused: outcome.fused } : {}),
-        };
+        return toRoutedSearchResponse(outcome, { target: "mcp" });
       },
     };
 
@@ -413,7 +399,8 @@ export class McpServer {
               const list = res.sources
                 .map((s, idx) => {
                   const title = s.title ? `[${s.title}](${s.url})` : s.url;
-                  const snippet = s.snippet ? `\n   ${s.snippet}` : "";
+                  const bodyText = s.summary || s.snippet;
+                  const snippet = bodyText ? `\n   ${bodyText}` : "";
                   const date = s.publishedAt ? ` (Published: ${s.publishedAt})` : "";
                   return `${idx + 1}. ${title}${date}${snippet}`;
                 })

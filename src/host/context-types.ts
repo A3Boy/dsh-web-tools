@@ -84,7 +84,7 @@ export interface WebToolsWebSeam {
     available(): boolean;
     search(request: { query: string; maxResults?: number }, signal?: AbortSignal): Promise<{
       content?: string;
-      sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+      sources: Array<{ url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string }>;
       truncated: boolean;
     }>;
   }): () => void;

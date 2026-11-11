@@ -91,6 +91,7 @@ export interface WebToolsWebSeam {
                 url: string;
                 title?: string;
                 snippet?: string;
+                summary?: string;
                 publishedAt?: string;
             }>;
             truncated: boolean;

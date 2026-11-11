@@ -11,6 +11,7 @@ export interface Source {
     url: string;
     title?: string;
     snippet?: string;
+    summary?: string;
     publishedAt?: string;
 }
 /** Normalized search outcome (mirrors DSH WebSearchResult). */

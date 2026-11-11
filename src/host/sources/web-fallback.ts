@@ -51,10 +51,13 @@ export async function fallbackSearchToGeneralWeb(
       title: r.title || r.url,
       url: r.url,
       snippet: r.snippet,
+      summary: r.summary,
+      publishedAt: r.publishedAt,
       platform,
     }));
     return {
       items,
+      ...(rawResults.content !== undefined ? { content: rawResults.content } : {}),
       // Carry the executor's diagnostics through the platform-fallback hop.
       // Dropping them here used to make the settings card's Test Search show
       // an empty backend/attempts ledger for every ordinary search.

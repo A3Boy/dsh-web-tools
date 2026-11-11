@@ -63,6 +63,7 @@ import {
   toRoutedFetchResponse,
   describeDegradation,
   formatPlatformSnippet,
+  toRoutedSearchResponse,
 } from "./sources/routed-response.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -83,7 +84,7 @@ const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
 
-export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet };
+export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse };
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -321,25 +322,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       if (outcome.error) {
         throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
       }
-      return {
-        // A degraded answer must SAY it is degraded: silently returning
-        // site:-filtered web results as if they were in-app posts is how a
-        // search looks successful while being much worse.
-        ...(outcome.degraded ? { content: describeDegradation(outcome.degraded), degraded: outcome.degraded } : {}),
-        ...(outcome.diagnostics ? { diagnostics: outcome.diagnostics } : {}),
-        sources: outcome.items.map((item) => ({
-          url: item.url,
-          title: item.title,
-          snippet: formatPlatformSnippet(item),
-          publishedAt: item.publishedAt,
-        })),
-        truncated: false,
-        // Forward the executor's diagnostics so the settings card can show the
-        // serving backend, the attempt ledger and whether the answer was fused.
-        ...(outcome.backend !== undefined ? { backend: outcome.backend } : {}),
-        ...(outcome.attempts !== undefined ? { attempts: outcome.attempts } : {}),
-        ...(outcome.fused !== undefined ? { fused: outcome.fused } : {}),
-      };
+      return toRoutedSearchResponse(outcome, { target: "dsh" });
     },
   };
   ctx.web.registerSearchProvider(routedSearchProvider as never);

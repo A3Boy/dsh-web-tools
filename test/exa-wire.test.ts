@@ -50,13 +50,15 @@ test("ExaProvider search uses headers and parses highlights", async () => {
     });
 
     assert.equal(outcome.sources.length, 2);
-    // highlight paragraphs joined with \n\n
+    // highlight paragraphs joined with \n\n in summary
     assert.equal(
-      outcome.sources[0].snippet,
+      outcome.sources[0].summary,
       "Sentence 1 with high significance.\n\nSentence 2 providing detailed context."
     );
+    assert.equal(outcome.sources[0].snippet, "Sentence 1 with high significance.");
     assert.equal(outcome.sources[0].publishedAt, "2026-03-01T00:00:00.000Z");
     assert.equal(outcome.sources[1].snippet, "Fallback text when highlights are empty.");
+    assert.equal(outcome.sources[1].summary, "Fallback text when highlights are empty.");
   } finally {
     globalThis.fetch = originalFetch;
   }

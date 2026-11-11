@@ -101,6 +101,7 @@ function plainSources(sources: Source[]): Source[] {
     url: s.url,
     ...(s.title !== undefined ? { title: s.title } : {}),
     ...(s.snippet !== undefined ? { snippet: s.snippet } : {}),
+    ...(s.summary !== undefined ? { summary: s.summary } : {}),
     ...(s.publishedAt !== undefined ? { publishedAt: s.publishedAt } : {}),
   }));
 }

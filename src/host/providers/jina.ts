@@ -17,6 +17,7 @@ import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { JinaProviderOptions } from "../../shared/provider-options.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 /** Official fallbacks. Search is overridable; the Reader is a different host
  *  (`r.jina.ai`) and stays pinned. */
@@ -140,17 +141,15 @@ export function parseJinaSearchJson(body: unknown, maxResults: number): Source[]
       publishedTime?: unknown;
     };
     if (typeof url !== "string" || url.length === 0) continue;
-    let snippet: string | undefined;
-    if (typeof description === "string" && description.trim()) {
-      snippet = description.trim();
-    } else if (typeof content === "string" && content.trim()) {
-      const trimmed = content.trim();
-      snippet = trimmed.length > 1500 ? trimmed.slice(0, 1500) + "…" : trimmed;
-    }
+    const desc = typeof description === "string" ? description.trim() : "";
+    const cnt = typeof content === "string" ? content.trim() : "";
+    const summary = truncate(cnt || desc, SUMMARY_MAX);
+    const snippet = truncate(toSingleLine(desc || cnt), SNIPPET_MAX);
     sources.push({
       url,
       ...(typeof title === "string" && title ? { title } : {}),
       ...(snippet ? { snippet } : {}),
+      ...(summary ? { summary } : {}),
       ...(typeof publishedTime === "string" && publishedTime ? { publishedAt: publishedTime } : {}),
     });
   }

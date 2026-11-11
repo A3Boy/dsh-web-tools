@@ -40,7 +40,7 @@ export interface WebSearchProviderLike {
   available(): boolean;
   search(request: { query: string; maxResults?: number }, signal?: AbortSignal): Promise<{
     content?: string;
-    sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+    sources: Array<{ url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string }>;
     truncated: boolean;
     /** Which provider(s) served the answer (`a+b` for a fused answer). */
     backend?: string;
@@ -294,7 +294,7 @@ export function createSearchProvider(
         laneSignal?: AbortSignal,
       ): Promise<{
         content?: string;
-        sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+        sources: Array<{ url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string }>;
         truncated: boolean;
         attempts: Array<{ provider: string; outcome: string; latencyMs?: number }>;
         backend: string;
@@ -306,7 +306,7 @@ export function createSearchProvider(
         let lastError: ProviderError | undefined;
         let candidateEmptyOutcome: {
           content?: string;
-          sources: Array<{ url: string; title?: string; snippet?: string; publishedAt?: string }>;
+          sources: Array<{ url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string }>;
           backend: string;
         } | null = null;
         const searchHints = extractSearchHints(request.query);

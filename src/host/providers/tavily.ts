@@ -18,6 +18,7 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 /** Official fallback for search. `/extract` (web_fetch) deliberately stays
  *  pinned: a Tavily-compatible gateway frequently implements only /search. */
@@ -257,11 +258,13 @@ export const TavilyProvider: ProviderAdapter = {
       .map((r: Record<string, unknown>) => {
         const url = typeof r?.url === "string" ? r.url : "";
         if (!url) return null;
-        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
+        const s: { url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
         // Tavily returns `content` (NLP summary in basic mode) — the best evidence field.
-        if (typeof r.content === "string" && r.content) {
-          s.snippet = r.content.length > 1200 ? r.content.slice(0, 1200) + "…" : r.content;
+        const rawContent = typeof r.content === "string" ? r.content.trim() : "";
+        if (rawContent) {
+          s.snippet = truncate(toSingleLine(rawContent), SNIPPET_MAX);
+          s.summary = truncate(rawContent, SUMMARY_MAX);
         }
         if (typeof r.published_date === "string" && r.published_date) s.publishedAt = r.published_date;
         return s;

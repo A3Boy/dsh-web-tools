@@ -47,6 +47,8 @@ export interface SourceItem {
     title: string;
     url: string;
     snippet?: string;
+    /** Rich, model-facing summary replacing snippet in DSH tool-web prompt injection. */
+    summary?: string;
     text?: string;
     author?: SourceAccountInfo;
     publishedAt?: string;
@@ -66,6 +68,8 @@ export interface SourceItem {
 }
 export interface SourceSearchOutcome {
     items: SourceItem[];
+    /** Direct synthesized answer (e.g. from Tavily LLM or Serper Knowledge Graph). */
+    content?: string;
     error?: SourceFailure;
     retrievalMode?: "native-browser" | "degraded-web" | "general-web";
     /**

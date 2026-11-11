@@ -156,6 +156,7 @@ export function reciprocalRankFusion(
       originalUrl: string;
       title?: string;
       snippet?: string;
+      summary?: string;
       publishedAt?: string;
       rrfScore: number;
       matchedProviders: Set<string>;
@@ -186,6 +187,10 @@ export function reciprocalRankFusion(
         if (item.snippet && (!existing.snippet || item.snippet.length > existing.snippet.length)) {
           existing.snippet = item.snippet;
         }
+        // Prefer longer / more informative summary
+        if (item.summary && (!existing.summary || item.summary.length > existing.summary.length)) {
+          existing.summary = item.summary;
+        }
         // Prefer longer / cleaner title
         if (item.title && (!existing.title || item.title.length > existing.title.length)) {
           existing.title = item.title;
@@ -199,6 +204,7 @@ export function reciprocalRankFusion(
           originalUrl: item.url,
           title: item.title,
           snippet: item.snippet,
+          summary: item.summary,
           publishedAt: item.publishedAt,
           rrfScore: score,
           matchedProviders: new Set([provider]),
@@ -215,6 +221,7 @@ export function reciprocalRankFusion(
     url: entry.originalUrl,
     title: entry.title,
     snippet: entry.snippet,
+    summary: entry.summary,
     publishedAt: entry.publishedAt,
     rrfScore: entry.rrfScore,
     matchedProviders: Array.from(entry.matchedProviders),

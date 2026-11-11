@@ -4,6 +4,7 @@ import { endpointViewOf } from "../endpoints.ts";
 import type { QuotaSnapshot } from "../quota.ts";
 import type { YouProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 /** Official fallbacks. Search is overridable; /contents and the billing
  *  balance (a different host entirely) stay pinned. */
@@ -117,27 +118,31 @@ export const YouProvider: ProviderAdapter = {
       .map((r: Record<string, unknown>) => {
         const u = typeof r?.url === "string" ? r.url : "";
         if (!u) return null;
-        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url: u };
+        const s: { url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string } = { url: u };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // Priority: contents.highlights (query-relevant excerpts) > snippets[0] > description
         const contents = r.contents as { highlights?: unknown } | undefined;
-        let snippet: string | undefined;
+        let richText = "";
+        let primaryText = "";
         if (Array.isArray(contents?.highlights) && contents.highlights.length > 0) {
-          const joined = contents.highlights
-            .filter((h): h is string => typeof h === "string")
-            .join("\n\n")
-            .trim();
-          if (joined) snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+          const valid = contents.highlights.filter((h): h is string => typeof h === "string" && h.trim().length > 0);
+          if (valid.length > 0) {
+            richText = valid.join("\n\n").trim();
+            primaryText = valid[0].trim();
+          }
         } else if (Array.isArray(r.snippets) && r.snippets.length > 0) {
           const valid = r.snippets.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
           if (valid.length > 0) {
-            const joined = valid.join("\n");
-            snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
+            richText = valid.join("\n").trim();
+            primaryText = valid[0].trim();
           }
-        } else if (typeof r.description === "string") {
-          snippet = r.description;
+        } else if (typeof r.description === "string" && r.description.trim()) {
+          richText = r.description.trim();
+          primaryText = richText;
         }
-        if (snippet) s.snippet = snippet;
+        if (richText) {
+          s.summary = truncate(richText, SUMMARY_MAX);
+          s.snippet = truncate(toSingleLine(primaryText || richText), SNIPPET_MAX);
+        }
         if (typeof r.page_age === "string" && r.page_age) s.publishedAt = r.page_age;
         return s;
       })

@@ -11,6 +11,7 @@ import { providerError, throwIfHttp, resolveContext, type ProviderAdapter, type 
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { SearchHints } from "../search-hints.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 const SERPER_SEARCH_URL = "https://google.serper.dev/search";
 const SERPER_MAX_RESULTS = 20;
@@ -102,9 +103,14 @@ export function parseSerperSearchJson(body: unknown, limit: number): Source[] {
     const ab = b.answerBox as Record<string, unknown>;
     const link = typeof ab.link === "string" ? ab.link : "";
     const title = typeof ab.title === "string" ? ab.title : "Google Quick Answer";
-    const snippet = typeof ab.answer === "string" ? ab.answer : typeof ab.snippet === "string" ? ab.snippet : "";
-    if (link && snippet) {
-      sources.push({ url: link, title, snippet });
+    const rawSnippet = typeof ab.answer === "string" ? ab.answer : typeof ab.snippet === "string" ? ab.snippet : "";
+    if (link && rawSnippet) {
+      sources.push({
+        url: link,
+        title,
+        snippet: truncate(toSingleLine(rawSnippet), SNIPPET_MAX),
+        summary: truncate(rawSnippet, SUMMARY_MAX),
+      });
     }
   }
 
@@ -117,17 +123,21 @@ export function parseSerperSearchJson(body: unknown, limit: number): Source[] {
       if (!url) continue;
       const s: Source = { url };
       if (typeof item.title === "string" && item.title) s.title = item.title;
-      let snippet = typeof item.snippet === "string" ? item.snippet : "";
+      const rawSnippet = typeof item.snippet === "string" ? item.snippet.trim() : "";
+      let attrText = "";
       if (item.attributes && typeof item.attributes === "object") {
         const attrPairs = Object.entries(item.attributes as Record<string, unknown>)
           .filter(([, v]) => typeof v === "string" && v.trim())
           .map(([k, v]) => `${k}: ${v}`);
         if (attrPairs.length > 0) {
-          const attrText = attrPairs.join(" | ");
-          snippet = snippet ? `${snippet}\n${attrText}` : attrText;
+          attrText = attrPairs.join(" | ");
         }
       }
-      if (snippet) s.snippet = snippet;
+      const fullSummary = attrText ? (rawSnippet ? `${rawSnippet}\n${attrText}` : attrText) : rawSnippet;
+      if (rawSnippet || attrText) {
+        s.snippet = truncate(toSingleLine(rawSnippet || attrText), SNIPPET_MAX);
+        s.summary = truncate(fullSummary, SUMMARY_MAX);
+      }
       if (typeof item.date === "string" && item.date) s.publishedAt = item.date;
       sources.push(s);
     }
