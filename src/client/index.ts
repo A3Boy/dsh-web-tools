@@ -128,7 +128,7 @@ export function apply(ctx: any) {
       {
         name: "tool.call.toolview",
         key: "web_search",
-        priority: -10,
+        priority: 100,
       },
       SocialPostPicker,
     ),
