@@ -120,7 +120,12 @@ export interface WebReadExecutionResult extends ReadPageResult {
  * not present on older host versions, logs a warning and returns undefined without crashing.
  */
 export function registerWebRead(ctx: WebToolsContext | Context, fetchPage: FetchPage): (() => void) | undefined {
-  const toolsService = (ctx as { tools?: { register?: (def: unknown) => () => void } }).tools;
+  let toolsService: { register?: (def: unknown) => () => void } | undefined;
+  try {
+    toolsService = (ctx as { tools?: { register?: (def: unknown) => () => void } }).tools;
+  } catch {
+    toolsService = undefined;
+  }
   if (typeof toolsService?.register !== "function" || typeof defineTool !== "function") {
     const logger = (ctx as { logger?: { warn?: (msg: string) => void } }).logger ?? console;
     logger.warn?.("tools.register or defineTool not available on host; skipping web_read tool registration");

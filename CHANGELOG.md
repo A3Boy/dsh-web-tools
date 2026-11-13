@@ -16,13 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Integrated into Search Mode policy runtime: automatically gated and restricted alongside `web_search` and `web_fetch` when search mode is switched OFF.
   - Exposed as standard tool in standalone stdio MCP server (`dsh-web-tools-mcp`) with `readOnlyHint` and `openWorldHint` annotations.
   - Configurable `webReadEnabled` setting (default `true`) with English and Simplified Chinese localizations.
-- **Search Sorting & Filtering Across Surfaces**:
-  - Added multi-criteria search sorting (`time`, `likes`, `comments`, `collects`) across SearchHints compiler, Xiaohongshu platform queries, and MCP server `web_search`.
-  - Prioritized rich summaries over short snippets in MCP search output with direct answers surfaced upfront.
 
 ## [0.4.0] - 2026-11-09
 
 ### Added
+- **Search Sorting & Filtering Across Surfaces**:
+  - Added multi-criteria search sorting (`time`, `likes`, `comments`, `collects`) across SearchHints compiler, Xiaohongshu platform queries, and MCP server `web_search`.
+  - Prioritized rich summaries over short snippets in MCP search output with direct answers surfaced upfront.
 - **Multi-Source Concurrent Retrieval (Hedged & Fused)**:
   - **Hedged Search**: Starts a fallback provider in parallel when the primary provider stalls (>1.2s). The first responder completes the search, and the slower lane is automatically cancelled with `cancelled@<duration>ms` recorded in the diagnostic ledger.
   - **Fused Search (RRF)**: Queries two providers concurrently and merges both ranked lists using Reciprocal Rank Fusion with URL canonicalization and deduplication.

@@ -83,7 +83,7 @@ import { registerWebRead } from "./read/tool.ts";
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands"];
+export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands", "tools"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
