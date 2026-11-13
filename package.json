@@ -70,6 +70,7 @@
     "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-web": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/schemastery": "^3.18.1",
     "react": "^18.2.0"
