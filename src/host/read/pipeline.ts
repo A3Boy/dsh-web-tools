@@ -10,6 +10,7 @@ import { splitMarkdown, type Section } from "./chunk.ts";
 import { bm25Scores } from "./rank.ts";
 import { selectPassages } from "./select.ts";
 import { clipCodePoints } from "./text.ts";
+import { createHash } from "node:crypto";
 
 export const DEFAULT_MAX_CHARS = 6000;
 export const MIN_MAX_CHARS = 500;
@@ -53,6 +54,8 @@ export interface ReadPageResult {
   returnedChars: number;
   /** Set when a single section was requested. */
   section?: { id: string; heading: string };
+  /** 8-character hex hash of page content for continuity checking. */
+  contentId: string;
 }
 
 export class UnknownSectionError extends Error {
@@ -130,5 +133,6 @@ export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPage
     totalChars,
     returnedChars: selection.returnedChars,
     section: sectionInfo,
+    contentId: createHash("sha256").update(markdown).digest("hex").slice(0, 8),
   };
 }

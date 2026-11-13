@@ -77,6 +77,7 @@ import {
   type FetchedPage,
   type FetchPage,
 } from "./fetch-page.ts";
+import { registerWebRead } from "./read/tool.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
@@ -407,6 +408,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
+
+  // Register focused page reading tool on host ctx.tools
+  registerWebRead(ctx, createFetchPage(routedFetchProvider));
 
   // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
   const nativeRuntime = createNativeBrowserRuntime();

@@ -327,8 +327,8 @@ interface AgentScopedCtx {
   };
 }
 
-/** The two model-facing web tools this plugin owns the policy for. */
-export const WEB_TOOL_NAMES: readonly string[] = ["web_search", "web_fetch"];
+/** The model-facing web tools this plugin owns the policy for. */
+export const WEB_TOOL_NAMES: readonly string[] = ["web_search", "web_fetch", "web_read"];
 
 /** Denial reason shown to the model when it calls a web tool while OFF. */
 export const WEB_DISABLED_DENIAL =
@@ -404,7 +404,7 @@ export function installSearchModeRuntime(
           if (!exec.agent?.id) return;
           const succeeded = result?.isError === false;
           if (exec?.name === "web_search") runtime.markSearchResult(exec.agent.id, succeeded);
-          else if (exec?.name === "web_fetch") runtime.markFetchResult(exec.agent.id, succeeded);
+          else if (exec?.name === "web_fetch" || exec?.name === "web_read") runtime.markFetchResult(exec.agent.id, succeeded);
         },
       );
 

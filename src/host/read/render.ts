@@ -28,6 +28,7 @@ export function formatChars(n: number): string {
 export function renderWebRead(input: RenderInput): string {
   const { result, focus } = input;
   const lines: string[] = [UNTRUSTED_NOTICE, `URL: ${input.finalUrl ?? input.url}`];
+  if (result.contentId) lines.push(`Page id: ${result.contentId}`);
   if (result.title) lines.push(`Title: ${result.title}`);
   if (result.section) lines.push(`Section: ${result.section.id}${result.section.heading ? ` "${result.section.heading}"` : ""}`);
 
@@ -59,7 +60,10 @@ export function renderWebRead(input: RenderInput): string {
   }
 
   if (result.truncated) {
-    lines.push("", 'To read more, call web_read again with the same url and section="<id>" from the outline, or a different focus.');
+    const hint = result.contentId
+      ? `To read more, call web_read again with the same url, section="<id>" from the outline, and contentId="${result.contentId}", or a different focus.`
+      : 'To read more, call web_read again with the same url and section="<id>" from the outline, or a different focus.';
+    lines.push("", hint);
   }
   return lines.join("\n");
 }
