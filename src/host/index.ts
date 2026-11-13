@@ -72,6 +72,12 @@ import {
   toRoutedSearchResponse,
 } from "./sources/routed-response.ts";
 
+import {
+  createFetchPage,
+  type FetchedPage,
+  type FetchPage,
+} from "./fetch-page.ts";
+
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
@@ -96,6 +102,9 @@ export {
   describeDegradation,
   formatPlatformSnippet,
   toRoutedSearchResponse,
+  createFetchPage,
+  type FetchedPage,
+  type FetchPage,
 };
 
 /** Release lookup is best-effort: startup and settings must work offline. */
