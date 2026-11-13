@@ -214,3 +214,59 @@ test("search mode: WEB_TOOL_NAMES includes web_read and guard blocks it when OFF
   assert.equal(guard("web_read", true), WEB_DISABLED_DENIAL);
   assert.equal(guard("web_read", false), undefined);
 });
+
+test("contentId: identical content yields same id, altered content throws WEB_READ_PAGE_CHANGED", async () => {
+  let registeredTool: any = null;
+  const mockCtx = {
+    tools: {
+      register: (def: any) => {
+        registeredTool = def;
+        return () => {};
+      },
+    },
+  };
+
+  let pageContent = "# Title\n\nIntro\n\n## Section 1\n\nContent A";
+  registerWebRead(mockCtx as any, async () => ({
+    content: pageContent,
+    finalUrl: "https://example.com/doc",
+  }));
+
+  // Initial call without section
+  const firstRes = await registeredTool.execute(
+    { url: "https://example.com/doc" },
+    { signal: new AbortController().signal },
+  );
+  assert.ok(firstRes.contentId, "contentId must be present");
+  assert.equal(typeof firstRes.contentId, "string");
+  assert.equal(firstRes.contentId.length, 8);
+
+  // Calling with matching contentId and valid section succeeds
+  const secondRes = await registeredTool.execute(
+    { url: "https://example.com/doc", section: "s1", contentId: firstRes.contentId },
+    { signal: new AbortController().signal },
+  );
+  assert.equal(secondRes.contentId, firstRes.contentId);
+  assert.equal(secondRes.section?.id, "s1");
+
+  // Page content changes on the remote site
+  pageContent = "# Title\n\nIntro modified\n\n## Section 1\n\nContent B";
+
+  // Calling with old contentId throws WEB_READ_PAGE_CHANGED
+  await assert.rejects(
+    async () => {
+      await registeredTool.execute(
+        { url: "https://example.com/doc", section: "s1", contentId: firstRes.contentId },
+        { signal: new AbortController().signal },
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof WebReadError);
+      assert.equal(err.code, "WEB_READ_PAGE_CHANGED");
+      assert.ok(err.message.includes("page content has changed"));
+      assert.ok(err.message.includes(firstRes.contentId));
+      return true;
+    },
+  );
+});
+
