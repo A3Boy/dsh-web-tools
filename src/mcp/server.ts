@@ -34,7 +34,6 @@ import type { NativeBrowserRuntime, BrowserPlatform } from "../host/browser/type
 import { extractSearchHints, normalizeSearchSort } from "../host/search-hints.ts";
 import { isRetrievalStrategy, type RetrievalStrategy } from "../shared/api-types.ts";
 import {
-  toRoutedFetchResponse,
   executeRoutedFetchWithRecovery,
   toRoutedSearchResponse,
 } from "../host/sources/routed-response.ts";
