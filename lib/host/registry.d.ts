@@ -14,6 +14,8 @@ export interface WebSearchProviderLike {
     search(request: {
         query: string;
         maxResults?: number;
+        sort?: string;
+        sortBy?: string;
     }, signal?: AbortSignal): Promise<{
         content?: string;
         sources: Array<{

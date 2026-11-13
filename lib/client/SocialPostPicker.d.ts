@@ -25,11 +25,8 @@ export declare function SocialPostPicker(props: any): React.DetailedReactHTMLEle
 /**
  * The picker rendered in the Turn tail.
  *
- * The `web_search` key of `tool.call.toolview` is already occupied by the
- * shell's own row and cannot be shadowed from a plugin (both registrations
- * coexist and the shell's stays active), so the same card is mounted where a
- * plugin is guaranteed to render: below the answer, fed by the Turn's tool
- * result.
- * @param props - Turn-tail props: `turn` plus the standard `inputActions`/`useChat`.
+ * Guarantees that interactive platform post cards appear in the main chat body
+ * below the model's response, using memory-snapshot Chat nodes first and
+ * seamlessly falling back to the plugin's host endpoint.
  */
 export declare function TurnTailPicker(props: any): React.FunctionComponentElement<any> | null;

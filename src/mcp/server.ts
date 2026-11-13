@@ -31,12 +31,17 @@ import { XiaohongshuSource } from "../host/sources/xiaohongshu.ts";
 import { XSource } from "../host/sources/x.ts";
 import { createNativeBrowserRuntime } from "../host/browser/index.ts";
 import type { NativeBrowserRuntime, BrowserPlatform } from "../host/browser/types.ts";
-import { extractSearchHints } from "../host/search-hints.ts";
+import { extractSearchHints, normalizeSearchSort } from "../host/search-hints.ts";
 import { isRetrievalStrategy, type RetrievalStrategy } from "../shared/api-types.ts";
 import {
   toRoutedFetchResponse,
+  executeRoutedFetchWithRecovery,
   toRoutedSearchResponse,
 } from "../host/sources/routed-response.ts";
+import {
+  extractNoteIdFromUrl,
+  getCachedNoteItem,
+} from "../host/sources/xiaohongshu.ts";
 
 /**
  * MCP protocol revisions this server understands, newest first. The server
@@ -179,8 +184,15 @@ export class McpServer {
     this.searchProvider = {
       id: "mcp-routed-search",
       available: () => generalSearchProvider.available(),
-      search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
+      search: async (
+        request: { query: string; maxResults?: number; sort?: string; sortBy?: string },
+        signal?: AbortSignal,
+      ) => {
         const hints = extractSearchHints(request.query);
+        const explicitSort = normalizeSearchSort(request.sort || request.sortBy);
+        if (explicitSort) {
+          hints.sort = explicitSort;
+        }
         const outcome = await sourceRegistry.search(
           request.query,
           { maxResults: request.maxResults, hints },
@@ -197,8 +209,16 @@ export class McpServer {
       id: "mcp-routed-fetch",
       available: () => generalFetchProvider.available(),
       fetch: async (request: { url: string }, signal?: AbortSignal) => {
-        const outcome = await sourceRegistry.fetch(request.url, signal);
-        return toRoutedFetchResponse(request.url, outcome);
+        return executeRoutedFetchWithRecovery(
+          request.url,
+          () => sourceRegistry.fetch(request.url, signal),
+          {
+            lookupCache: (url) => {
+              const noteId = extractNoteIdFromUrl(url);
+              return noteId ? getCachedNoteItem(noteId) : undefined;
+            },
+          },
+        );
       },
     };
   }
@@ -360,6 +380,15 @@ export class McpServer {
                     type: "number",
                     description: "Maximum number of search results to retrieve (default: 5).",
                   },
+                  sort: {
+                    type: "string",
+                    enum: ["general", "time", "likes", "comments", "collects"],
+                    description: "Optional sort order for platforms that support it (e.g. time/latest, likes/popularity, comments, collects).",
+                  },
+                  sortBy: {
+                    type: "string",
+                    description: "Alias for sort.",
+                  },
                 },
                 required: ["query"],
               },
@@ -405,10 +434,11 @@ export class McpServer {
           }
 
           const maxResults = typeof args.maxResults === "number" ? Math.max(1, Math.min(20, args.maxResults)) : 5;
+          const sort = typeof args.sort === "string" ? args.sort : typeof args.sortBy === "string" ? args.sortBy : undefined;
 
           try {
             const res = await this.withDeadline((signal) =>
-              this.searchProvider.search({ query, maxResults }, signal),
+              this.searchProvider.search({ query, maxResults, sort }, signal),
             );
             let formattedText = "";
 

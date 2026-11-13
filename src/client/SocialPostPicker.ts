@@ -337,6 +337,7 @@ function Stat({ icon, value }: { icon: React.ReactNode; value?: number }) {
  */
 export function SocialPostPicker(props: any) {
   const [showRaw, setShowRaw] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(false);
 
   // If call is still preparing or running:
   if (props.phase === "start" || props.phase === "preparing") {
@@ -349,8 +350,27 @@ export function SocialPostPicker(props: any) {
     );
   }
 
+  const explicitPosts = Array.isArray(props.posts) ? (props.posts as PostPreview[]) : undefined;
   const { text, structuredSources } = React.useMemo(() => extractTextAndMeta(props), [props]);
-  const { posts, raw } = React.useMemo(() => parseSearchResult(text, structuredSources), [text, structuredSources]);
+  const { posts: parsedPosts, raw: parsedRaw } = React.useMemo(
+    () => parseSearchResult(text, structuredSources),
+    [text, structuredSources],
+  );
+  const posts = explicitPosts ?? parsedPosts;
+  const raw = React.useMemo(() => {
+    if (props.raw && typeof props.raw === "string" && props.raw.trim()) return props.raw.trim();
+    if (parsedRaw && parsedRaw.trim()) return parsedRaw.trim();
+    if (text && text.trim()) return text.trim();
+    if (posts.length > 0) {
+      return posts
+        .map(
+          (p, i) =>
+            `${i + 1}. [${p.title}](${p.url})${p.author ? ` · @${p.author}` : ""}${p.summary ? `\n   ${p.summary}` : ""}`,
+        )
+        .join("\n\n");
+    }
+    return "";
+  }, [props.raw, parsedRaw, text, posts]);
 
   if (posts.length === 0) {
     if (!raw) return null;
@@ -369,8 +389,8 @@ export function SocialPostPicker(props: any) {
   const countChip = Object.keys(counts)
     .map((label) => `${counts[label]} ${label}`)
     .join(" · ");
-  const shown = posts.slice(0, 3);
-  const remaining = posts.length - shown.length;
+  const shown = expanded ? posts : posts.slice(0, 3);
+  const remaining = posts.length - 3;
 
   const inspect = (url: string) => {
     sendPrompt(props.inputActions, `详细读一下这篇：${url}`);
@@ -399,12 +419,34 @@ export function SocialPostPicker(props: any) {
           "article",
           { key: `${index}:${post.url}`, className: "wt-post" },
           post.cover
-            ? React.createElement("img", {
-                className: "wt-post-cover",
-                src: post.cover,
-                alt: "",
-                loading: "lazy",
-              })
+            ? React.createElement(
+                React.Fragment,
+                null,
+                React.createElement("img", {
+                  className: "wt-post-cover",
+                  src: post.cover,
+                  alt: "",
+                  loading: "lazy",
+                  referrerPolicy: "no-referrer",
+                  onError: (e: any) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    if (!img.dataset.retried && post.cover) {
+                      img.dataset.retried = "true";
+                      img.src = `/web-tools/api/image-proxy?url=${encodeURIComponent(post.cover)}`;
+                      return;
+                    }
+                    img.style.display = "none";
+                    const fallback = img.parentElement?.querySelector(".wt-post-cover-empty");
+                    if (fallback) (fallback as HTMLElement).style.display = "flex";
+                  },
+                }),
+                React.createElement(
+                  "div",
+                  { className: "wt-post-cover-empty", style: { display: "none" } },
+                  React.createElement("strong", null, post.platform.label === "X" ? "X" : "小红书"),
+                  React.createElement("span", null, "文字帖"),
+                ),
+              )
             : React.createElement(
                 "div",
                 { className: "wt-post-cover-empty" },
@@ -490,12 +532,24 @@ export function SocialPostPicker(props: any) {
       React.createElement(
         "span",
         null,
-        `展示精选的 ${shown.length} 条 · 来自小红书 / X 的原生搜索`,
+        expanded
+          ? `已展示全部 ${posts.length} 条帖子 · 来自小红书 / X 的原生搜索`
+          : `展示精选前 ${shown.length} 条 · 来自小红书 / X 的原生搜索`,
       ),
       React.createElement(
-        "span",
-        null,
-        remaining > 0 ? `还有 ${remaining} 条普通网页来源可在原搜索结果查看` : "更多来源见下方",
+        "div",
+        { style: { display: "flex", gap: "12px", alignItems: "center" } },
+        remaining > 0
+          ? React.createElement(
+              "button",
+              {
+                type: "button",
+                className: "wt-picker-link",
+                onClick: () => setExpanded((v) => !v),
+              },
+              expanded ? "收起其余帖子" : `展开其余 ${remaining} 条帖子`,
+            )
+          : null,
         React.createElement(
           "button",
           {
@@ -513,51 +567,177 @@ export function SocialPostPicker(props: any) {
   );
 }
 
-/** Text of the settled `web_search` result inside one Turn, read from Chat nodes. */
-function searchTextForTurn(chat: any, turnNumber: number): string {
-  try {
-    const order = Array.isArray(chat?.order) ? chat.order : Array.from(chat?.order ?? []);
-    let text = "";
-    for (const key of order) {
-      const node = chat.nodes.get(key);
-      if (!node || node.kind !== "tool-call") continue;
-      const data = node.data ?? {};
-      if (data.turn !== turnNumber) continue;
-      const root = data.root;
-      if (!root || root.kind !== "tool-result" || root.name !== "web_search") continue;
-      const parts = Array.isArray(root.content) ? root.content : [];
-      const stepText = parts
-        .map((part: any) =>
-          typeof part === "string" ? part : typeof part?.text === "string" ? part.text : "",
-        )
-        .filter(Boolean)
-        .join("\n");
-      if (stepText.trim()) text = stepText;
-    }
-    return text;
-  } catch {
-    return "";
+function nodeTurn(node: any): number | undefined {
+  if (!node) return undefined;
+  if (typeof node.location?.turn?.turn === "number") return node.location.turn.turn;
+  if (typeof node.location?.turn === "number") return node.location.turn;
+  if (typeof node.data?.turn === "number") return node.data.turn;
+  return undefined;
+}
+
+function extractTextFromToolRoot(root: any): string {
+  if (!root) return "";
+  if (typeof root === "string") return root;
+  if (typeof root.text === "string") return root.text;
+  if (typeof root.output === "string") return root.output;
+  if (Array.isArray(root.content)) {
+    const parts = root.content
+      .map((part: any) =>
+        typeof part === "string" ? part : typeof part?.text === "string" ? part.text : "",
+      )
+      .filter(Boolean)
+      .join("\n");
+    if (parts.trim()) return parts;
   }
+  return "";
+}
+
+/** Search result and structured sources for one Turn, extracted from Chat nodes. */
+function findSearchForTurn(
+  chat: any,
+  turnNumber?: number,
+): { text: string; structuredSources?: any[] } | null {
+  if (!chat) return null;
+  const nodes: any[] = [];
+
+  if (typeof turnNumber === "number") {
+    // 1. Through chat.locations.getTurn
+    try {
+      const keys = typeof chat.locations?.getTurn === "function" ? chat.locations.getTurn(turnNumber) : undefined;
+      if (Array.isArray(keys)) {
+        for (const key of keys) {
+          const node = chat.nodes?.get?.(key);
+          if (node) nodes.push(node);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 2. Through chat.nodes.values()
+    if (nodes.length === 0 && typeof chat.nodes?.values === "function") {
+      try {
+        for (const node of chat.nodes.values()) {
+          if (nodeTurn(node) === turnNumber) nodes.push(node);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // 3. Through chat.order
+    if (nodes.length === 0 && Array.isArray(chat.order)) {
+      try {
+        for (const key of chat.order) {
+          const node = chat.nodes?.get?.(key);
+          if (node && nodeTurn(node) === turnNumber) nodes.push(node);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // 4. Fallback: inspect the most recent tool-call nodes if turn-specific search was empty
+  if (nodes.length === 0 && Array.isArray(chat.order)) {
+    try {
+      for (let i = chat.order.length - 1; i >= 0 && i >= chat.order.length - 15; i--) {
+        const node = chat.nodes?.get?.(chat.order[i]);
+        if (node && (node.kind === "tool-call" || node.kind === "assistant-step")) {
+          nodes.push(node);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  for (const node of nodes) {
+    if (node.kind === "tool-call") {
+      const root = node.data?.root ?? node.data;
+      if (!root) continue;
+      const name = root.name || root.call?.name;
+      if (name === "web_search") {
+        const text = extractTextFromToolRoot(root);
+        const structuredSources = Array.isArray(root.meta?.sources) ? root.meta.sources : undefined;
+        if (text || structuredSources) return { text, structuredSources };
+      }
+    }
+    if (node.kind === "assistant-step" && Array.isArray(node.data?.blocks)) {
+      for (const block of node.data.blocks) {
+        if (block?.kind === "tool-call" && block?.name === "web_search") {
+          const text = extractTextFromToolRoot(block);
+          if (text) return { text };
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
  * The picker rendered in the Turn tail.
  *
- * The `web_search` key of `tool.call.toolview` is already occupied by the
- * shell's own row and cannot be shadowed from a plugin (both registrations
- * coexist and the shell's stays active), so the same card is mounted where a
- * plugin is guaranteed to render: below the answer, fed by the Turn's tool
- * result.
- * @param props - Turn-tail props: `turn` plus the standard `inputActions`/`useChat`.
+ * Guarantees that interactive platform post cards appear in the main chat body
+ * below the model's response, using memory-snapshot Chat nodes first and
+ * seamlessly falling back to the plugin's host endpoint.
  */
 export function TurnTailPicker(props: any) {
-  const chat = props.useChat((snapshot: any) => snapshot);
-  const turnNumber = props?.turn?.turn;
-  const text = typeof turnNumber === "number" ? searchTextForTurn(chat, turnNumber) : "";
-  if (!text) return null;
+  const chat = typeof props?.useChat === "function" ? props.useChat((snapshot: any) => snapshot) : undefined;
+  const turnNumber =
+    typeof props?.turn?.turn === "number"
+      ? props.turn.turn
+      : typeof props?.turn === "number"
+        ? props.turn
+        : undefined;
+
+  // 1. Synchronously inspect the in-memory chat snapshot
+  const chatSearch = React.useMemo(() => findSearchForTurn(chat, turnNumber), [chat, turnNumber]);
+  const localParsed = React.useMemo(() => {
+    if (!chatSearch) return null;
+    const res = parseSearchResult(chatSearch.text, chatSearch.structuredSources);
+    return res.posts.length > 0 ? res : null;
+  }, [chatSearch]);
+
+  // 2. Asynchronously query the Host's recent searches cache as a resilient fallback
+  const [apiData, setApiData] = React.useState<{ posts: PostPreview[]; raw?: string } | null>(null);
+
+  React.useEffect(() => {
+    if (localParsed) return; // Snapshot already yielded posts
+    let active = true;
+
+    fetch("/web-tools/api/social-posts/recent", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!active || !data?.ok || !data?.value?.recent) return;
+        const list = data.value.recent as Array<{ query: string; time: number; posts: PostPreview[]; raw?: string }>;
+        if (list.length > 0 && list[0].posts.length > 0) {
+          // Verify freshness: only adopt if performed within the last 10 minutes
+          if (Date.now() - list[0].time < 10 * 60 * 1000) {
+            setApiData({ posts: list[0].posts, raw: list[0].raw });
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [localParsed, turnNumber]);
+
+  const posts = localParsed?.posts ?? apiData?.posts ?? [];
+  if (posts.length === 0) return null;
+
   return React.createElement(SocialPostPicker, {
     phase: "result",
-    block: { content: [{ type: "text", text }] },
+    posts,
+    raw: localParsed?.raw ?? apiData?.raw,
+    block: chatSearch ? { content: [{ type: "text", text: chatSearch.text }] } : undefined,
     inputActions: props.inputActions,
   });
 }

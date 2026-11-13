@@ -4,6 +4,10 @@ export declare function setXhsNativeSearchEnabled(v: boolean): void;
 export declare function isXhsNativeSearchEnabled(): boolean;
 /** Parse "1.2万" / "3,412" / 88 into a number. */
 export declare function parseXhsCount(value: unknown): number | undefined;
+export declare function rememberGlobalNote(item: SourceItem): void;
+export declare function getCachedNoteItem(id: string): SourceItem | undefined;
+export declare function getCachedNoteUrl(id: string): string | undefined;
+export declare function clearGlobalNoteCache(): void;
 /**
  * Map one `/search/notes` item into a SourceItem.
  *
@@ -18,6 +22,7 @@ export declare function parseXhsCount(value: unknown): number | undefined;
  * DOM link dropped the token.
  */
 export declare function mapXhsApiNote(note: Record<string, any>): SourceItem | null;
+export declare const XHS_SORT_TAG_MAP: Record<string, string>;
 /** Build the site's own search-results URL (the page then fetches the JSON). */
 export declare function buildXhsSearchUrl(query: string, req?: SourceSearchRequest): string;
 /** Pull note entries out of a captured `/search/notes` response payload. */
@@ -76,3 +81,5 @@ export declare class XiaohongshuSource implements SpecializedSource {
     private expandCommentThreads;
     private rememberNoteUrl;
 }
+export declare function hasXhsAccessToken(url: string): boolean;
+export declare function extractNoteIdFromUrl(url: string): string | null;

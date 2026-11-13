@@ -215,6 +215,37 @@ test("mcp-server: tools/call web_search formats results as Markdown", async () =
   }
 });
 
+test("mcp-server: tools/call web_search forwards sort argument to searchProvider", async () => {
+  let passedSort: string | undefined;
+  const harness = createTestHarness({
+    mockSearch: async (req: any) => {
+      passedSort = req.sort;
+      return {
+        sources: [{ url: "https://example.com/1", title: "Top item" }],
+        truncated: false,
+      };
+    },
+  });
+  try {
+    harness.send({
+      jsonrpc: "2.0",
+      id: 41,
+      method: "tools/call",
+      params: {
+        name: "web_search",
+        arguments: { query: "Python", sort: "likes" },
+      },
+    });
+
+    const res = await harness.readResponse();
+    assert.equal(res.id, 41);
+    assert.ok(!res.result.isError);
+    assert.equal(passedSort, "likes");
+  } finally {
+    harness.server.close();
+  }
+});
+
 test("mcp-server: tools/call web_fetch formats page content and metadata", async () => {
   const harness = createTestHarness();
   try {

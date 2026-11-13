@@ -13,7 +13,7 @@
 import type { WebToolsContext } from "./context-types.ts";
 import { type WebToolsSettings } from "./config.ts";
 import { PROVIDER_ID } from "./registry.ts";
-import { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse } from "./sources/routed-response.ts";
+import { toRoutedFetchResponse, executeRoutedFetchWithRecovery, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse } from "./sources/routed-response.ts";
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "dsh-web-tools";
 /** Services required by this plugin. */
@@ -24,6 +24,6 @@ export declare const inject: string[];
  * resolving plugin config); an empty object would crash at load.
  */
 export declare const Config: import("@deepseek-ai/schemastery").default<WebToolsSettings>;
-export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse };
+export { toRoutedFetchResponse, executeRoutedFetchWithRecovery, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse, };
 export declare function apply(ctx: WebToolsContext, config?: unknown): void;
 export { PROVIDER_ID };

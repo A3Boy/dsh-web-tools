@@ -8,7 +8,7 @@ import { ProfileStore } from "./profile-store.ts";
 import { StateStore } from "./state-store.ts";
 import { verifyLiveBrowserSession, type LiveSessionVerifier } from "./live-auth-verifier.ts";
 import { detectXhsPageState } from "./xiaohongshu-page-state.ts";
-import { isPidAlive as defaultIsPidAlive, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
+import { isPidAlive as defaultIsPidAlive, killProcessTree as defaultKillProcessTree, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
 import type {
   BrowserInfo,
   BrowserPlatform,
@@ -110,11 +110,7 @@ export class SessionManager implements NativeBrowserRuntime {
       return cdp;
     },
     isPidAliveFn: PidChecker = defaultIsPidAlive,
-    killPidFn: PidKiller = (pid) => {
-      try {
-        process.kill(pid);
-      } catch {}
-    },
+    killPidFn: PidKiller = defaultKillProcessTree,
     liveSessionVerifier: LiveSessionVerifier = verifyLiveBrowserSession,
   ) {
     this.browserChoice = browserChoice;
@@ -721,6 +717,13 @@ export class SessionManager implements NativeBrowserRuntime {
       const config = PLATFORM_AUTH_CONFIG[platform];
       const startUrl = initialUrl || (isVisible ? config.initialUrl : undefined);
 
+      // Clean up any stale recorded process from a prior run before spawning
+      const stored = this.stateStore.loadState(platform);
+      if (stored && stored.pid && this.isPidAliveFn(stored.pid)) {
+        this.killPidFn(stored.pid);
+        this.stateStore.clearState(platform);
+      }
+
       let spawned: SpawnedBrowserProcess;
       try {
         spawned = await this.launcher(browser, profileDir, startUrl, isVisible, !isVisible);
@@ -738,14 +741,28 @@ export class SessionManager implements NativeBrowserRuntime {
       }
 
       let cdp: CdpClient;
+      const exitAbort = new AbortController();
+      const onProcessExit = () => {
+        exitAbort.abort(new Error("Browser process terminated unexpectedly before CDP connection"));
+      };
+      if (spawned.process && typeof (spawned.process as any).once === "function") {
+        (spawned.process as any).once("exit", onProcessExit);
+      }
+      const connectionSignal = signal
+        ? (AbortSignal as any).any([signal, exitAbort.signal])
+        : exitAbort.signal;
       try {
-        cdp = await this.cdpFactory(spawned.port, signal);
+        cdp = await this.cdpFactory(spawned.port, connectionSignal);
       } catch (err) {
         if (spawned.process.pid) {
           this.killPidFn(spawned.process.pid);
         }
         rec.state = "error";
         throw err;
+      } finally {
+        if (spawned.process && typeof (spawned.process as any).removeListener === "function") {
+          (spawned.process as any).removeListener("exit", onProcessExit);
+        }
       }
 
       if (rec.pendingCancel || this.disposed || signal?.aborted) {

@@ -38,7 +38,7 @@ export const PROVIDER_ID = "dsh-web-tools";
 export interface WebSearchProviderLike {
   id: string;
   available(): boolean;
-  search(request: { query: string; maxResults?: number }, signal?: AbortSignal): Promise<{
+  search(request: { query: string; maxResults?: number; sort?: string; sortBy?: string }, signal?: AbortSignal): Promise<{
     content?: string;
     sources: Array<{ url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string }>;
     truncated: boolean;

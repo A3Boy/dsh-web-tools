@@ -18,6 +18,13 @@ export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
 
 export type PlatformHint = "xiaohongshu" | "x";
 
+export type SearchSort =
+  | "general"
+  | "time_descending"
+  | "popularity_descending"
+  | "comment_descending"
+  | "collect_descending";
+
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 
 export interface FreshnessHint {
@@ -50,6 +57,7 @@ export interface SearchHints {
   /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
   platformExplicit?: boolean;
   freshness?: FreshnessHint;
+  sort?: SearchSort;
   domains?: DomainHints;
   locale?: LocaleHint;
   /** Cleaned query string with explicit operators (e.g. site:) removed */
@@ -89,6 +97,34 @@ export function calculateAfterDate(preset: FreshnessPreset, now: Date = new Date
   }
   return formatDateYMD(d);
 }
+
+/**
+ * Normalize an arbitrary sort string into canonical SearchSort.
+ */
+export function normalizeSearchSort(raw: unknown): SearchSort | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim().toLowerCase();
+  if (!s) return undefined;
+  if (/^(?:time|latest|newest|date|time_descending)$/.test(s)) return "time_descending";
+  if (/^(?:likes?|popularity|hot|popular|popularity_descending)$/.test(s)) return "popularity_descending";
+  if (/^(?:comments?|comment_descending)$/.test(s)) return "comment_descending";
+  if (/^(?:collects?|collect_descending)$/.test(s)) return "collect_descending";
+  if (/^(?:general|relevance|default)$/.test(s)) return "general";
+  return undefined;
+}
+
+// Sort intent indicators and query cleaners (ordered by precedence)
+const SORT_COMMENT_RE = /(?:按评论(?:量|数)?(?:排序)?|最多评论|评论(?:最多|最高|量最高|量排序|数排序)|最热评|most commented|sort by comments)/i;
+const SORT_POPULARITY_RE = /(?:按点赞(?:量|数)?(?:排序)?|最多点赞|点赞(?:最多|最高|量最高|量排序|数排序)|最高赞|最多赞|按热度(?:排序)?|最热|热门|最火|most liked|most popular|sort by likes|top liked)/i;
+const SORT_COLLECT_RE = /(?:按收藏(?:量|数)?(?:排序)?|最多收藏|收藏(?:最多|最高|量最高|量排序|数排序)|most collected|sort by collects)/i;
+const SORT_TIME_RE = /(?:按(?:发布)?时间(?:排序)?|按最新(?:排序)?|时间倒序|最新(?!消息|动态|资讯|进展|版本|模型|论文|功能|特性|新闻|公告|通知|更新)|实时|刚发布|sort by (?:time|date)|newest|latest(?!\s+(?:news|version|update|model|paper|release)))/i;
+
+const SORT_EXTRACTORS: Array<{ re: RegExp; sort: SearchSort }> = [
+  { re: SORT_COMMENT_RE, sort: "comment_descending" },
+  { re: SORT_POPULARITY_RE, sort: "popularity_descending" },
+  { re: SORT_COLLECT_RE, sort: "collect_descending" },
+  { re: SORT_TIME_RE, sort: "time_descending" },
+];
 
 // Regex patterns for operator extraction
 const SITE_INCLUDE_RE = /(?:^|\s)site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)/gi;
@@ -281,6 +317,16 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     cleanQuery = cleanQuery.replace(X_ROUTE_PREFIX_RE, " ").replace(X_CLEAN_RE, " ");
   }
 
+  // 1.2 Extract Sort Intent (comments, likes/popularity, collects, time)
+  let sort: SearchSort | undefined;
+  for (const extractor of SORT_EXTRACTORS) {
+    if (extractor.re.test(cleanQuery)) {
+      sort = extractor.sort;
+      cleanQuery = cleanQuery.replace(new RegExp(extractor.re.source, "gi"), " ");
+      break;
+    }
+  }
+
   // 2. Extract explicit after: / before: dates
   let afterDate: string | undefined;
   let beforeDate: string | undefined;
@@ -423,6 +469,7 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     platform,
     platformExplicit: platformExplicit ? true : undefined,
     freshness,
+    sort,
     domains,
     locale,
     cleanQuery,

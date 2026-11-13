@@ -8,7 +8,7 @@ export declare class CdpPage implements CdpPageLease {
     private readonly validateNavigation?;
     private closed;
     constructor(targetId: string, sessionId: string, client: CdpClient, onClose: () => Promise<void>, validateNavigation?: (url: string) => void);
-    navigate(url: string, signal?: AbortSignal, timeoutMs?: number): Promise<void>;
+    navigate(url: string, signal?: AbortSignal, timeoutMs?: number, referrer?: string): Promise<void>;
     waitForLoad(signal?: AbortSignal, timeoutMs?: number): Promise<void>;
     waitForSelector(selector: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
     evaluate<T>(expression: string, signal?: AbortSignal): Promise<T>;
@@ -31,5 +31,6 @@ export declare class CdpPage implements CdpPageLease {
      * session. Settle cleans up all listeners and timers.
      */
     beginJsonCapture(options: NetworkCaptureOptions): Promise<JsonCaptureHandle>;
+    deleteCookies(name: string, domain?: string): Promise<void>;
     close(): Promise<void>;
 }

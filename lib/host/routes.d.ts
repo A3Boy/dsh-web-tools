@@ -78,6 +78,12 @@ export interface RouteDeps {
     forgetSource?: (sourceId: string) => void;
     /** Injectable DNS resolver for testing. */
     lookupAll?: LookupAllFn;
+    /** Recent specialized social searches for instant picker rendering. */
+    getRecentSocialSearches?: () => Array<{
+        query: string;
+        time: number;
+        items: import("./sources/types.ts").SourceItem[];
+    }>;
 }
 /**
  * The real connection peer address.

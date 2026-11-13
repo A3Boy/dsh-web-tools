@@ -33,3 +33,16 @@ export interface XhsApiSearchResult {
     hasMore?: boolean;
 }
 export declare function xhsSearchNotesViaApi(options: XhsApiSearchOptions): Promise<XhsApiSearchResult>;
+export interface XhsApiDetailOptions {
+    noteId: string;
+    xsecToken?: string;
+    xsecSource?: string;
+}
+export interface XhsApiDetailResult {
+    ok: boolean;
+    status?: number;
+    error?: string;
+    code?: number;
+    note?: Record<string, any>;
+}
+export declare function xhsGetNoteDetailViaApi(options: XhsApiDetailOptions): Promise<XhsApiDetailResult>;

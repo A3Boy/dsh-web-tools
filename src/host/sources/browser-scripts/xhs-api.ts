@@ -117,3 +117,104 @@ export async function xhsSearchNotesViaApi(options: XhsApiSearchOptions): Promis
     hasMore: data?.has_more === true,
   };
 }
+
+export interface XhsApiDetailOptions {
+  noteId: string;
+  xsecToken?: string;
+  xsecSource?: string;
+}
+
+export interface XhsApiDetailResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  code?: number;
+  note?: Record<string, any>;
+}
+
+export async function xhsGetNoteDetailViaApi(options: XhsApiDetailOptions): Promise<XhsApiDetailResult> {
+  const w = window as any;
+  let signer = w._webmsxyw;
+  for (let i = 0; typeof signer !== "function" && i < 25; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    signer = (window as any)._webmsxyw;
+  }
+  if (typeof signer !== "function") {
+    return { ok: false, error: "signer-unavailable" };
+  }
+
+  const uri = "/api/sns/web/v1/feed";
+  const payload: Record<string, any> = {
+    source_note_id: options.noteId,
+    image_formats: ["jpg", "webp", "avif"],
+    extra: { ab_impression_id: "" },
+    xsec_source: options.xsecSource || "pc_search",
+  };
+  if (options.xsecToken) {
+    payload.xsec_token = options.xsecToken;
+  }
+
+  let signed: any;
+  try {
+    signed = signer(uri, payload);
+  } catch {
+    return { ok: false, error: "sign-failed" };
+  }
+  const xs = signed?.["X-s"] ?? signed?.xs;
+  const xt = signed?.["X-t"] ?? signed?.xt;
+  if (!xs || xt === undefined) {
+    return { ok: false, error: "sign-failed" };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(uri, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/json;charset=UTF-8",
+        "x-s": String(xs),
+        "x-t": String(xt),
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return { ok: false, error: "network" };
+  }
+
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: "http-error" };
+  }
+
+  let json: any;
+  try {
+    json = await response.json();
+  } catch {
+    return { ok: false, status: response.status, error: "bad-payload" };
+  }
+
+  const data = json?.data ?? json;
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const target = items.find((it: any) => {
+    const card = it?.note_card ?? it;
+    const id = card?.note_id ?? card?.noteId ?? card?.id ?? it?.id;
+    return id === options.noteId;
+  }) || items[0];
+
+  const noteCard = target?.note_card ?? target;
+  if (!noteCard || !target) {
+    return {
+      ok: false,
+      status: response.status,
+      code: json?.code,
+      error: json?.msg || "empty-data",
+    };
+  }
+
+  return {
+    ok: json?.success !== false,
+    status: response.status,
+    code: json?.code,
+    note: noteCard,
+  };
+}

@@ -9,6 +9,11 @@
 import type { SourceItem, SourceFetchOutcome, SourceDegradation, SourceSearchOutcome } from "./types.ts";
 import { type WebFetchResponse } from "../registry.ts";
 export declare function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome): WebFetchResponse;
+export declare function formatUnavailablePlatformResponse(url: string, platform: string, errorCode: string | undefined, detail: string): WebFetchResponse;
+export declare function executeRoutedFetchWithRecovery(url: string, fetchFn: () => Promise<SourceFetchOutcome>, recoveryContext?: {
+    lookupCache?: (url: string) => SourceItem | undefined;
+    searchFallback?: (url: string) => Promise<string | undefined>;
+}): Promise<WebFetchResponse>;
 /**
  * One-line, model-facing explanation of a degraded platform search.
  * When target is "mcp", provides the CLI login command rather than pointing to DSH settings.

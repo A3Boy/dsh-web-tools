@@ -120,6 +120,24 @@ export function apply(ctx: any) {
     ),
   );
 
+  class TurnTailErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+    state: { error: Error | null } = { error: null };
+    static getDerivedStateFromError(error: Error) {
+      return { error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+      console.error("[dsh-web-tools] TurnTailPicker error:", error, info);
+    }
+    render() {
+      if (this.state.error !== null) return null;
+      return this.props.children;
+    }
+  }
+
+  function TurnTailWithBoundary(props: any) {
+    return React.createElement(TurnTailErrorBoundary, null, React.createElement(TurnTailPicker, props));
+  }
+
   // The human face of a platform search: a post picker instead of markdown.
   // Mounted in the Turn tail, NOT at the `web_search` tool key: that key is
   // already held by the shell's own row and a plugin registration merely
@@ -134,7 +152,7 @@ export function apply(ctx: any) {
         order: 10,
         label: "帖子推荐",
       },
-      TurnTailPicker,
+      TurnTailWithBoundary,
     ),
   );
 }

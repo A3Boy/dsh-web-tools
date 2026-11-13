@@ -387,3 +387,39 @@ test("XHS direct-URL channel: builds the search URL and reads captured payloads"
   assert.deepEqual(extractXhsNotesFromSearchPayload({}), []);
   assert.deepEqual(extractXhsNotesFromSearchPayload(null), []);
 });
+
+test("XHS search sorting: extracts sort hints, cleans query, and configures search URL", async () => {
+  const { extractSearchHints, normalizeSearchSort } = await import("../src/host/search-hints.ts");
+
+  assert.equal(normalizeSearchSort("likes"), "popularity_descending");
+  assert.equal(normalizeSearchSort("time"), "time_descending");
+  assert.equal(normalizeSearchSort("comments"), "comment_descending");
+  assert.equal(normalizeSearchSort("collects"), "collect_descending");
+  assert.equal(normalizeSearchSort("general"), "general");
+
+  const hLikes = extractSearchHints("小红书 Python 最多点赞");
+  assert.equal(hLikes.platform, "xiaohongshu");
+  assert.equal(hLikes.sort, "popularity_descending");
+  assert.equal(hLikes.cleanQuery, "Python");
+
+  const hTime = extractSearchHints("小红书 DeepSeek 最新");
+  assert.equal(hTime.platform, "xiaohongshu");
+  assert.equal(hTime.sort, "time_descending");
+  assert.equal(hTime.cleanQuery, "DeepSeek");
+
+  const hComments = extractSearchHints("小红书 前端 按评论量排序");
+  assert.equal(hComments.platform, "xiaohongshu");
+  assert.equal(hComments.sort, "comment_descending");
+  assert.equal(hComments.cleanQuery, "前端");
+
+  const hCollects = extractSearchHints("小红书 摄影 最多收藏");
+  assert.equal(hCollects.platform, "xiaohongshu");
+  assert.equal(hCollects.sort, "collect_descending");
+  assert.equal(hCollects.cleanQuery, "摄影");
+
+  const urlPopularity = buildXhsSearchUrl("Python", { hints: hLikes });
+  assert.ok(urlPopularity.includes("sort=popularity_descending"));
+
+  const urlComments = buildXhsSearchUrl("前端", { hints: hComments });
+  assert.ok(urlComments.includes("sort=comment_descending"));
+});

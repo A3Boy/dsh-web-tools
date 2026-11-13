@@ -16,7 +16,7 @@ export function detectXhsPageState(): XhsPageState {
   if (
     visible(document.querySelector(".security-verify, #security-verify")) ||
     /captcha|security.?verification/i.test(href) ||
-    /安全验证|安全限制|IP存在风险|访问受限|异常访问|操作频繁/.test(`${document.title}\n${bodyText}`)
+    /安全验证|安全限制|IP存在风险|访问受限|异常访问|操作频繁|安全原因|无法访问|网络异常|风控/.test(`${document.title}\n${bodyText}`)
   ) {
     return "security-verification";
   }

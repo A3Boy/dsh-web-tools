@@ -24,7 +24,7 @@ export class CdpPage implements CdpPageLease {
     this.validateNavigation = validateNavigation;
   }
 
-  async navigate(url: string, signal?: AbortSignal, timeoutMs = 15000): Promise<void> {
+  async navigate(url: string, signal?: AbortSignal, timeoutMs = 15000, referrer?: string): Promise<void> {
     this.validateNavigation?.(url);
 
     await this.client.send("Page.enable", {}, this.sessionId, signal);
@@ -48,7 +48,13 @@ export class CdpPage implements CdpPageLease {
     } catch {}
 
     // Send the navigation command
-    await this.client.send("Page.navigate", { url }, this.sessionId, signal, timeoutMs);
+    await this.client.send(
+      "Page.navigate",
+      { url, ...(referrer ? { referrer } : {}) },
+      this.sessionId,
+      signal,
+      timeoutMs,
+    );
 
     // Poll for a usable readyState (handles SPA that never fires loadEventFired)
     const start = Date.now();
@@ -295,6 +301,18 @@ export class CdpPage implements CdpPageLease {
         }),
       cancel: () => settle({ state: "timeout" }),
     };
+  }
+
+  async deleteCookies(name: string, domain?: string): Promise<void> {
+    try {
+      await this.client.send(
+        "Network.deleteCookies",
+        { name, ...(domain ? { domain } : {}) },
+        this.sessionId,
+      );
+    } catch {
+      // ignore
+    }
   }
 
   async close(): Promise<void> {

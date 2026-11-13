@@ -55,12 +55,18 @@ import {
 import type { CustomProviderConfig, CustomSourceErrorCode, CustomSourceTestView, CustomProviderDraft } from "../shared/custom-provider-types.ts";
 
 import { SpecializedSourceRegistry } from "./sources/registry.ts";
-import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
+import {
+  XiaohongshuSource,
+  extractNoteIdFromUrl,
+  getCachedNoteItem,
+  rememberGlobalNote,
+} from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
 import { extractSearchHints } from "./search-hints.ts";
 import {
   toRoutedFetchResponse,
+  executeRoutedFetchWithRecovery,
   describeDegradation,
   formatPlatformSnippet,
   toRoutedSearchResponse,
@@ -84,7 +90,13 @@ const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
 
-export { toRoutedFetchResponse, describeDegradation, formatPlatformSnippet, toRoutedSearchResponse };
+export {
+  toRoutedFetchResponse,
+  executeRoutedFetchWithRecovery,
+  describeDegradation,
+  formatPlatformSnippet,
+  toRoutedSearchResponse,
+};
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -310,6 +322,12 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   });
 
   // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
+  const recentSocialSearches: Array<{
+    query: string;
+    time: number;
+    items: import("./sources/types.ts").SourceItem[];
+  }> = [];
+
   const routedSearchProvider = {
     id: PROVIDER_ID,
     available: () => generalSearchProvider.available(),
@@ -322,6 +340,19 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       if (outcome.error) {
         throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
       }
+      if (outcome.items && outcome.items.some((item) => item.platform !== "general")) {
+        recentSocialSearches.unshift({
+          query: request.query,
+          time: Date.now(),
+          items: outcome.items,
+        });
+        for (const item of outcome.items) {
+          rememberGlobalNote(item);
+        }
+        if (recentSocialSearches.length > 20) {
+          recentSocialSearches.pop();
+        }
+      }
       return toRoutedSearchResponse(outcome, { target: "dsh" });
     },
   };
@@ -332,8 +363,38 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     id: `${PROVIDER_ID}-fetch`,
     available: () => generalFetchProvider.available(),
     fetch: async (request: { url: string }, signal?: AbortSignal) => {
-      const outcome = await sourceRegistry.fetch(request.url, signal);
-      return toRoutedFetchResponse(request.url, outcome);
+      return executeRoutedFetchWithRecovery(
+        request.url,
+        () => sourceRegistry.fetch(request.url, signal),
+        {
+          lookupCache: (url) => {
+            const noteId = extractNoteIdFromUrl(url);
+            if (noteId) {
+              const item = getCachedNoteItem(noteId);
+              if (item) return item;
+            }
+            if (recentSocialSearches.length > 0) {
+              for (const entry of recentSocialSearches) {
+                const match = entry.items.find(
+                  (it) => it.url === url || (noteId && (it.id === noteId || it.url.includes(noteId))),
+                );
+                if (match) return match;
+              }
+            }
+            return undefined;
+          },
+          searchFallback: async (url) => {
+            const noteId = extractNoteIdFromUrl(url);
+            if (!noteId) return undefined;
+            const res = await routedSearchProvider.search(
+              { query: `site:xiaohongshu.com ${noteId}`, maxResults: 1 },
+              signal,
+            );
+            const found = res.sources?.[0];
+            return found?.snippet || found?.title;
+          },
+        },
+      );
     },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
@@ -902,6 +963,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         testSource,
         revokeSourceCredentials: (sourceId) => revokeSourceCredentials(sourceId),
         forgetSource: (sourceId) => forgetSource(sourceId),
+        getRecentSocialSearches: () => recentSocialSearches,
       }),
     "dsh-web-tools: /web-tools/api routes",
   );

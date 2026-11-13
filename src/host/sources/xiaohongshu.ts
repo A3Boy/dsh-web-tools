@@ -43,6 +43,30 @@ export function parseXhsCount(value: unknown): number | undefined {
   return undefined;
 }
 
+const globalNoteUrlCache = new Map<string, string>();
+const globalNoteItemCache = new Map<string, SourceItem>();
+
+export function rememberGlobalNote(item: SourceItem): void {
+  if (!item || !item.id) return;
+  globalNoteItemCache.set(item.id, item);
+  if (item.url && hasXhsAccessToken(item.url)) {
+    globalNoteUrlCache.set(item.id, item.url);
+  }
+}
+
+export function getCachedNoteItem(id: string): SourceItem | undefined {
+  return globalNoteItemCache.get(id);
+}
+
+export function getCachedNoteUrl(id: string): string | undefined {
+  return globalNoteUrlCache.get(id);
+}
+
+export function clearGlobalNoteCache(): void {
+  globalNoteUrlCache.clear();
+  globalNoteItemCache.clear();
+}
+
 /**
  * Map one `/search/notes` item into a SourceItem.
  *
@@ -79,11 +103,12 @@ export function mapXhsApiNote(note: Record<string, any>): SourceItem | null {
   const cover = card?.cover ?? {};
   const userId = user?.user_id ?? user?.userId;
 
-  return {
+  const item: SourceItem = {
     id,
     title,
     url,
     snippet: desc ? desc.slice(0, 200) : undefined,
+    text: desc || title,
     author: user?.nickname
       ? {
           name: String(user.nickname),
@@ -96,15 +121,30 @@ export function mapXhsApiNote(note: Record<string, any>): SourceItem | null {
     coverImage: resolveXhsOriginalImage(cover?.url_default ?? cover?.urlDefault ?? cover?.url_pre ?? cover?.urlPre),
     platform: "xiaohongshu",
   };
+  rememberGlobalNote(item);
+  return item;
 }
+
+export const XHS_SORT_TAG_MAP: Record<string, string> = {
+  general: "综合",
+  time_descending: "最新",
+  popularity_descending: "最多点赞",
+  comment_descending: "最多评论",
+  collect_descending: "最多收藏",
+};
 
 /** Build the site's own search-results URL (the page then fetches the JSON). */
 export function buildXhsSearchUrl(query: string, req?: SourceSearchRequest): string {
   const params = new URLSearchParams();
   params.set("keyword", query);
   params.set("source", "web_search_result_notes");
-  const preset = req?.hints?.freshness?.preset;
-  if (preset === "day" || preset === "week") params.set("sort", "time_descending");
+  const sort = req?.hints?.sort;
+  if (sort && sort !== "general") {
+    params.set("sort", sort);
+  } else {
+    const preset = req?.hints?.freshness?.preset;
+    if (preset === "day" || preset === "week") params.set("sort", "time_descending");
+  }
   return `https://www.xiaohongshu.com/search_result?${params.toString()}`;
 }
 
@@ -224,7 +264,7 @@ export class XiaohongshuSource implements SpecializedSource {
     let capture: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
     try {
       capture = await page.beginJsonCapture({
-        urlIncludes: "/api/sns/web/v1/search/notes",
+        urlIncludes: "/search/notes",
         timeoutMs: 8000,
         signal,
       });
@@ -240,50 +280,82 @@ export class XiaohongshuSource implements SpecializedSource {
       const addItems = (batch: SourceItem[]) => {
         for (const item of batch) if (!collected.has(item.id)) collected.set(item.id, item);
       };
+
+      const sort = req?.hints?.sort;
+      const targetTag = sort && sort !== "general" ? XHS_SORT_TAG_MAP[sort] : undefined;
+
       const finish = (): SourceSearchOutcome => {
-        const items = Array.from(collected.values()).slice(0, maxResults);
+        let items = Array.from(collected.values());
+        if (sort === "popularity_descending") {
+          items.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
+        } else if (sort === "comment_descending") {
+          items.sort((a, b) => (b.replies ?? 0) - (a.replies ?? 0));
+        } else if (sort === "collect_descending") {
+          items.sort((a, b) => (b.collects ?? 0) - (a.collects ?? 0));
+        }
+        items = items.slice(0, maxResults);
         for (const item of items) this.rememberNoteUrl(item.id, item.url);
         return { items, retrievalMode: "native-browser" };
       };
 
-      // SSR FIRST. Opening /search_result directly usually server-renders the
-      // first screen: the notes are already in the DOM / __INITIAL_STATE__ and
-      // the page never fires /search/notes until the user scrolls.
-      const readyBy = Date.now() + 3000;
-      while (Date.now() < readyBy && !signal?.aborted) {
-        const early = await this.readRenderedNotes(page, maxResults, signal);
-        if (early.length > 0) {
-          addItems(early);
-          break;
+      if (targetTag) {
+        // When explicit sort is requested, trigger the filter tag so the page issues
+        // the signed /search/notes request with sort_type filters applied.
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await page.evaluate(
+          `((tagName) => {
+            const panel = document.querySelector(".filter-panel, .filter-container");
+            if (!panel) {
+              const filterBtn = document.querySelector(".filter") || document.querySelector(".filter-icon");
+              if (filterBtn) filterBtn.click();
+            }
+            const allTags = Array.from(document.querySelectorAll(".filter-panel .tags, .filter-container .tags"));
+            const target = allTags.find(t => t.textContent.trim() === tagName);
+            if (target) target.click();
+          })(${JSON.stringify(targetTag)})`,
+          signal,
+        ).catch(() => {});
+      } else {
+        // SSR FIRST for general sort: the notes are already in DOM/__INITIAL_STATE__.
+        const readyBy = Date.now() + 3000;
+        while (Date.now() < readyBy && !signal?.aborted) {
+          const early = await this.readRenderedNotes(page, maxResults, signal);
+          if (early.length > 0) {
+            addItems(early);
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        await new Promise((resolve) => setTimeout(resolve, 250));
       }
 
-      // First API page (only wait when the page rendered nothing by itself).
+      // First API page (waits for captured response if tag clicked or SSR was empty).
       if (collected.size === 0) {
         const outcome = await capture.wait();
-        if (!outcome || outcome.state !== "captured") {
+        if (outcome && outcome.state === "captured" && outcome.json) {
+          addNotes(extractXhsNotesFromSearchPayload(outcome.json));
+        } else if (!targetTag) {
           const diag = await readXhsPageDiagnostics(page, signal);
           return { outcome: null, reason: `xhs-url: ${outcome?.state ?? "no-response"} [${diag}]` };
         }
-        if (typeof outcome.status === "number" && (outcome.status < 200 || outcome.status >= 300)) {
-          return { outcome: null, reason: `xhs-url: status=${outcome.status}` };
-        }
-        addNotes(extractXhsNotesFromSearchPayload(outcome.json));
+      }
+
+      // Fallback to rendered notes if capture didn't produce items
+      if (collected.size === 0) {
+        const fallbackItems = await this.readRenderedNotes(page, maxResults, signal);
+        addItems(fallbackItems);
       }
 
       if (collected.size >= maxResults) return { outcome: finish() };
 
       // DEEPER PAGES: scroll so the SITE issues its own signed next-page
-      // request, and capture that response. Forging page=2 ourselves returns
-      // 500 (missing x-s-common), so this is the only free route.
+      // request, and capture that response.
       let stagnant = 0;
       for (let pageNo = 0; pageNo < 3 && collected.size < maxResults && !signal?.aborted; pageNo++) {
         const before = collected.size;
         let next: Awaited<ReturnType<CdpPageLease["beginJsonCapture"]>> | undefined;
         try {
           next = await page.beginJsonCapture({
-            urlIncludes: "/api/sns/web/v1/search/notes",
+            urlIncludes: "/search/notes",
             timeoutMs: 6000,
             signal,
           });
@@ -391,9 +463,11 @@ export class XiaohongshuSource implements SpecializedSource {
       const hints = req?.hints;
       // "最新/本周" → chronological; otherwise the site's own relevance order.
       const sort =
-        hints?.freshness?.preset === "day" || hints?.freshness?.preset === "week"
-          ? "time_descending"
-          : "general";
+        hints?.sort && hints.sort !== "general"
+          ? hints.sort
+          : hints?.freshness?.preset === "day" || hints?.freshness?.preset === "week"
+            ? "time_descending"
+            : "general";
       const rawQuery = hints?.rawQuery ?? query;
       const noteType = /视频|video/i.test(rawQuery) ? 1 : /图文|图片|image/i.test(rawQuery) ? 2 : 0;
 
@@ -474,7 +548,7 @@ export class XiaohongshuSource implements SpecializedSource {
 
       // FALLBACK: drive the search UI (survives a signer rename or a
       // risk-control payload on the JSON channel).
-      const navigation = await navigateXhsSearchViaUi(page, query, signal);
+      const navigation = await navigateXhsSearchViaUi(page, query, signal, req?.hints?.sort);
       if (navigation.state !== "ready") {
         const code = navigation.state === "signed-out"
           ? "auth-expired"
@@ -570,7 +644,16 @@ export class XiaohongshuSource implements SpecializedSource {
         await page.scrollBy(700, signal);
       }
 
-      const items = Array.from(collectedMap.values()).slice(0, maxResults);
+      let items = Array.from(collectedMap.values());
+      const sort = req?.hints?.sort;
+      if (sort === "popularity_descending") {
+        items.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
+      } else if (sort === "comment_descending") {
+        items.sort((a, b) => (b.replies ?? 0) - (a.replies ?? 0));
+      } else if (sort === "collect_descending") {
+        items.sort((a, b) => (b.collects ?? 0) - (a.collects ?? 0));
+      }
+      items = items.slice(0, maxResults);
       for (const item of items) this.rememberNoteUrl(item.id, item.url);
       // Keep the fast-path failure reason: without it a 20s UI search looks
       // identical to one where the API channel was never attempted.
@@ -617,9 +700,11 @@ export class XiaohongshuSource implements SpecializedSource {
         },
       };
     }
-    const navigationUrl = hasXhsAccessToken(url)
+    const cachedUrl = this.noteUrlCache.get(noteId) || getCachedNoteUrl(noteId);
+    let navigationUrl = hasXhsAccessToken(url)
       ? url
-      : this.noteUrlCache.get(noteId) || url;
+      : cachedUrl || url;
+    let searchFallbackItem: SourceItem | undefined = getCachedNoteItem(noteId);
 
     const isAuth = await verifyPlatformSession(this.runtime, "xiaohongshu", signal, "interactive");
     if (!isAuth) {
@@ -643,16 +728,83 @@ export class XiaohongshuSource implements SpecializedSource {
         timeoutMs: 15000,
         signal,
       });
-      await page.navigate(navigationUrl, signal);
+
+      // Purge any stale WAF poison cookies so the session is clean
+      await page.deleteCookies?.("sec_poison_id", ".xiaohongshu.com");
+      await page.deleteCookies?.("sec_poison_id", "www.xiaohongshu.com");
+      await page.deleteCookies?.("acw_tc", ".xiaohongshu.com");
+      await page.deleteCookies?.("acw_tc", "www.xiaohongshu.com");
+
+      // If we don't have a valid xsec_token for this note and don't have it in cache,
+      // search for the note ID inside Xiaohongshu to resolve dynamic xsec_token
+      if (!hasXhsAccessToken(navigationUrl) && !searchFallbackItem) {
+        try {
+          await page.navigate("https://www.xiaohongshu.com/explore", signal, 8000);
+          const searchRes = await page.call(
+            xhsSearchNotesViaApi,
+            [{ keyword: noteId, pageSize: 5 }],
+            signal,
+          );
+          if (searchRes && searchRes.ok && Array.isArray(searchRes.items) && searchRes.items.length > 0) {
+            const matched = searchRes.items.find((item: any) => {
+              const card = item?.note_card ?? item;
+              const id = card?.note_id ?? card?.noteId ?? card?.id ?? item?.id;
+              return id === noteId;
+            }) || searchRes.items[0];
+
+            if (matched) {
+              const mapped = mapXhsApiNote(matched);
+              if (mapped) {
+                searchFallbackItem = mapped;
+                rememberGlobalNote(mapped);
+                if (hasXhsAccessToken(mapped.url)) {
+                  navigationUrl = mapped.url;
+                  this.rememberNoteUrl(noteId, navigationUrl);
+                }
+              }
+            }
+          }
+        } catch {
+          // Pre-search resolution is best effort
+        }
+      }
+
+      await page.navigate(navigationUrl, signal, 15000, "https://www.xiaohongshu.com/explore");
       await page.waitForLoad(signal);
 
       const finalUrl = await page.evaluate<string>("location.href", signal);
       const finalNoteId = extractNoteIdFromUrl(finalUrl);
       if (finalNoteId !== noteId) {
+        if (searchFallbackItem) {
+          searchFallbackItem.text = withMediaSection(
+            searchFallbackItem.text || searchFallbackItem.snippet || searchFallbackItem.title,
+            searchFallbackItem,
+          );
+          return {
+            item: searchFallbackItem,
+            retrievalMode: "native-browser",
+          };
+        }
+
+        let errorDetail = "";
+        if (finalUrl.includes("/website-login/error")) {
+          try {
+            const parsed = new URL(finalUrl);
+            const errCode = parsed.searchParams.get("error_code");
+            const errMsg = parsed.searchParams.get("error_msg");
+            if (errCode === "300031" || errMsg?.includes("当前笔记暂时无法浏览")) {
+              errorDetail = ` (小红书提示 300031: 当前笔记暂时无法浏览，可能已被作者删除、设为私密或缺少有效 xsec_token)`;
+            } else if (errCode === "300017") {
+              errorDetail = ` (小红书提示 300017: 访问链接异常，缺少有效安全凭证 xsec_token)`;
+            } else if (errCode) {
+              errorDetail = ` (小红书拦截 ${errCode}: ${errMsg || "安全限制"})`;
+            }
+          } catch {}
+        }
         return {
           error: {
             code: "blocked",
-            message: `Xiaohongshu detail navigation redirected away from target note ${noteId}`,
+            message: `Xiaohongshu detail navigation redirected away from target note ${noteId}${errorDetail}`,
             retryable: false,
           },
         };
@@ -710,6 +862,8 @@ export class XiaohongshuSource implements SpecializedSource {
       }
 
       if (detail.isBlocked) {
+        await page.deleteCookies?.("sec_poison_id", ".xiaohongshu.com");
+        await page.deleteCookies?.("sec_poison_id", "www.xiaohongshu.com");
         return {
           error: {
             code: "blocked",
@@ -898,9 +1052,12 @@ export class XiaohongshuSource implements SpecializedSource {
     }
   }
 
-  private rememberNoteUrl(noteId: string, url: string): void {    if (!noteId || !hasXhsAccessToken(url)) return;
+  private rememberNoteUrl(noteId: string, url: string): void {
+    if (!noteId || !hasXhsAccessToken(url)) return;
     this.noteUrlCache.delete(noteId);
     this.noteUrlCache.set(noteId, url);
+    globalNoteUrlCache.delete(noteId);
+    globalNoteUrlCache.set(noteId, url);
     while (this.noteUrlCache.size > 100) {
       const oldest = this.noteUrlCache.keys().next().value;
       if (!oldest) break;
@@ -909,7 +1066,7 @@ export class XiaohongshuSource implements SpecializedSource {
   }
 }
 
-function hasXhsAccessToken(url: string): boolean {
+export function hasXhsAccessToken(url: string): boolean {
   try {
     return Boolean(new URL(url).searchParams.get("xsec_token"));
   } catch {
@@ -917,7 +1074,7 @@ function hasXhsAccessToken(url: string): boolean {
   }
 }
 
-function extractNoteIdFromUrl(url: string): string | null {
+export function extractNoteIdFromUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
     // /explore/<noteId>, /search_result/<noteId>, or shared /discovery/item/<noteId>

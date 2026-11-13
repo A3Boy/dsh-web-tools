@@ -283,11 +283,11 @@ export function extractXhsNoteDetail(): {
   const descEl = document.querySelector("#detail-desc") || document.querySelector(".desc") || document.querySelector(".content");
   const text = descEl ? (descEl.textContent || "").trim() : undefined;
 
-  const restrictionCopy = `${document.title || ""}\n${title || ""}\n${text || ""}`;
+  const restrictionCopy = `${document.title || ""}\n${title || ""}\n${text || ""}\n${document.body?.innerText || ""}`;
   if (
     isSecurity ||
     title === "安全限制" ||
-    /IP存在风险|访问受限|异常访问|操作频繁/.test(restrictionCopy)
+    /IP存在风险|访问受限|异常访问|操作频繁|安全原因|无法访问|网络异常|风控/.test(restrictionCopy)
   ) {
     return { isBlocked: true };
   }

@@ -15,6 +15,7 @@
  */
 export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
 export type PlatformHint = "xiaohongshu" | "x";
+export type SearchSort = "general" | "time_descending" | "popularity_descending" | "comment_descending" | "collect_descending";
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 export interface FreshnessHint {
     preset?: FreshnessPreset;
@@ -43,6 +44,7 @@ export interface SearchHints {
     /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
     platformExplicit?: boolean;
     freshness?: FreshnessHint;
+    sort?: SearchSort;
     domains?: DomainHints;
     locale?: LocaleHint;
     /** Cleaned query string with explicit operators (e.g. site:) removed */
@@ -58,6 +60,10 @@ export declare function formatDateYMD(d: Date): string;
  * Calculate an after_date string from a preset relative to a reference date.
  */
 export declare function calculateAfterDate(preset: FreshnessPreset, now?: Date): string;
+/**
+ * Normalize an arbitrary sort string into canonical SearchSort.
+ */
+export declare function normalizeSearchSort(raw: unknown): SearchSort | undefined;
 /**
  * Strip conversational tails that hurt IN-PLATFORM keyword search.
  *

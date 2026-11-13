@@ -64,7 +64,8 @@ export interface CdpPageLease {
     sessionId: string;
     /** Bring the tab to the foreground (un-throttles a background renderer). */
     bringToFront?(signal?: AbortSignal): Promise<void>;
-    navigate(url: string, signal?: AbortSignal): Promise<void>;
+    navigate(url: string, signal?: AbortSignal, timeoutMs?: number, referrer?: string): Promise<void>;
+    deleteCookies?(name: string, domain?: string): Promise<void>;
     waitForSelector(selector: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
     waitForLoad(signal?: AbortSignal): Promise<void>;
     evaluate<T>(expression: string, signal?: AbortSignal): Promise<T>;
