@@ -5,6 +5,21 @@ All notable changes to `dsh-web-tools` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-13
+
+### Added
+- **Focused Page Reading (`web_read`)**:
+  - Deterministic BM25 passage ranking and section outline extraction for web pages, returning only relevant excerpts and high-level structure instead of dumping entire pages into LLM context.
+  - Section-level progressive reading via `section` parameter, reusing the 5-minute cached fetch provider and SSRF defense.
+  - Page identity continuity verification via 8-character Sha256 `contentId`, preventing section drift if the target page content updates between turns.
+  - Registered as a standard DSH host tool (`ctx.tools.register`) with full `output.schema` ValueSchemaSpec definition.
+  - Integrated into Search Mode policy runtime: automatically gated and restricted alongside `web_search` and `web_fetch` when search mode is switched OFF.
+  - Exposed as standard tool in standalone stdio MCP server (`dsh-web-tools-mcp`) with `readOnlyHint` and `openWorldHint` annotations.
+  - Configurable `webReadEnabled` setting (default `true`) with English and Simplified Chinese localizations.
+- **Search Sorting & Filtering Across Surfaces**:
+  - Added multi-criteria search sorting (`time`, `likes`, `comments`, `collects`) across SearchHints compiler, Xiaohongshu platform queries, and MCP server `web_search`.
+  - Prioritized rich summaries over short snippets in MCP search output with direct answers surfaced upfront.
+
 ## [0.4.0] - 2026-11-09
 
 ### Added

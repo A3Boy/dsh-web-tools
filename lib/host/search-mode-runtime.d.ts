@@ -151,7 +151,7 @@ export declare function createSearchModeMessages(createUserMessage: (input: unkn
  * @returns undefined (no injection) outside step 1 or without a turn state.
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
-/** The two model-facing web tools this plugin owns the policy for. */
+/** The model-facing web tools this plugin owns the policy for. */
 export declare const WEB_TOOL_NAMES: readonly string[];
 /** Denial reason shown to the model when it calls a web tool while OFF. */
 export declare const WEB_DISABLED_DENIAL = "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";

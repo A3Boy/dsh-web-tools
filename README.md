@@ -88,6 +88,7 @@ Single        Hedged          Fused             Authentic Posts / Comments Tree
 - **6 Intelligent Routing Policies**: Supports **Ordered**, **Round-Robin**, **Random**, plus metrics-driven **Adaptive** (ranked by 24h success rate & latency), **Fastest**, and **Cheapest** (cost tier prioritization).
 - **Social Platform Discovery (Xiaohongshu & Twitter / X)**: Direct connections via dedicated local browser profiles with zero extensions and zero heavy bundled binaries. Safely parses authentic posts, images, and full nested comment trees.
 - **Long-Document Structured Outline (TOC)**: Automatically analyzes Markdown headings for documents exceeding 8,000 characters and prepends an interactive Table of Contents outline to help LLMs navigate long context efficiently.
+- **Focused Page Reading (`web_read`)**: Deterministic BM25 passage ranking and section outline extraction for web pages. Returns only high-relevance passages and structural outlines within a strict character budget, with `section` and `contentId` progressive reading to navigate long articles without context bloat.
 - **Custom Search Providers & One-Click Presets**: Declarative integration for in-house knowledge bases or arbitrary REST APIs, with ready-to-use presets for Serper, SearXNG, Elasticsearch/OpenSearch, and Tavily-compatible gateways.
 - **Enterprise-Grade Outbound Protection (SSRF Defense)**: Safe public egress, explicit confirmation prompts for private networks, and transport-level hard blocking of cloud metadata (169.254 / IMDSv6) and link-local ranges.
 - **Multi-Level Fault Tolerance**: Multi-API-key pooling, 429 cooldown windows, circuit breakers, short-lived result caching, and in-flight request deduplication.
@@ -158,7 +159,35 @@ npm install && npm run build
 node bin/mcp-server.js
 ```
 
-Exposes standard `web_search` and `web_fetch` tools. Credentials are read from standard environment variables (`EXA_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, etc.), and routing policies can be configured via `WEB_TOOLS_ROUTING_POLICY`.
+Exposes standard `web_search`, `web_fetch`, and `web_read` tools. Credentials are read from standard environment variables (`EXA_API_KEY`, `TAVILY_API_KEY`, `SERPER_API_KEY`, etc.), and routing policies can be configured via `WEB_TOOLS_ROUTING_POLICY`.
+
+---
+
+## Focused Page Reading (`web_read`)
+
+DSH's built-in `web_fetch` injects an entire web page (up to 200,000 characters) directly into model context. For long documentation, research papers, or deep technical articles, this risks saturating the context window and diluting focus.
+
+**`web_read`** provides focused reading through deterministic, LLM-free BM25 passage ranking:
+
+- **Deterministic BM25 Relevance**: Ranks Markdown sections against an optional `focus` query using CJK bigrams and Latin tokens. Only the top-scoring excerpts and a structural outline are returned within the budgeted character limit.
+- **Progressive Continuation**: Models can inspect the returned outline and progressively read any section in full by passing `section: "<id>"` (e.g. `section: "s3"`).
+- **Drift Prevention (`contentId`)**: Returns an 8-character Sha256 `contentId` for the fetched content. When reading a section, passing `contentId` ensures that remote page edits or live updates won't quietly drift section identifiers.
+- **Shared Cache & Security**: Reuses the plugin's 5-minute fetch cache and enterprise SSRF defense, avoiding duplicate network calls when reading multiple sections.
+- **Search Mode Policy Integration**: Automatically hidden and blocked alongside `web_search` and `web_fetch` when search mode is switched to `off`.
+
+### Tool Parameters
+
+| Parameter | Type | Required | Description |
+| :--- | :---: | :---: | :--- |
+| `url` | string | **Yes** | Web page URL (`http://` or `https://`). |
+| `focus` | string | No | Specific question or keywords to rank passages. Omit to read from the start of the page. |
+| `maxChars` | number | No | Character budget (500–20,000, default: 6,000). |
+| `section` | string | No | Section id from a previous outline (e.g. `"s2"`) to read that section in full. |
+| `contentId` | string | No | Content identifier from a previous call to ensure continuity across dynamic page updates. |
+
+### Configuration
+
+- `webReadEnabled` (boolean, default: `true`): Enable or disable the `web_read` tool registration.
 
 ---
 

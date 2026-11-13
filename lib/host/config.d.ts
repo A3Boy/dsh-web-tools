@@ -34,6 +34,7 @@ export declare const DEFAULT_PROVIDER = "exa";
  */
 export declare const DEFAULT_SETTINGS: {
     enabled: boolean;
+    webReadEnabled: boolean;
     defaultProvider: string;
     providerAttemptTimeoutMs: number;
     fallbackOrder: string[];
@@ -53,6 +54,8 @@ export declare const DEFAULT_SETTINGS: {
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
     enabled: boolean;
+    /** Enable the focused page reading (web_read) tool. */
+    webReadEnabled?: boolean;
     defaultProvider: string;
     providerAttemptTimeoutMs: number;
     fallbackOrder: string[];
