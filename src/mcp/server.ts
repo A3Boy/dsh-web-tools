@@ -41,6 +41,7 @@ import {
   extractNoteIdFromUrl,
   getCachedNoteItem,
 } from "../host/sources/xiaohongshu.ts";
+import { readPage, renderWebRead, UnknownSectionError } from "../host/read/index.ts";
 
 /**
  * MCP protocol revisions this server understands, newest first. The server
@@ -413,6 +414,44 @@ export class McpServer {
                 required: ["url"],
               },
             },
+            {
+              name: "web_read",
+              description:
+                "Read a web page focused on a question. Returns only passages relevant to `focus` plus an outline, " +
+                "instead of pouring the entire page into context. Pass `section` from a previous outline to read one section in full.",
+              readOnlyHint: true,
+              openWorldHint: true,
+              annotations: {
+                readOnlyHint: true,
+                openWorldHint: true,
+              },
+              inputSchema: {
+                type: "object",
+                properties: {
+                  url: {
+                    type: "string",
+                    description: "The HTTP or HTTPS URL of the webpage to read.",
+                  },
+                  focus: {
+                    type: "string",
+                    description: "What you want to know or answer; used to rank passages. Omit to read from page start.",
+                  },
+                  maxChars: {
+                    type: "number",
+                    description: "Output character budget (500–20000, default: 6000).",
+                  },
+                  section: {
+                    type: "string",
+                    description: 'Section id from a previous outline, e.g. "s3".',
+                  },
+                  contentId: {
+                    type: "string",
+                    description: "Optional content identifier from a previous call to ensure section continuity.",
+                  },
+                },
+                required: ["url"],
+              },
+            },
           ],
         });
         break;
@@ -501,6 +540,76 @@ export class McpServer {
             this.sendResponse(id, {
               isError: true,
               content: [{ type: "text", text: `Fetch failed: ${err.message ?? String(err)}` }],
+            });
+          }
+          break;
+        }
+
+        if (name === "web_read") {
+          const url = String(args.url ?? "").trim();
+          if (!url) {
+            this.sendResponse(id, {
+              isError: true,
+              content: [{ type: "text", text: "Error: url parameter is required." }],
+            });
+            return;
+          }
+          if (!/^https?:\/\//i.test(url)) {
+            this.sendResponse(id, {
+              isError: true,
+              content: [{ type: "text", text: "Error: url must start with http:// or https://" }],
+            });
+            return;
+          }
+
+          const focus = typeof args.focus === "string" ? args.focus : undefined;
+          const maxChars = typeof args.maxChars === "number" ? args.maxChars : undefined;
+          const section = typeof args.section === "string" ? args.section : undefined;
+          const contentId = typeof args.contentId === "string" ? args.contentId : undefined;
+
+          try {
+            const res = await this.withDeadline((signal) => this.fetchProvider.fetch({ url }, signal));
+            const rawContent = res.body?.content || "";
+            if (!rawContent) {
+              this.sendResponse(id, {
+                isError: true,
+                content: [{ type: "text", text: "Fetch failed: no readable content extracted" }],
+              });
+              return;
+            }
+
+            const result = readPage(rawContent, { focus, maxChars, section });
+
+            if (contentId && result.contentId && contentId !== result.contentId) {
+              this.sendResponse(id, {
+                isError: true,
+                content: [
+                  {
+                    type: "text",
+                    text: `Error: page content has changed since previous call (expected contentId ${contentId}, found ${result.contentId}). Call web_read without section to get an updated outline.`,
+                  },
+                ],
+              });
+              return;
+            }
+
+            const rendered = renderWebRead({
+              url,
+              finalUrl: (res as { finalUrl?: string }).finalUrl ?? res.url,
+              focus,
+              result,
+              fetchTruncated: res.truncated ?? false,
+              backend: res.backend,
+            });
+
+            this.sendResponse(id, {
+              content: [{ type: "text", text: rendered }],
+            });
+          } catch (err: any) {
+            const message = err instanceof UnknownSectionError ? err.message : (err?.message ?? String(err));
+            this.sendResponse(id, {
+              isError: true,
+              content: [{ type: "text", text: `Read failed: ${message}` }],
             });
           }
           break;
