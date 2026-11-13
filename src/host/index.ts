@@ -410,7 +410,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   ctx.web.registerFetchProvider(routedFetchProvider as never);
 
   // Register focused page reading tool on host ctx.tools
-  registerWebRead(ctx, createFetchPage(routedFetchProvider));
+  if (readConfig().webReadEnabled !== false) {
+    registerWebRead(ctx, createFetchPage(routedFetchProvider));
+  }
 
   // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
   const nativeRuntime = createNativeBrowserRuntime();

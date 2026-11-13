@@ -2,5 +2,6 @@
   "meta": {
     "title": "网页搜索",
     "description": "多搜索源联网检索与网页抓取，支持自动降级。"
-  }
+  },
+  "webReadEnabled": "启用页面精读 (web_read) 工具"
 }

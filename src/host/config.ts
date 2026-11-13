@@ -40,6 +40,7 @@ export const DEFAULT_PROVIDER = "exa";
  */
 export const DEFAULT_SETTINGS = {
   enabled: true,
+  webReadEnabled: true,
   defaultProvider: DEFAULT_PROVIDER,
   // Per-attempt budget for ONE provider call (the DSH tool owns the overall
   // web_search timeout). Distinct from tool-level timeout: this is how long a
@@ -86,6 +87,8 @@ export const DEFAULT_SETTINGS = {
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
   enabled: boolean;
+  /** Enable the focused page reading (web_read) tool. */
+  webReadEnabled?: boolean;
   defaultProvider: string;
   providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
@@ -112,6 +115,7 @@ export interface WebToolsSettings {
 /** The schema object for settings registration (official z<T> annotation). */
 export const Config: z<WebToolsSettings> = z.object({
   enabled: z.boolean(),
+  webReadEnabled: z.boolean().default(true),
   defaultProvider: z.string(),
   providerAttemptTimeoutMs: z.number().step(1).min(1000).max(60000),
   fallbackOrder: z.array(z.string()),
