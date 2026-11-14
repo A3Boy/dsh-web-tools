@@ -80,6 +80,7 @@
     "prepack": "npm run build",
     "bundle": "tsdown",
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs test/*.smoke.mjs src/host/logic.test.ts",
+    "bench": "node --experimental-strip-types bench/run-eval.ts",
     "smoke": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs test/*.smoke.mjs src/host/logic.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
