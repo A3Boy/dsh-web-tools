@@ -82,13 +82,18 @@ function extractTitle(markdown: string): string | undefined {
   const h1 = /^ {0,3}#[ \t]+(.+?)[ \t]*#*[ \t]*$/m.exec(head);
   const raw = h1 ? h1[1] : head.split("\n").find((l) => l.trim().length > 0);
   if (!raw) return undefined;
-  const cleaned = raw
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\*{1,3}(.+?)\*{1,3}/g, "$1")
-    .replace(/[`*#>]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+
+  let text = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const codeTokens: string[] = [];
+  text = text.replace(/`([^`]+)`/g, (_, code) => {
+    const id = `\x00CODE_${codeTokens.length}\x00`;
+    codeTokens.push(code);
+    return id;
+  });
+  text = text.replace(/\*\*([^*]+?)\*\*/g, "$1");
+  text = text.replace(/(^|[^\w*])\*([^*]+?)\*(?=[^\w*]|$)/g, "$1$2");
+  text = text.replace(/\x00CODE_(\d+)\x00/g, (_, idx) => codeTokens[Number(idx)] ?? "");
+  const cleaned = text.replace(/[#>]/g, "").replace(/\s+/g, " ").trim();
   return cleaned ? clipCodePoints(cleaned, TITLE_MAX) : undefined;
 }
 

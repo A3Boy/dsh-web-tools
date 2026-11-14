@@ -81,3 +81,18 @@ test("cleanHeading strips emphasis and code backticks but preserves identifiers 
   assert.equal(sections[1].heading, "Configuring vm.overcommit_memory and __init__");
   assert.equal(sections[2].heading, "API OBJ_OFS_DELTA Reference");
 });
+
+test("cleanHeading preserves asterisks in code globs, kwargs, and SQL expressions without stripping", () => {
+  const md = [
+    "# Finding files with `**/*.ts` glob pattern",
+    "intro",
+    "## Handling *args and **kwargs in Python",
+    "body",
+    "## SQL queries with SELECT * FROM table",
+    "query details",
+  ].join("\n");
+  const { sections } = splitMarkdown(md);
+  assert.equal(sections[0].heading, "Finding files with **/*.ts glob pattern");
+  assert.equal(sections[1].heading, "Handling *args and **kwargs in Python");
+  assert.equal(sections[2].heading, "SQL queries with SELECT * FROM table");
+});

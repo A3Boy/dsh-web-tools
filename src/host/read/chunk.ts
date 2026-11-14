@@ -72,13 +72,25 @@ function nextFenceState(state: string | null, line: string): string | null {
 }
 
 function cleanHeading(raw: string): string {
-  return raw
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\*{1,3}(.+?)\*{1,3}/g, "$1")
-    .replace(/[`*]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // 1. Strip markdown links: [text](url) -> text
+  let text = raw.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+
+  // 2. Protect inline code `...` with non-colliding sentinels
+  const codeTokens: string[] = [];
+  text = text.replace(/`([^`]+)`/g, (_, code) => {
+    const id = `\x00CODE_${codeTokens.length}\x00`;
+    codeTokens.push(code);
+    return id;
+  });
+
+  // 3. Strip paired bold (**text**) and italic (*text*) adjacent to non-whitespace
+  text = text.replace(/\*\*([^*]+?)\*\*/g, "$1");
+  text = text.replace(/(^|[^\w*])\*([^*]+?)\*(?=[^\w*]|$)/g, "$1$2");
+
+  // 4. Restore code tokens
+  text = text.replace(/\x00CODE_(\d+)\x00/g, (_, idx) => codeTokens[Number(idx)] ?? "");
+
+  return text.replace(/\s+/g, " ").trim();
 }
 
 interface RawSection {

@@ -4,8 +4,8 @@ import type { Chunk } from "../src/host/read/chunk.ts";
 import { selectPassages } from "../src/host/read/select.ts";
 import { cpLength } from "../src/host/read/text.ts";
 
-function mk(index: number, chars: number): Chunk {
-  return { index, id: `c${index}`, sectionId: "s0", headingPath: [], text: "x".repeat(chars), chars };
+function mk(index: number, chars: number, sectionId = "s0"): Chunk {
+  return { index, id: `c${index}`, sectionId, headingPath: [], text: "x".repeat(chars), chars };
 }
 const indices = (sel: ReturnType<typeof selectPassages>) => sel.passages.map((p) => p.chunk.index);
 
@@ -56,7 +56,29 @@ test("expands context to adjacent chunks when remaining budget allows", () => {
   const chunks = Array.from({ length: 6 }, (_, i) => mk(i, 100));
   const scores = [0, 0, 0, 10, 0, 0];
   const sel = selectPassages(chunks, scores, { budgetChars: 400 });
-  assert.deepEqual(indices(sel), [0, 2, 3, 4]);
+  // Capped at 1 neighbor per hit: lead (0), hit (3), next neighbor (4)
+  assert.deepEqual(indices(sel), [0, 3, 4]);
+});
+
+test("Case 18 regression: adjacent expansion rescues suppressed mechanism chunk within same section without crossing section boundary", () => {
+  // s0: intro
+  // s1: problem chapter with query term repetition (score 11.6)
+  // s2: solution chapter with mechanism chunk (score 1.26) and conclusion chunk (score 6.9)
+  // s3: unrelated chapter (score 0)
+  const chunks = [
+    mk(0, 100, "s0"), // intro
+    mk(1, 100, "s1"), // problem chapter
+    mk(2, 100, "s2"), // solution mechanism
+    mk(3, 100, "s2"), // solution conclusion
+    mk(4, 100, "s3"), // unrelated next chapter
+  ];
+  const scores = [0, 11.6, 1.26, 6.9, 0];
+  // Budget allows 400 chars (4 chunks). Threshold is 11.6 * 0.3 = 3.48
+  // Chunk 2 (score 1.26) is below threshold, but adjacent to Chunk 3 in same section s2
+  // Chunk 4 is adjacent to Chunk 3 but in section s3 (must NOT be pulled in)
+  const sel = selectPassages(chunks, scores, { budgetChars: 400 });
+  assert.deepEqual(indices(sel), [0, 1, 2, 3]);
+  assert.equal(sel.passages.some((p) => p.chunk.index === 4), false);
 });
 
 test("skips a chunk that does not fit but still adds a smaller later one", () => {

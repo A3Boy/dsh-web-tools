@@ -105,19 +105,41 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
       .sort((a, b) => scores[b] - scores[a] || a - b);
     for (const i of order) take(i);
 
-    // Expand context: use remaining budget to pack adjacent chunks around hits
+    // Expand context: strictly within the same section and capped to avoid over-expansion
     if (used < budget) {
-      const hits = Array.from(picked.keys()).sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+      const hits = Array.from(picked.keys())
+        .filter((i) => i !== 0 || !opts.includeLead)
+        .sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+
+      const maxExpansions = Math.max(1, Math.floor(hits.length * 0.5));
+      let expansions = 0;
+
       for (const idx of hits) {
-        // Next chunk (narrative continuation)
-        if (idx + 1 < chunks.length && !picked.has(idx + 1)) {
-          take(idx + 1);
+        if (expansions >= maxExpansions || used >= budget) break;
+        const currentSec = chunks[idx].sectionId;
+
+        // Try next chunk in the same section first (narrative continuation)
+        if (
+          idx + 1 < chunks.length &&
+          chunks[idx + 1].sectionId === currentSec &&
+          !picked.has(idx + 1)
+        ) {
+          if (take(idx + 1)) {
+            expansions++;
+            continue; // At most 1 neighbor per hit chunk
+          }
         }
-        // Previous chunk (leading premise)
-        if (idx - 1 >= 0 && !picked.has(idx - 1)) {
-          take(idx - 1);
+
+        // Otherwise try previous chunk in the same section (preceding premise)
+        if (
+          idx - 1 >= 0 &&
+          chunks[idx - 1].sectionId === currentSec &&
+          !picked.has(idx - 1)
+        ) {
+          if (take(idx - 1)) {
+            expansions++;
+          }
         }
-        if (used >= budget) break;
       }
     }
 
