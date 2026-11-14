@@ -84,7 +84,9 @@ function extractTitle(markdown: string): string | undefined {
   if (!raw) return undefined;
   const cleaned = raw
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[*_`#>]/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*{1,3}(.+?)\*{1,3}/g, "$1")
+    .replace(/[`*#>]/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned ? clipCodePoints(cleaned, TITLE_MAX) : undefined;

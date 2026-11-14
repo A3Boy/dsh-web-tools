@@ -40,7 +40,7 @@ export function estimateTokens(text: string): number {
 }
 
 function normalize(s: string): string {
-  return s.toLowerCase().replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
+  return s.toLowerCase().replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
 }
 
 export interface CaseResult {
@@ -249,12 +249,14 @@ export function generateMarkdownReport(report: BenchmarkReport): string {
   lines.push("");
   lines.push("---");
   lines.push("");
-  lines.push("## Analysis and Conclusions");
+  lines.push("## Analysis and Preliminary Observations");
   lines.push("");
-  lines.push("1. **Token Efficiency**: `web_read` reduces prompt context consumption by over 60%–75% on average across realistic long pages (technical documentation, RFC standards, Chinese architecture breakdowns).");
-  lines.push("2. **Accuracy & Recall**: By utilizing deterministic BM25 ranking (with Latin tokens and CJK unigrams/bigrams), `web_read` reliably extracts the key passages containing the answers without needing a secondary LLM summarization call.");
+  lines.push("> Note: These are preliminary evaluation results on a 20-case synthetic long-form dataset. Real-world end-to-end evaluation on 30+ live production web pages (20k–200k chars) is scheduled for the full M4 benchmark.");
+  lines.push("");
+  lines.push("1. **Token Efficiency on Synthetic Pages**: On documents exceeding budget (>6,000 chars), focused reading extracts high-scoring passages and limits prompt context, while short pages fitting within budget are returned in full without outline overhead.");
+  lines.push("2. **BM25 Passage Ranking & Context Expansion**: Combining BM25 keyword matching with adjacent chunk expansion captures relevant passages and adjacent narrative context without model inference.");
   lines.push("3. **Progressive Section Reading**: The section continuation mechanism (reusing the 5-minute cached page fetch and verified by `contentId`) provides a clean path for models to inspect detailed sections without re-fetching from the network.");
-  lines.push("4. **Zero-Inference Latency Overhead**: The pure pipeline operates entirely in-memory in under 15ms (average ~2–6ms), ensuring that focused reading adds virtually no latency to the user experience.");
+  lines.push("4. **Deterministic In-Memory Latency**: The pure pipeline operates in-memory in ~2–4ms without invoking external LLMs.");
 
   return lines.join("\n");
 }

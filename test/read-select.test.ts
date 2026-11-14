@@ -39,10 +39,24 @@ test("a short page is not marked truncated", () => {
   assert.equal(sel.truncated, false);
 });
 
-test("drops weak matches below the relative threshold", () => {
+test("drops weak matches below the relative threshold when truncated", () => {
+  const chunks = [mk(0, 100), mk(1, 100), mk(2, 100), mk(3, 100), mk(4, 100)];
+  const sel = selectPassages(chunks, [0, 10, 2, 0, 0], { budgetChars: 250 });
+  assert.deepEqual(indices(sel), [0, 1]);
+});
+
+test("returns the entire page in order without truncation when totalChars <= budget", () => {
   const chunks = [mk(0, 100), mk(1, 100), mk(2, 100), mk(3, 100)];
   const sel = selectPassages(chunks, [0, 10, 2, 0], { budgetChars: 5000 });
-  assert.deepEqual(indices(sel), [0, 1]);
+  assert.deepEqual(indices(sel), [0, 1, 2, 3]);
+  assert.equal(sel.truncated, false);
+});
+
+test("expands context to adjacent chunks when remaining budget allows", () => {
+  const chunks = Array.from({ length: 6 }, (_, i) => mk(i, 100));
+  const scores = [0, 0, 0, 10, 0, 0];
+  const sel = selectPassages(chunks, scores, { budgetChars: 400 });
+  assert.deepEqual(indices(sel), [0, 2, 3, 4]);
 });
 
 test("skips a chunk that does not fit but still adds a smaller later one", () => {

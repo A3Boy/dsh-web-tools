@@ -66,3 +66,18 @@ test("splitting is deterministic", () => {
   const md = "# A\n\n" + "word ".repeat(2000) + "\n\n## B\n\n" + "其他内容。".repeat(500);
   assert.deepEqual(splitMarkdown(md), splitMarkdown(md));
 });
+
+test("cleanHeading strips emphasis and code backticks but preserves identifiers with underscores", () => {
+  const md = [
+    "# Document `max_connections` Guide",
+    "intro",
+    "## **Configuring** `vm.overcommit_memory` and *__init__*",
+    "details",
+    "## [API `OBJ_OFS_DELTA`](http://example.com) Reference",
+    "api details",
+  ].join("\n");
+  const { sections } = splitMarkdown(md);
+  assert.equal(sections[0].heading, "Document max_connections Guide");
+  assert.equal(sections[1].heading, "Configuring vm.overcommit_memory and __init__");
+  assert.equal(sections[2].heading, "API OBJ_OFS_DELTA Reference");
+});

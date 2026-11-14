@@ -425,7 +425,7 @@ test("mcp-server: tools/call web_read focused call returns outline and relevant 
       statusCode: 200,
       body: {
         kind: "text" as const,
-        content: "# Guide to Modern AI\n\nIntroductory background.\n\n## Section 1: Transformers\n\nAttention is all you need for sequence modeling.\n\n## Section 2: Retrieval\n\nBM25 and vector search augment model knowledge.",
+        content: "# Guide to Modern AI\n\nIntroductory background.\n\n## Section 1: Transformers\n\nAttention is all you need for sequence modeling.\n\n## Section 2: Retrieval\n\nBM25 and vector search augment model knowledge.\n\n" + "Extra text. ".repeat(1000),
       },
       metadata: { title: "Guide to Modern AI" },
       truncated: false,

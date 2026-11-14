@@ -74,7 +74,9 @@ function nextFenceState(state: string | null, line: string): string | null {
 function cleanHeading(raw: string): string {
   return raw
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[*_`]/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*{1,3}(.+?)\*{1,3}/g, "$1")
+    .replace(/[`*]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

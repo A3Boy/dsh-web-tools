@@ -59,6 +59,17 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
 
   const maxScore = scores.reduce((m, s) => (s > m ? s : m), 0);
   const focusMatched = maxScore > 0;
+
+  // When the whole page fits into the effective budget, return all chunks directly in document order
+  const effectiveCap = focusMatched ? budget : Math.min(budget, opts.fallbackChars ?? budget);
+  if (totalChars <= effectiveCap) {
+    return {
+      passages: chunks.map((chunk, i) => ({ chunk, score: scores[i] ?? 0 })),
+      focusMatched,
+      returnedChars: totalChars,
+      truncated: false,
+    };
+  }
   const picked = new Map<number, Chunk>();
   let used = 0;
 
@@ -93,6 +104,22 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
       .filter((i) => scores[i] > 0 && scores[i] >= threshold)
       .sort((a, b) => scores[b] - scores[a] || a - b);
     for (const i of order) take(i);
+
+    // Expand context: use remaining budget to pack adjacent chunks around hits
+    if (used < budget) {
+      const hits = Array.from(picked.keys()).sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+      for (const idx of hits) {
+        // Next chunk (narrative continuation)
+        if (idx + 1 < chunks.length && !picked.has(idx + 1)) {
+          take(idx + 1);
+        }
+        // Previous chunk (leading premise)
+        if (idx - 1 >= 0 && !picked.has(idx - 1)) {
+          take(idx - 1);
+        }
+        if (used >= budget) break;
+      }
+    }
 
     if (picked.size === 0 && order.length > 0) {
       const t = trimmed(chunks[order[0]], budget);

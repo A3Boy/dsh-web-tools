@@ -48,7 +48,7 @@ export function renderWebRead(input: RenderInput): string {
     lines.push("", `[${p.sectionId}${p.heading ? ` · ${p.heading}` : ""}]`, p.text);
   }
 
-  if (result.outline.length > 0) {
+  if (result.outline.length > 0 && result.truncated) {
     lines.push("", `Outline (${result.outlineTotal} sections):`);
     for (const o of result.outline) {
       const indent = "  ".repeat(Math.max(0, o.level - 1));
