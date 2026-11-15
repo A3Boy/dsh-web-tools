@@ -1,0 +1,39 @@
+[
+  {
+    "id": "example-single-en",
+    "url": "https://example.com/docs/some-long-page",
+    "lang": "en",
+    "split": "dev",
+    "kind": "single",
+    "question": "How long are audit logs retained before they are purged?",
+    "focus": "audit log retention period",
+    "facts": [
+      { "id": "retention", "all": ["audit", "14 days"], "any": ["purged", "deleted"] }
+    ],
+    "notes": "TEMPLATE ONLY (fake URL and facts). Write the focus before reading the answer."
+  },
+  {
+    "id": "example-multi-zh",
+    "url": "https://example.com/docs/another-page",
+    "lang": "zh",
+    "split": "test",
+    "kind": "multi",
+    "question": "连接数的默认值和硬上限分别是多少?",
+    "focus": "连接数 默认值 上限",
+    "facts": [
+      { "id": "default", "all": ["max_connections", "100"] },
+      { "id": "cap", "all": ["5000"], "any": ["上限", "hard"] }
+    ],
+    "notes": "multi: the answer is spread over 2-3 sections, so it needs at least 2 facts."
+  },
+  {
+    "id": "example-negative-en",
+    "url": "https://example.com/docs/some-long-page",
+    "lang": "en",
+    "split": "dev",
+    "kind": "negative",
+    "question": "What is the per-GPU-hour price?",
+    "facts": [],
+    "notes": "negative: the page does NOT contain the answer; facts stays empty."
+  }
+]

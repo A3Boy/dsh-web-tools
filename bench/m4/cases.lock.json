@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "frozenAt": "2026-11-15T02:58:25.516Z",
+  "entries": {
+    "rfc7540-error-codes-test": {
+      "caseHash": "46c2a7ca747430715e553d469ce6375bbdeb6948df02bc94bf916aafc784ef90",
+      "fixtureHash": "9b612cdb62fb1c550c4e9a08a36de18f989c8ca8ff11aede0db000888bc69221"
+    },
+    "rfc7540-settings-ack-test": {
+      "caseHash": "856c55f6799e29364fcb821e81e7cb395ddbfd220ad8cedfffc07ac53402db3c",
+      "fixtureHash": "9b612cdb62fb1c550c4e9a08a36de18f989c8ca8ff11aede0db000888bc69221"
+    },
+    "rfc7540-negative-websocket-test": {
+      "caseHash": "1f951a44800150ecbd404507cc9a66757e1e93e8c2d9da38f8763726f00ef155",
+      "fixtureHash": "9b612cdb62fb1c550c4e9a08a36de18f989c8ca8ff11aede0db000888bc69221"
+    },
+    "rfc7636-verifier-length-test": {
+      "caseHash": "77068ce28b3a1a13297b44b841e40159949129fac0fef1f89954adafc23b1fc0",
+      "fixtureHash": "9e4b57436af6bf735797045a6dde83859058bd4bbb8fe1117219ee376cf6defe"
+    },
+    "rfc7636-vague-token-test": {
+      "caseHash": "52f61df049fa2f8eddf3427470d051800346bf2a73d8009aaa249fe29646e2d3",
+      "fixtureHash": "9e4b57436af6bf735797045a6dde83859058bd4bbb8fe1117219ee376cf6defe"
+    },
+    "rfc8446-zero-rtt-test": {
+      "caseHash": "9a1426be1575d4ba3afce3b44a1fca64915db5dc22cea9a037d40e253a7ffae3",
+      "fixtureHash": "9ba9f9f4784db0d6e3ebce8784aa0acfabfa0cdcc3d2bdd788951c7d1c5ac3dc"
+    },
+    "epoll-man7-oneshot-test": {
+      "caseHash": "aab89c1c72d43dcf75acb78004f4fd4b024e1c52b24324e074ce22220cb50269",
+      "fixtureHash": "ddbfdf35443fe14b21b9bbdcf3a18039efc1452e3390ab112ff43c10b20b575e"
+    },
+    "epoll-man7-exclusive-test": {
+      "caseHash": "69424b00f75bf50c383a9f00134d97b8c56326e0c7fc8a44753621e1ff4454d9",
+      "fixtureHash": "ddbfdf35443fe14b21b9bbdcf3a18039efc1452e3390ab112ff43c10b20b575e"
+    },
+    "epoll-man7-vague-perf-test": {
+      "caseHash": "f268af42b4723d3efafddf322f315b2acba2960db0a0ed001a844db24c9cd573",
+      "fixtureHash": "ddbfdf35443fe14b21b9bbdcf3a18039efc1452e3390ab112ff43c10b20b575e"
+    },
+    "cgroups-man7-v2-single-test": {
+      "caseHash": "a31e12166b30f60b6d5e9dfe5b551666ffe6c493e6edbcf26ed9728b1d5aa437",
+      "fixtureHash": "07ece7800759b567e0001ddbe85bd2200201c8f6c073b314113c34ea14af0ee5"
+    },
+    "cgroups-man7-controllers-test": {
+      "caseHash": "999ca70ff6e36639767a8009ef09e63bf5d72fb59fa83eed6de3624ea4ad0d9b",
+      "fixtureHash": "07ece7800759b567e0001ddbe85bd2200201c8f6c073b314113c34ea14af0ee5"
+    },
+    "zh-wiki-tcp-handshake-test": {
+      "caseHash": "e1f0e7f85a8cc34ede9bbff8e401c2009cb0df52f7c529344e79a60ea53fc80d",
+      "fixtureHash": "d566dcc5315f717e9a99db1cbb9b0929c7761c992d6ff9186c3ccc8185864ef1"
+    },
+    "zh-wiki-tcp-flags-test": {
+      "caseHash": "dbb55d7a3079d87c3ac8a36401c5441a5adf33f7cdbb8e16ce4eaabbfbdc8f12",
+      "fixtureHash": "d566dcc5315f717e9a99db1cbb9b0929c7761c992d6ff9186c3ccc8185864ef1"
+    },
+    "zh-wiki-tcp-negative-bbr-test": {
+      "caseHash": "43c38baf6270d450c937a1b10578f2bc951aa9cca92493009552be6a95323156",
+      "fixtureHash": "d566dcc5315f717e9a99db1cbb9b0929c7761c992d6ff9186c3ccc8185864ef1"
+    },
+    "zh-wiki-git-objects-test": {
+      "caseHash": "11bd39bcc49c2d79e3d39e4049a7011610f6649cfc472db6df4685973aba1d08",
+      "fixtureHash": "4fc7d9d7f2d104e3db755ea6296b6796967e501bc7c96024a10b106445e00a59"
+    },
+    "zh-wiki-git-vague-test": {
+      "caseHash": "d4e92d676b29c7814601fda23ec1764c0b573d4526546cb58a4b5d3376bb3aaa",
+      "fixtureHash": "4fc7d9d7f2d104e3db755ea6296b6796967e501bc7c96024a10b106445e00a59"
+    },
+    "zh-wiki-linux-license-test": {
+      "caseHash": "c0da8ddfb216167c8f88140a738636e9901489ff63602b8cd85ca4c623caeec8",
+      "fixtureHash": "c2d9b93e8fb926b2917541b20803f94c9e6f04c1e5deb86d51d71a6f80d39737"
+    },
+    "zh-wiki-postgres-license-test": {
+      "caseHash": "e61a66ac568f8fcec0b26f41c2d3824749185a83db583e0d17fc30a77cefebc3",
+      "fixtureHash": "4828196205aa7df7c3ccc998ee463b2bf50e84a64eefc641f6f4c02dab86fec3"
+    },
+    "zh-wiki-http2-multiplex-test": {
+      "caseHash": "073b18d49883cfd0eb3c70b8dabf537df719cae89438d2e083299c0f6e7b7675",
+      "fixtureHash": "10df8febc7ddbaa8847ee29c96302b875d73240476d8db58b835249415f8dd94"
+    },
+    "zh-wiki-tls-record-test": {
+      "caseHash": "98612207947d51f3c2743728fba57f1927caeaa518dbeced00f40610352492ef",
+      "fixtureHash": "2e7c99950eb6d3b0b3c5ecbd075ecfc6b82ee4cfde139b15cefa381a19c4beb1"
+    }
+  }
+}
