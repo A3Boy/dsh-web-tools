@@ -22,6 +22,8 @@ export interface SelectOptions {
     minRelativeScore?: number;
     /** Size of the in-order prefix returned when nothing matches. Default 3000. */
     fallbackChars?: number;
+    /** Query tokens for coverage-aware selection of multi-fact questions. */
+    queryTerms?: string[];
 }
 export interface SelectedPassage {
     chunk: Chunk;

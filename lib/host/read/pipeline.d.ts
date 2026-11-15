@@ -30,6 +30,7 @@ export interface ReadPageResult {
     outlineTotal: number;
     passages: ReadPassage[];
     focusMatched: boolean;
+    focusConfidence?: "strong" | "weak" | "none";
     truncated: boolean;
     totalChars: number;
     returnedChars: number;
