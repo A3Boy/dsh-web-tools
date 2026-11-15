@@ -54,6 +54,8 @@ export interface ChunkOptions {
 
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING_RE = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+const NUMBERED_HEADING_RE = /^ {0,4}(\d+(?:\.\d+)*)\.?[ \t]+([A-Z][\w\s,/-]+?)[ \t]*$/;
+const NON_HEADING_STARTS = new Set(["the", "this", "that", "an", "a", "it", "in", "on", "if", "when", "as", "is", "are", "note"]);
 
 function fenceMarker(line: string): string | null {
   const m = FENCE_RE.exec(line);
@@ -105,8 +107,10 @@ function parseSections(markdown: string): RawSection[] {
   const raw: RawSection[] = [{ heading: "", level: 0, path: [], lines: [] }];
   const stack: Array<{ level: number; heading: string }> = [];
   let fence: string | null = null;
+  let prevBlankLine = true;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const insideBefore = fence !== null;
     const isFenceLine = fenceMarker(line) !== null;
     fence = nextFenceState(fence, line);
@@ -120,10 +124,34 @@ function parseSections(markdown: string): RawSection[] {
           while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
           stack.push({ level, heading });
           raw.push({ heading, level, path: stack.map((s) => s.heading), lines: [] });
+          prevBlankLine = false;
           continue;
         }
       }
     }
+
+    if (!isFenceLine && prevBlankLine && line.trim().length > 0 && line.length <= 80) {
+      const nm = NUMBERED_HEADING_RE.exec(line);
+      if (nm) {
+        const body = nm[2].trim();
+        if (!body.endsWith(".") && !body.endsWith(";") && !body.endsWith(",") && !body.endsWith(":")) {
+          const words = body.split(/\s+/);
+          if (words.length <= 8 && !NON_HEADING_STARTS.has(words[0].toLowerCase())) {
+            const dots = (nm[1].match(/\./g) ?? []).length;
+            const level = Math.min(6, 1 + dots);
+            const heading = cleanHeading(`${nm[1]} ${body}`);
+            if (heading) {
+              while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+              stack.push({ level, heading });
+              raw.push({ heading, level, path: stack.map((s) => s.heading), lines: [] });
+              prevBlankLine = false;
+              continue;
+            }
+          }
+        }
+      }
+    }
+    prevBlankLine = line.trim() === "";
     raw[raw.length - 1].lines.push(line);
   }
   return raw;

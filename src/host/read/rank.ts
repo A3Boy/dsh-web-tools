@@ -29,10 +29,13 @@ export function tokenize(text: string): string[] {
     const token = match[0];
     if (CJK_START_RE.test(token)) {
       const chars = Array.from(token);
-      for (const ch of chars) if (!ZH_STOP.has(ch)) out.push(ch);
-      for (let i = 0; i + 1 < chars.length; i++) {
-        if (ZH_PARTICLE.has(chars[i]) || ZH_PARTICLE.has(chars[i + 1])) continue;
-        out.push(chars[i] + chars[i + 1]);
+      if (chars.length === 1) {
+        if (!ZH_STOP.has(chars[0])) out.push(chars[0]);
+      } else {
+        for (let i = 0; i + 1 < chars.length; i++) {
+          if (ZH_PARTICLE.has(chars[i]) || ZH_PARTICLE.has(chars[i + 1])) continue;
+          out.push(chars[i] + chars[i + 1]);
+        }
       }
     } else if ((token.length > 1 || /\p{N}/u.test(token)) && !EN_STOP.has(token)) {
       out.push(token);

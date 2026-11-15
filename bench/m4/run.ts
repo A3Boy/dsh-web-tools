@@ -23,6 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluateCase } from "./evaluate.ts";
 import type { CaseResult } from "./evaluate.ts";
+import { explainCase } from "./explain.ts";
 import { buildLock, sha256, verifyLock } from "./lock.ts";
 import type { LockFile } from "./lock.ts";
 import { buildReport } from "./report.ts";
@@ -42,6 +43,7 @@ interface Args {
   freeze: boolean;
   forceRefreeze: boolean;
   allowUnfrozen: boolean;
+  explain?: string;
 }
 
 export function parseArgs(argv: string[]): Args {
@@ -81,6 +83,7 @@ export function parseArgs(argv: string[]): Args {
     else if (a === "--freeze") args.freeze = true;
     else if (a === "--force-refreeze") args.forceRefreeze = true;
     else if (a === "--allow-unfrozen") args.allowUnfrozen = true;
+    else if (a === "--explain") args.explain = need(i++, a);
     else throw new Error(`unknown argument: ${a}`);
   }
   return args;
@@ -119,6 +122,23 @@ function main(): number {
   }
 
   const lock = readLock(args.lock);
+
+  if (args.explain) {
+    const targetCase = cases.find((c) => c.id === args.explain);
+    if (!targetCase) {
+      console.error(`Case not found: ${args.explain}`);
+      return 1;
+    }
+    const md = fixtureText.get(targetCase.id);
+    if (!md) {
+      console.error(`Fixture file not found for case: ${targetCase.id}`);
+      return 1;
+    }
+    const budget = args.budgets[1] ?? 4000;
+    const diag = explainCase(md, targetCase, budget);
+    console.log(diag.report);
+    return 0;
+  }
 
   if (args.freeze) {
     const testCases = cases.filter((c) => c.split === "test");

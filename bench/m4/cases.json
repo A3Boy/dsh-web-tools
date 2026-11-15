@@ -8,7 +8,12 @@
     "question": "What is the exact payload size requirement for a PING frame in HTTP/2?",
     "focus": "PING frame payload length requirement",
     "facts": [
-      { "id": "length", "all": ["8 octets"] }
+      {
+        "id": "length",
+        "all": [
+          "8 octets"
+        ]
+      }
     ],
     "notes": "RFC 7540 section 6.7: PING frames must contain 8 octets of opaque data."
   },
@@ -21,7 +26,12 @@
     "question": "How does HTTP/2 limit the maximum number of active streams?",
     "focus": "stream limits",
     "facts": [
-      { "id": "setting", "all": ["SETTINGS_MAX_CONCURRENT_STREAMS"] }
+      {
+        "id": "setting",
+        "all": [
+          "SETTINGS_MAX_CONCURRENT_STREAMS"
+        ]
+      }
     ],
     "notes": "Vague focus testing retrieval of stream concurrency limits."
   },
@@ -34,7 +44,12 @@
     "question": "When using epoll in edge-triggered mode, after what return value from read or write should the application wait for another event?",
     "focus": "edge-triggered non-blocking return value wait event",
     "facts": [
-      { "id": "error", "all": ["EAGAIN"] }
+      {
+        "id": "error",
+        "all": [
+          "EAGAIN"
+        ]
+      }
     ],
     "notes": "man7 epoll ET mode requirement."
   },
@@ -47,7 +62,13 @@
     "question": "How is the code_challenge calculated from the code_verifier when code_challenge_method is S256?",
     "focus": "code_challenge calculation S256",
     "facts": [
-      { "id": "crypto", "all": ["SHA-256", "BASE64URL"] }
+      {
+        "id": "crypto",
+        "all": [
+          "SHA-256",
+          "BASE64URL"
+        ]
+      }
     ],
     "notes": "RFC 7636 section 4.2 S256 transformation."
   },
@@ -71,8 +92,18 @@
     "question": "In TLS 1.3 Section 4.2 ExtensionType table, what integer values are assigned to server_name and max_fragment_length?",
     "focus": "TLS 1.3 ExtensionType enum values server_name max_fragment_length",
     "facts": [
-      { "id": "server_name", "all": ["server_name(0)"] },
-      { "id": "max_frag", "all": ["max_fragment_length(1)"] }
+      {
+        "id": "server_name",
+        "all": [
+          "server_name(0)"
+        ]
+      },
+      {
+        "id": "max_frag",
+        "all": [
+          "max_fragment_length(1)"
+        ]
+      }
     ],
     "notes": "RFC 8446 section 4.2 ExtensionType enum/table."
   },
@@ -85,8 +116,23 @@
     "question": "How does an HTTP/2 stream enter the half-closed (remote) state and what frames can the endpoint still send?",
     "focus": "stream transition half-closed remote allowed frames",
     "facts": [
-      { "id": "transition", "all": ["END_STREAM", "half-closed (remote)"] },
-      { "id": "allowed", "all": ["WINDOW_UPDATE"], "any": ["RST_STREAM", "PRIORITY"] }
+      {
+        "id": "transition",
+        "all": [
+          "END_STREAM",
+          "half-closed (remote)"
+        ]
+      },
+      {
+        "id": "allowed",
+        "all": [
+          "WINDOW_UPDATE"
+        ],
+        "any": [
+          "RST_STREAM",
+          "PRIORITY"
+        ]
+      }
     ],
     "notes": "Multi-fact across stream state transitions."
   },
@@ -99,7 +145,15 @@
     "question": "PostgreSQL 使用什么机制来支持高并发读写操作而不产生读写互相阻塞？",
     "focus": "并发控制 锁机制 读写阻塞",
     "facts": [
-      { "id": "concurrency", "all": ["多版本并发控制"], "any": ["MVCC"] }
+      {
+        "id": "concurrency",
+        "all": [
+          "多版本并发控制"
+        ],
+        "any": [
+          "MVCC"
+        ]
+      }
     ],
     "notes": "PostgreSQL MVCC 特性"
   },
@@ -112,8 +166,18 @@
     "question": "Linux 内核在体系结构上属于哪种内核类型，它是如何支持模块化扩展的？",
     "focus": "Linux 内核 体系结构 模块化扩展机制",
     "facts": [
-      { "id": "arch", "all": ["宏内核"] },
-      { "id": "module", "all": ["内核模块"] }
+      {
+        "id": "arch",
+        "all": [
+          "宏内核"
+        ]
+      },
+      {
+        "id": "module",
+        "all": [
+          "内核模块"
+        ]
+      }
     ],
     "notes": "Linux 内核类型与可加载模块"
   },
@@ -126,7 +190,12 @@
     "question": "In the example code for epoll, what function call sets the accepted connection socket non-blocking?",
     "focus": "epoll example code accepted connection non-blocking function",
     "facts": [
-      { "id": "code", "all": ["setnonblocking"] }
+      {
+        "id": "code",
+        "all": [
+          "setnonblocking"
+        ]
+      }
     ],
     "notes": "man7 epoll example code setnonblocking."
   },
@@ -134,12 +203,18 @@
     "id": "rfc7540-error-codes-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc7540",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "table",
     "question": "In the HTTP/2 error codes table, what hex code corresponds to FRAME_SIZE_ERROR?",
     "focus": "error codes table FRAME_SIZE_ERROR",
     "facts": [
-      { "id": "code", "all": ["FRAME_SIZE_ERROR", "0x6"] }
+      {
+        "id": "code",
+        "all": [
+          "FRAME_SIZE_ERROR",
+          "0x6"
+        ]
+      }
     ],
     "notes": "RFC 7540 section 7 error codes table."
   },
@@ -147,12 +222,20 @@
     "id": "rfc7540-settings-ack-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc7540",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "What must an endpoint do when it receives a SETTINGS frame with the ACK flag set and a non-zero length?",
     "focus": "SETTINGS frame ACK flag non-zero length error",
     "facts": [
-      { "id": "error", "all": ["FRAME_SIZE_ERROR"], "any": ["connection error"] }
+      {
+        "id": "error",
+        "all": [
+          "FRAME_SIZE_ERROR"
+        ],
+        "any": [
+          "connection error"
+        ]
+      }
     ],
     "notes": "RFC 7540 section 6.5 SETTINGS frame error."
   },
@@ -160,7 +243,7 @@
     "id": "rfc7540-negative-websocket-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc7540",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "negative",
     "question": "How does the WebSocket masking key XOR algorithm prevent cache poisoning in HTTP/2?",
     "focus": "WebSocket masking key XOR cache poisoning",
@@ -171,12 +254,18 @@
     "id": "rfc7636-verifier-length-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc7636",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "What are the minimum and maximum length bounds for the code_verifier string in PKCE?",
     "focus": "code_verifier length minimum maximum",
     "facts": [
-      { "id": "bounds", "all": ["43", "128"] }
+      {
+        "id": "bounds",
+        "all": [
+          "43",
+          "128"
+        ]
+      }
     ],
     "notes": "RFC 7636 section 4.1 code_verifier bounds."
   },
@@ -184,12 +273,17 @@
     "id": "rfc7636-vague-token-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc7636",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "vague",
     "question": "What parameter does the client include in the token request to prove its identity?",
     "focus": "token request parameters",
     "facts": [
-      { "id": "param", "all": ["code_verifier"] }
+      {
+        "id": "param",
+        "all": [
+          "code_verifier"
+        ]
+      }
     ],
     "notes": "Vague query for token exchange."
   },
@@ -197,13 +291,23 @@
     "id": "rfc8446-zero-rtt-test",
     "url": "https://datatracker.ietf.org/doc/html/rfc8446",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "In TLS 1.3, what feature enables sending data before the handshake finishes and what security vulnerability does it create?",
     "focus": "handshake early flight transmit data security vulnerability",
     "facts": [
-      { "id": "feature", "all": ["0-RTT"] },
-      { "id": "risk", "all": ["replay"] }
+      {
+        "id": "feature",
+        "all": [
+          "0-RTT"
+        ]
+      },
+      {
+        "id": "risk",
+        "all": [
+          "replay"
+        ]
+      }
     ],
     "notes": "TLS 1.3 0-RTT and replay vulnerability."
   },
@@ -211,12 +315,17 @@
     "id": "epoll-man7-oneshot-test",
     "url": "https://man7.org/linux/man-pages/man7/epoll.7.html",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "Which event flag disables the file descriptor after an event is pulled out with epoll_wait?",
     "focus": "epoll event flag disable after notification",
     "facts": [
-      { "id": "flag", "all": ["EPOLLONESHOT"] }
+      {
+        "id": "flag",
+        "all": [
+          "EPOLLONESHOT"
+        ]
+      }
     ],
     "notes": "man7 epoll event flag."
   },
@@ -224,13 +333,23 @@
     "id": "epoll-man7-exclusive-test",
     "url": "https://man7.org/linux/man-pages/man7/epoll.7.html",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "In epoll, what notification mode avoids thundering herd wake-ups when multiple threads wait on the same epoll descriptor, and across what call can child processes inherit the descriptor?",
     "focus": "avoid thundering herd wake-ups notification mode inherit process",
     "facts": [
-      { "id": "mode", "all": ["EPOLLET"] },
-      { "id": "inherit", "all": ["fork"] }
+      {
+        "id": "mode",
+        "all": [
+          "EPOLLET"
+        ]
+      },
+      {
+        "id": "inherit",
+        "all": [
+          "fork"
+        ]
+      }
     ],
     "notes": "EPOLLET thundering herd avoidance and fork inheritance."
   },
@@ -238,12 +357,18 @@
     "id": "epoll-man7-vague-perf-test",
     "url": "https://man7.org/linux/man-pages/man7/epoll.7.html",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "vague",
     "question": "How does the epoll API manage monitored file descriptors to scale well to large numbers of watched descriptors?",
     "focus": "manage file descriptors scaling kernel data structure container",
     "facts": [
-      { "id": "lists", "all": ["interest list", "ready list"] }
+      {
+        "id": "lists",
+        "all": [
+          "interest list",
+          "ready list"
+        ]
+      }
     ],
     "notes": "Vague query about scaling and in-kernel lists."
   },
@@ -251,12 +376,19 @@
     "id": "cgroups-man7-v2-single-test",
     "url": "https://man7.org/linux/man-pages/man7/cgroups.7.html",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "code",
     "question": "What shell command mounts a unified cgroup v2 hierarchy at /mnt/cgroup2?",
     "focus": "mount unified cgroup v2 hierarchy shell command",
     "facts": [
-      { "id": "cmd", "all": ["mount", "-t cgroup2", "/mnt/cgroup2"] }
+      {
+        "id": "cmd",
+        "all": [
+          "mount",
+          "-t cgroup2",
+          "/mnt/cgroup2"
+        ]
+      }
     ],
     "notes": "cgroups v2 filesystem type."
   },
@@ -264,13 +396,23 @@
     "id": "cgroups-man7-controllers-test",
     "url": "https://man7.org/linux/man-pages/man7/cgroups.7.html",
     "lang": "en",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "In cgroups v2, what file lists available controllers and what file controls which controllers are enabled for children?",
     "focus": "cgroups v2 available controllers subtree control child",
     "facts": [
-      { "id": "controllers", "all": ["cgroup.controllers"] },
-      { "id": "subtree", "all": ["cgroup.subtree_control"] }
+      {
+        "id": "controllers",
+        "all": [
+          "cgroup.controllers"
+        ]
+      },
+      {
+        "id": "subtree",
+        "all": [
+          "cgroup.subtree_control"
+        ]
+      }
     ],
     "notes": "Available and subtree controllers in cgroups v2."
   },
@@ -278,13 +420,23 @@
     "id": "zh-wiki-tcp-handshake-test",
     "url": "https://zh.wikipedia.org/wiki/%E4%BC%A0%E8%BE%93%E6%8E%A7%E5%88%B6%E5%8D%8F%E8%AE%AE",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "TCP 建立连接时的三次握手使用了哪些标志位？",
     "focus": "TCP 三次握手 标志位",
     "facts": [
-      { "id": "syn", "all": ["SYN"] },
-      { "id": "ack", "all": ["ACK"] }
+      {
+        "id": "syn",
+        "all": [
+          "SYN"
+        ]
+      },
+      {
+        "id": "ack",
+        "all": [
+          "ACK"
+        ]
+      }
     ],
     "notes": "TCP 连接建立握手标志"
   },
@@ -292,12 +444,20 @@
     "id": "zh-wiki-tcp-flags-test",
     "url": "https://zh.wikipedia.org/wiki/%E4%BC%A0%E8%BE%93%E6%8E%A7%E5%88%B6%E5%8D%8F%E8%AE%AE",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "table",
     "question": "TCP 报文头部中的控制标志包括哪些位？",
     "focus": "TCP 头部 控制标志位",
     "facts": [
-      { "id": "flags", "all": ["SYN", "ACK", "FIN", "RST"] }
+      {
+        "id": "flags",
+        "all": [
+          "SYN",
+          "ACK",
+          "FIN",
+          "RST"
+        ]
+      }
     ],
     "notes": "TCP 报文头控制字段"
   },
@@ -305,7 +465,7 @@
     "id": "zh-wiki-tcp-negative-bbr-test",
     "url": "https://zh.wikipedia.org/wiki/%E4%BC%A0%E8%BE%93%E6%8E%A7%E5%88%B6%E5%8D%8F%E8%AE%AE",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "negative",
     "question": "Google BBR 拥塞控制算法如何利用机器学习模型预测瓶颈带宽？",
     "focus": "BBR 机器学习 瓶颈带宽预测",
@@ -316,12 +476,17 @@
     "id": "zh-wiki-git-objects-test",
     "url": "https://zh.wikipedia.org/wiki/Git",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "Git 内部存储对象时使用的内容寻址哈希算法最初是什么？",
     "focus": "Git 哈希校验算法",
     "facts": [
-      { "id": "hash", "all": ["SHA-1"] }
+      {
+        "id": "hash",
+        "all": [
+          "SHA-1"
+        ]
+      }
     ],
     "notes": "Git SHA-1 哈希算法"
   },
@@ -329,12 +494,20 @@
     "id": "zh-wiki-git-vague-test",
     "url": "https://zh.wikipedia.org/wiki/Git",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "vague",
     "question": "Git 是由谁最初设计和开发的？",
     "focus": "Git 创始人",
     "facts": [
-      { "id": "author", "all": ["林纳斯·托瓦兹"], "any": ["Linus"] }
+      {
+        "id": "author",
+        "all": [
+          "林纳斯·托瓦兹"
+        ],
+        "any": [
+          "Linus"
+        ]
+      }
     ],
     "notes": "Vague query for Git author."
   },
@@ -342,12 +515,21 @@
     "id": "zh-wiki-linux-license-test",
     "url": "https://zh.wikipedia.org/wiki/Linux%E5%86%85%E6%A0%B8",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "Linux 内核主要采用什么开源许可协议发布？",
     "focus": "Linux 许可证",
     "facts": [
-      { "id": "license", "all": ["GPL"], "any": ["GPLv2", "通用公共许可证"] }
+      {
+        "id": "license",
+        "all": [
+          "GPL"
+        ],
+        "any": [
+          "GPLv2",
+          "通用公共许可证"
+        ]
+      }
     ],
     "notes": "Linux 开源许可"
   },
@@ -355,12 +537,17 @@
     "id": "zh-wiki-postgres-license-test",
     "url": "https://zh.wikipedia.org/wiki/PostgreSQL",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "single",
     "question": "PostgreSQL 数据库采用什么许可证发布？",
     "focus": "数据库 软件授权 开源条款 协议",
     "facts": [
-      { "id": "license", "all": ["BSD"] }
+      {
+        "id": "license",
+        "all": [
+          "BSD"
+        ]
+      }
     ],
     "notes": "PostgreSQL 许可证"
   },
@@ -368,13 +555,24 @@
     "id": "zh-wiki-http2-multiplex-test",
     "url": "https://zh.wikipedia.org/wiki/HTTP/2",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "HTTP/2 引入了什么算法对头部做压缩，该算法维护了哪两种字典？",
     "focus": "HTTP/2 头部压缩算法 字典机制",
     "facts": [
-      { "id": "algo", "all": ["HPACK"] },
-      { "id": "tables", "all": ["静态字典", "动态字典"] }
+      {
+        "id": "algo",
+        "all": [
+          "HPACK"
+        ]
+      },
+      {
+        "id": "tables",
+        "all": [
+          "静态字典",
+          "动态字典"
+        ]
+      }
     ],
     "notes": "HTTP/2 HPACK 算法与动静态字典"
   },
@@ -382,14 +580,418 @@
     "id": "zh-wiki-tls-record-test",
     "url": "https://zh.wikipedia.org/wiki/TLS",
     "lang": "zh",
-    "split": "test",
+    "split": "dev",
     "kind": "multi",
     "question": "TLS 1.0 标准是由哪个标准化组织在 1999 年公布的，对应的 RFC 编号是什么？",
     "focus": "TLS 1.0 1999年 发布 标准化组织 文件编号",
     "facts": [
-      { "id": "org", "all": ["IETF"] },
-      { "id": "rfc", "all": ["RFC 2246"] }
+      {
+        "id": "org",
+        "all": [
+          "IETF"
+        ]
+      },
+      {
+        "id": "rfc",
+        "all": [
+          "RFC 2246"
+        ]
+      }
     ],
     "notes": "TLS 1.0 IETF 标准与 RFC 2246"
+  },
+  {
+    "id": "rfc6749-auth-code-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc6749",
+    "lang": "en",
+    "split": "test",
+    "kind": "single",
+    "question": "In OAuth 2.0, what grant type value is used when requesting an access token using an authorization code?",
+    "focus": "token request grant type authorization code exchange",
+    "facts": [
+      {
+        "id": "grant",
+        "all": [
+          "authorization_code"
+        ]
+      }
+    ],
+    "notes": "RFC 6749 section 4.1.3 grant_type value."
+  },
+  {
+    "id": "rfc6749-csrf-bearer-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc6749",
+    "lang": "en",
+    "split": "test",
+    "kind": "multi",
+    "question": "In OAuth 2.0, what parameter is recommended to bind requests and prevent CSRF attacks, and what HTTP header conveys bearer tokens?",
+    "focus": "cross-site request forgery parameter token request header",
+    "facts": [
+      {
+        "id": "csrf",
+        "all": [
+          "state"
+        ]
+      },
+      {
+        "id": "header",
+        "all": [
+          "Authorization",
+          "Bearer"
+        ]
+      }
+    ],
+    "notes": "RFC 6749 state CSRF protection and Bearer authorization."
+  },
+  {
+    "id": "rfc6749-unauth-client-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc6749",
+    "lang": "en",
+    "split": "test",
+    "kind": "table",
+    "question": "In the OAuth 2.0 error response registry, what error code is returned when the authenticated client is not authorized to use the requested grant type?",
+    "focus": "error response error codes client unauthorized grant type",
+    "facts": [
+      {
+        "id": "error",
+        "all": [
+          "unauthorized_client"
+        ]
+      }
+    ],
+    "notes": "RFC 6749 section 5.2 error response table."
+  },
+  {
+    "id": "rfc6749-negative-kerberos-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc6749",
+    "lang": "en",
+    "split": "test",
+    "kind": "negative",
+    "question": "How does an OAuth 2.0 client exchange a Kerberos ticket for a hardware security token?",
+    "focus": "Kerberos ticket hardware security token exchange",
+    "facts": [],
+    "notes": "Negative case: RFC 6749 core spec does not specify Kerberos hardware token exchange."
+  },
+  {
+    "id": "rfc9113-goaway-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc9113",
+    "lang": "en",
+    "split": "test",
+    "kind": "single",
+    "question": "In HTTP/2 (RFC 9113), what frame type initiates the graceful shutdown of a connection?",
+    "focus": "connection graceful shutdown frame type",
+    "facts": [
+      {
+        "id": "frame",
+        "all": [
+          "GOAWAY"
+        ]
+      }
+    ],
+    "notes": "RFC 9113 GOAWAY frame shutdown."
+  },
+  {
+    "id": "rfc9113-frame-size-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc9113",
+    "lang": "en",
+    "split": "test",
+    "kind": "multi",
+    "question": "In RFC 9113, what error code indicates that a frame exceeded the allowed size and what is the initial default frame size in octets?",
+    "focus": "frame payload size violation error code default limit",
+    "facts": [
+      {
+        "id": "error",
+        "all": [
+          "FRAME_SIZE_ERROR"
+        ]
+      },
+      {
+        "id": "size",
+        "all": [
+          "16,384"
+        ]
+      }
+    ],
+    "notes": "RFC 9113 FRAME_SIZE_ERROR and 16,384 default octets."
+  },
+  {
+    "id": "rfc9113-window-update-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc9113",
+    "lang": "en",
+    "split": "test",
+    "kind": "vague",
+    "question": "How does HTTP/2 regulate how much data a sender can transmit on an individual stream?",
+    "focus": "data transmission limit sender credit buffer flow control",
+    "facts": [
+      {
+        "id": "flow",
+        "all": [
+          "WINDOW_UPDATE"
+        ]
+      }
+    ],
+    "notes": "Vague query on HTTP/2 flow control."
+  },
+  {
+    "id": "rfc9113-preface-code-test",
+    "url": "https://datatracker.ietf.org/doc/html/rfc9113",
+    "lang": "en",
+    "split": "test",
+    "kind": "code",
+    "question": "In RFC 9113, what exact byte sequence opens the client connection preface?",
+    "focus": "client connection preface exact string sequence",
+    "facts": [
+      {
+        "id": "preface",
+        "all": [
+          "PRI * HTTP/2.0"
+        ]
+      }
+    ],
+    "notes": "RFC 9113 connection preface byte sequence."
+  },
+  {
+    "id": "clone2-vm-flag-test",
+    "url": "https://man7.org/linux/man-pages/man2/clone.2.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "single",
+    "question": "Which clone flag causes the calling and child processes to run in the same virtual memory space?",
+    "focus": "virtual memory page table sharing clone flag",
+    "facts": [
+      {
+        "id": "flag",
+        "all": [
+          "CLONE_VM"
+        ]
+      }
+    ],
+    "notes": "clone(2) CLONE_VM."
+  },
+  {
+    "id": "clone2-namespaces-test",
+    "url": "https://man7.org/linux/man-pages/man2/clone.2.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "multi",
+    "question": "Which clone flags create a new network namespace and a new PID namespace for the child process?",
+    "focus": "isolate network and process id child namespace clone flags",
+    "facts": [
+      {
+        "id": "net",
+        "all": [
+          "CLONE_NEWNET"
+        ]
+      },
+      {
+        "id": "pid",
+        "all": [
+          "CLONE_NEWPID"
+        ]
+      }
+    ],
+    "notes": "clone(2) namespace isolation flags."
+  },
+  {
+    "id": "clone2-files-share-test",
+    "url": "https://man7.org/linux/man-pages/man2/clone.2.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "vague",
+    "question": "How do threads created with clone share file descriptor tables with their parent?",
+    "focus": "file descriptor table sharing threads parent",
+    "facts": [
+      {
+        "id": "flag",
+        "all": [
+          "CLONE_FILES"
+        ]
+      }
+    ],
+    "notes": "Vague query on clone file descriptor sharing."
+  },
+  {
+    "id": "capabilities7-bind-service-test",
+    "url": "https://man7.org/linux/man-pages/man7/capabilities.7.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "single",
+    "question": "Which capability allows binding to Internet domain privileged socket ports below 1024?",
+    "focus": "bind privileged ports below 1024 capability",
+    "facts": [
+      {
+        "id": "cap",
+        "all": [
+          "CAP_NET_BIND_SERVICE"
+        ]
+      }
+    ],
+    "notes": "capabilities(7) CAP_NET_BIND_SERVICE."
+  },
+  {
+    "id": "capabilities7-dac-override-test",
+    "url": "https://man7.org/linux/man-pages/man7/capabilities.7.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "multi",
+    "question": "What capability bypasses file read, write, and execute permission checks, and what capability bypasses file read and directory search checks?",
+    "focus": "bypass discretionary access control permission checks read execute",
+    "facts": [
+      {
+        "id": "override",
+        "all": [
+          "CAP_DAC_OVERRIDE"
+        ]
+      },
+      {
+        "id": "read",
+        "all": [
+          "CAP_DAC_READ_SEARCH"
+        ]
+      }
+    ],
+    "notes": "capabilities(7) DAC override and read/search."
+  },
+  {
+    "id": "capabilities7-ptrace-test",
+    "url": "https://man7.org/linux/man-pages/man7/capabilities.7.html",
+    "lang": "en",
+    "split": "test",
+    "kind": "table",
+    "question": "In the capabilities table, which capability permits tracing arbitrary processes using ptrace?",
+    "focus": "ptrace arbitrary processes inspect memory capability table",
+    "facts": [
+      {
+        "id": "cap",
+        "all": [
+          "CAP_SYS_PTRACE"
+        ]
+      }
+    ],
+    "notes": "capabilities(7) CAP_SYS_PTRACE."
+  },
+  {
+    "id": "docker-dotcloud-test",
+    "url": "https://zh.wikipedia.org/wiki/Docker",
+    "lang": "zh",
+    "split": "test",
+    "kind": "single",
+    "question": "Docker 最初是由哪家公司主导开发并发起的开源项目？",
+    "focus": "Docker 最初发起公司 开源项目 背景 团队",
+    "facts": [
+      {
+        "id": "company",
+        "all": [
+          "dotCloud"
+        ]
+      }
+    ],
+    "notes": "Docker dotCloud 历史。"
+  },
+  {
+    "id": "docker-namespaces-cgroups-test",
+    "url": "https://zh.wikipedia.org/wiki/Docker",
+    "lang": "zh",
+    "split": "test",
+    "kind": "multi",
+    "question": "Docker 在 Linux 上主要依赖哪两项内核特性来实现进程隔离与资源使用限制？",
+    "focus": "Linux 内核 资源隔离 配额限制 容器底层技术 特性",
+    "facts": [
+      {
+        "id": "ns",
+        "all": [
+          "命名空间"
+        ],
+        "any": [
+          "Namespaces",
+          "namespace"
+        ]
+      },
+      {
+        "id": "cg",
+        "all": [
+          "cgroups"
+        ],
+        "any": [
+          "控制组",
+          "Control Groups"
+        ]
+      }
+    ],
+    "notes": "Docker 命名空间与控制组。"
+  },
+  {
+    "id": "docker-negative-paxos-test",
+    "url": "https://zh.wikipedia.org/wiki/Docker",
+    "lang": "zh",
+    "split": "test",
+    "kind": "negative",
+    "question": "Docker Swarm 如何使用 Paxos 协议解决跨数据中心强一致性？",
+    "focus": "Docker Swarm Paxos 协议 跨数据中心 强一致性",
+    "facts": [],
+    "notes": "Negative case: Docker 词条不包含 Paxos 跨数据中心一致性内容。"
+  },
+  {
+    "id": "redis-creator-test",
+    "url": "https://zh.wikipedia.org/wiki/Redis",
+    "lang": "zh",
+    "split": "test",
+    "kind": "single",
+    "question": "Redis 数据库最初是由谁创建和开发的？",
+    "focus": "Redis 最初创建者 核心开发者 作者 发起人",
+    "facts": [
+      {
+        "id": "author",
+        "all": [
+          "Salvatore Sanfilippo"
+        ],
+        "any": [
+          "antirez"
+        ]
+      }
+    ],
+    "notes": "Redis Salvatore Sanfilippo (antirez)。"
+  },
+  {
+    "id": "redis-persistence-rdb-aof-test",
+    "url": "https://zh.wikipedia.org/wiki/Redis",
+    "lang": "zh",
+    "split": "test",
+    "kind": "multi",
+    "question": "Redis 支持的两种核心数据持久化机制分别是什么？",
+    "focus": "Redis 数据持久化 机制 磁盘保存 存储格式",
+    "facts": [
+      {
+        "id": "rdb",
+        "all": [
+          "RDB"
+        ]
+      },
+      {
+        "id": "aof",
+        "all": [
+          "AOF"
+        ]
+      }
+    ],
+    "notes": "Redis RDB 与 AOF 持久化。"
+  },
+  {
+    "id": "redis-sync-master-slave-test",
+    "url": "https://zh.wikipedia.org/wiki/Redis",
+    "lang": "zh",
+    "split": "test",
+    "kind": "vague",
+    "question": "Redis 在分布式部署中如何进行多节点间的数据同步？",
+    "focus": "Redis 多节点数据同步 架构 复制 集群",
+    "facts": [
+      {
+        "id": "sync",
+        "all": [
+          "主从同步"
+        ]
+      }
+    ],
+    "notes": "Redis 主从同步复制。"
   }
 ]

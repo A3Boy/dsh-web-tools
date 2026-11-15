@@ -99,6 +99,39 @@ export function buildReport(results: CaseResult[], meta: ReportMeta): { markdown
   }
   push("", "_Pass = every fact's keyword set found in the returned text. Recall (passage) below is the stricter co-occurrence variant._", "");
 
+  const uniqueCases = new Map<string, CaseResult>();
+  for (const r of answerable(results)) {
+    if (!uniqueCases.has(r.id) && r.recallAt1 !== null && r.recallAt1 !== undefined) {
+      uniqueCases.set(r.id, r);
+    }
+  }
+  const uList = Array.from(uniqueCases.values());
+  if (uList.length > 0) {
+    const meanR1 = mean(uList.map((r) => r.recallAt1!));
+    const meanR3 = mean(uList.map((r) => r.recallAt3!));
+    const meanR5 = mean(uList.map((r) => r.recallAt5!));
+    const meanR10 = mean(uList.map((r) => r.recallAt10!));
+    const meanMrr = mean(uList.map((r) => r.mrr!));
+    const ranks = uList.map((r) => r.bestAnswerRank).filter((r): r is number => r !== null);
+    const rankSummary = summarize(ranks);
+
+    push(
+      "## Budget-Independent Retrieval (Raw Ranking Quality)",
+      "",
+      "Measures whether BM25 retrieval ranked the answer chunks into the top-k results across the entire document, independent of character budget:",
+      "",
+      "| Metric | Value |",
+      "|---|---:|",
+      `| Recall@1 (facts in top 1 chunk) | ${pct(meanR1)} |`,
+      `| Recall@3 (facts in top 3 chunks) | ${pct(meanR3)} |`,
+      `| Recall@5 (facts in top 5 chunks) | ${pct(meanR5)} |`,
+      `| Recall@10 (facts in top 10 chunks) | ${pct(meanR10)} |`,
+      `| Mean Reciprocal Rank (MRR) | ${num(meanMrr, 3)} |`,
+      `| Answer Chunk Rank (median / p75 / max) | #${num(rankSummary.median, 0)} / #${num(rankSummary.p75, 0)} / #${num(rankSummary.max, 0)} |`,
+      "",
+    );
+  }
+
   for (const a of aggregates) {
     push(
       `## Budget ${a.budget}`,
@@ -140,10 +173,19 @@ export function buildReport(results: CaseResult[], meta: ReportMeta): { markdown
 
   const negatives = results.filter((r) => r.passedFinal === null && r.valid);
   if (negatives.length > 0) {
-    push("## Unanswerable questions (negative cases)", "", "| Budget | n | Focus matched (lower is better) |", "|---:|---:|---:|");
+    push(
+      "## Unanswerable questions (negative cases)",
+      "",
+      "Measures whether the tool appropriately signals low confidence / weak match when the page contains no answer:",
+      "",
+      "| Budget | n | Any Match | Strong False Positive Rate (lower is better) |",
+      "|---:|---:|---:|---:|",
+    );
     for (const b of meta.budgets) {
       const rs = negatives.filter((r) => r.budget === b);
-      push(`| ${b} | ${rs.length} | ${pct(rate(rs.map((r) => r.focusMatchedFirst)))} |`);
+      const anyRate = rate(rs.map((r) => r.focusMatchedFirst));
+      const strongRate = rate(rs.map((r) => r.focusConfidenceFirst === "strong"));
+      push(`| ${b} | ${rs.length} | ${pct(anyRate)} | ${pct(strongRate)} |`);
     }
     push("");
   }

@@ -7,7 +7,7 @@
  * @module
  */
 import { splitMarkdown, type Section } from "./chunk.ts";
-import { bm25Scores } from "./rank.ts";
+import { bm25Scores, tokenize } from "./rank.ts";
 import { selectPassages } from "./select.ts";
 import { clipCodePoints } from "./text.ts";
 import { createHash } from "node:crypto";
@@ -49,6 +49,7 @@ export interface ReadPageResult {
   outlineTotal: number;
   passages: ReadPassage[];
   focusMatched: boolean;
+  focusConfidence?: "strong" | "weak" | "none";
   truncated: boolean;
   totalChars: number;
   returnedChars: number;
@@ -118,12 +119,44 @@ export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPage
       )
     : pool.map(() => 0);
 
+  const queryTerms = focus ? tokenize(focus) : [];
   const selection = selectPassages(pool, scores, {
     budgetChars: budget,
     includeLead: !opts.section,
     // Reading a specific section without a focus means "give me this section".
     fallbackChars: opts.section ? budget : undefined,
+    queryTerms,
   });
+
+  let focusConfidence: ReadPageResult["focusConfidence"];
+  if (!focus) {
+    focusConfidence = undefined;
+  } else if (!selection.focusMatched) {
+    focusConfidence = "none";
+  } else {
+    const queryTokens = new Set(queryTerms);
+    if (queryTokens.size <= 1) {
+      focusConfidence = selection.passages.some((p) => p.score >= 1.5) ? "strong" : "weak";
+    } else {
+      const passageMaxHits = Math.max(
+        0,
+        ...selection.passages.map((p) => {
+          const pTokens = new Set(tokenize(p.chunk.headingPath.join(" ") + " " + p.chunk.text));
+          let hit = 0;
+          for (const t of queryTokens) if (pTokens.has(t)) hit++;
+          return hit;
+        })
+      );
+      const allHits = new Set<string>();
+      for (const p of selection.passages) {
+        const pTokens = tokenize(p.chunk.headingPath.join(" ") + " " + p.chunk.text);
+        for (const t of pTokens) if (queryTokens.has(t)) allHits.add(t);
+      }
+      const coverageRatio = allHits.size / queryTokens.size;
+      const topScore = selection.passages.reduce((m, p) => Math.max(m, p.score), 0);
+      focusConfidence = passageMaxHits >= 2 && coverageRatio >= 0.4 && topScore >= 1.5 ? "strong" : "weak";
+    }
+  }
 
   return {
     title: extractTitle(markdown),
@@ -136,6 +169,7 @@ export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPage
       score: Math.round(score * 1000) / 1000,
     })),
     focusMatched: selection.focusMatched,
+    focusConfidence,
     truncated: selection.truncated,
     totalChars,
     returnedChars: selection.returnedChars,

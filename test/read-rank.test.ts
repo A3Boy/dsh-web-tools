@@ -8,9 +8,13 @@ test("tokenize lowercases Latin text, keeps digits, drops single letters and sto
   assert.ok(!tokenize("the cat").includes("the"));
 });
 
-test("tokenize emits CJK unigrams and bigrams and drops particles", () => {
+test("tokenize emits CJK bigrams, isolated unigrams, and drops particles", () => {
   const zh = tokenize("小红书评论");
-  for (const t of ["小", "红", "书", "评", "论", "小红", "红书", "书评", "评论"]) assert.ok(zh.includes(t), t);
+  for (const t of ["小红", "红书", "书评", "评论"]) assert.ok(zh.includes(t), t);
+  const single = tokenize("查图表");
+  assert.ok(single.includes("查图") && single.includes("图表"));
+  const lone = tokenize("云");
+  assert.deepEqual(lone, ["云"]);
   const t2 = tokenize("苹果的价格");
   assert.ok(!t2.includes("的"));
   assert.ok(!t2.includes("果的"));

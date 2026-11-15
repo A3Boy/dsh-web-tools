@@ -36,7 +36,11 @@ export function renderWebRead(input: RenderInput): string {
   if (result.section) {
     lines.push(`${shown}${result.truncated ? " (section truncated)" : ""}`);
   } else if (focus && result.focusMatched) {
-    lines.push(`${shown}, selected for focus "${focus}"`);
+    if (result.focusConfidence === "weak") {
+      lines.push(`${shown}, weak match for focus "${focus}" (query keywords did not strongly co-occur together in any single section)`);
+    } else {
+      lines.push(`${shown}, selected for focus "${focus}"`);
+    }
   } else if (focus) {
     lines.push(`${shown}. No passage matched the focus; showing the start of the page.`);
   } else {

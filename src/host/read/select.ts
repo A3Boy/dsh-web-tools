@@ -10,6 +10,7 @@
  * @module
  */
 import type { Chunk } from "./chunk.ts";
+import { tokenize } from "./rank.ts";
 import { clipCodePoints, cpLength } from "./text.ts";
 
 export const DEFAULT_FALLBACK_CHARS = 3000;
@@ -27,6 +28,8 @@ export interface SelectOptions {
   minRelativeScore?: number;
   /** Size of the in-order prefix returned when nothing matches. Default 3000. */
   fallbackChars?: number;
+  /** Query tokens for coverage-aware selection of multi-fact questions. */
+  queryTerms?: string[];
 }
 
 export interface SelectedPassage {
@@ -103,7 +106,57 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
       .map((_, i) => i)
       .filter((i) => scores[i] > 0 && scores[i] >= threshold)
       .sort((a, b) => scores[b] - scores[a] || a - b);
-    for (const i of order) take(i);
+
+    if (opts.queryTerms && opts.queryTerms.length > 1) {
+      const querySet = new Set(opts.queryTerms);
+      const chunkTerms: Array<Set<string>> = chunks.map((c) => {
+        const tokens = tokenize(c.headingPath.join(" ") + " " + c.text);
+        return new Set(tokens.filter((t) => querySet.has(t)));
+      });
+
+      const uncovered = new Set(querySet);
+      // Remove query terms already covered by lead chunk (if picked)
+      if (picked.has(0)) {
+        for (const t of chunkTerms[0]) uncovered.delete(t);
+      }
+
+      const candidates = new Set(order.filter((i) => !picked.has(i)));
+
+      while (candidates.size > 0 && used < budget) {
+        let bestIdx = -1;
+        let bestPriority = -1;
+
+        for (const i of candidates) {
+          if (used + chunks[i].chars > budget) continue;
+          const baseScore = scores[i];
+          const terms = chunkTerms[i];
+          let novelty = 0.3;
+          if (terms.size > 0) {
+            let hitUncovered = 0;
+            for (const t of terms) {
+              if (uncovered.has(t)) hitUncovered++;
+            }
+            const ratio = hitUncovered / terms.size;
+            novelty = 0.3 + 0.7 * ratio;
+          }
+          const priority = baseScore * novelty;
+          if (priority > bestPriority) {
+            bestPriority = priority;
+            bestIdx = i;
+          }
+        }
+
+        if (bestIdx < 0) break;
+
+        take(bestIdx);
+        candidates.delete(bestIdx);
+        for (const t of chunkTerms[bestIdx]) {
+          uncovered.delete(t);
+        }
+      }
+    } else {
+      for (const i of order) take(i);
+    }
 
     // Expand context: strictly within the same section and capped to avoid over-expansion
     if (used < budget) {

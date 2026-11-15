@@ -15,6 +15,7 @@
  * the retrieval algorithm.
  * @module
  */
+import { splitMarkdown } from "../../src/host/read/chunk.ts";
 import { readPage as defaultReadPage } from "../../src/host/read/pipeline.ts";
 import type { ReadPageOptions, ReadPageResult } from "../../src/host/read/pipeline.ts";
 import { bm25Scores } from "../../src/host/read/rank.ts";
@@ -62,6 +63,7 @@ export interface CaseResult {
   rounds: number;
   roundsInfo: RoundInfo[];
   focusMatchedFirst: boolean;
+  focusConfidenceFirst?: "strong" | "weak" | "none";
   /** null for negative cases. */
   recallFirstText: number | null;
   recallFirstPassage: number | null;
@@ -71,6 +73,12 @@ export interface CaseResult {
   passedFinal: boolean | null;
   missingFinal: string[];
   latencyMs: number;
+  recallAt1: number | null;
+  recallAt3: number | null;
+  recallAt5: number | null;
+  recallAt10: number | null;
+  mrr: number | null;
+  bestAnswerRank: number | null;
 }
 
 const factLabel = (id: string | undefined, i: number) => id ?? `fact#${i + 1}`;
@@ -144,6 +152,41 @@ export function evaluateCase(
   const negative = c.facts.length === 0;
   const missingFinal = c.facts.map((f, i) => (finalHits.text[i] ? null : factLabel(f.id, i))).filter((x): x is string => x !== null);
 
+  let recallAt1: number | null = null;
+  let recallAt3: number | null = null;
+  let recallAt5: number | null = null;
+  let recallAt10: number | null = null;
+  let mrr: number | null = null;
+  let bestAnswerRank: number | null = null;
+
+  if (c.facts.length > 0) {
+    const { chunks } = splitMarkdown(markdown);
+    const docs = chunks.map((ch) => ({ text: ch.text, heading: ch.headingPath.join(" ") }));
+    const rawScores = focus ? bm25Scores(docs, focus) : chunks.map(() => 0);
+    const ranked = chunks.map((_, i) => i).sort((a, b) => (rawScores[b] ?? 0) - (rawScores[a] ?? 0) || a - b);
+
+    const factRanks: number[] = [];
+    for (const fact of c.facts) {
+      let bestRank: number | null = null;
+      for (let r = 0; r < ranked.length; r++) {
+        const chunk = chunks[ranked[r]];
+        const text = normalizeForMatch(chunk.text + "\n" + chunk.headingPath.join(" "));
+        if (factSatisfied(text, fact)) {
+          bestRank = r + 1;
+          break;
+        }
+      }
+      if (bestRank !== null) factRanks.push(bestRank);
+    }
+
+    recallAt1 = factRanks.filter((r) => r <= 1).length / c.facts.length;
+    recallAt3 = factRanks.filter((r) => r <= 3).length / c.facts.length;
+    recallAt5 = factRanks.filter((r) => r <= 5).length / c.facts.length;
+    recallAt10 = factRanks.filter((r) => r <= 10).length / c.facts.length;
+    mrr = factRanks.length > 0 ? factRanks.reduce((sum, r) => sum + 1.0 / r, 0) / c.facts.length : 0;
+    bestAnswerRank = factRanks.length > 0 ? Math.min(...factRanks) : null;
+  }
+
   return {
     id: c.id,
     kind: c.kind,
@@ -158,6 +201,7 @@ export function evaluateCase(
     rounds: roundsInfo.length,
     roundsInfo,
     focusMatchedFirst: first.focusMatched,
+    focusConfidenceFirst: first.focusConfidence,
     recallFirstText: negative ? null : fraction(firstHits.text),
     recallFirstPassage: negative ? null : fraction(firstHits.passage),
     recallFinalText: negative ? null : fraction(finalHits.text),
@@ -166,5 +210,11 @@ export function evaluateCase(
     passedFinal: negative ? null : finalHits.text.every(Boolean),
     missingFinal,
     latencyMs,
+    recallAt1,
+    recallAt3,
+    recallAt5,
+    recallAt10,
+    mrr,
+    bestAnswerRank,
   };
 }
