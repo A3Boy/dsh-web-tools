@@ -97,6 +97,10 @@ export declare const webReadOutputSchema: {
             readonly type: "boolean";
             readonly required: true;
         };
+        readonly focusConfidence: {
+            readonly type: "string";
+            readonly enum: readonly ["strong", "weak", "none"];
+        };
         readonly truncated: {
             readonly type: "boolean";
             readonly required: true;

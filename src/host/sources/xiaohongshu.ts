@@ -234,12 +234,16 @@ export class XiaohongshuSource implements SpecializedSource {
     }
 
     // Production: do not start browser. Signal registry to use general-web fallback.
+    // The registry only falls back to general web for retryable failures
+    // (registry.ts routing guard), so this outcome MUST be retryable — with
+    // retryable: false the documented XHS_NATIVE_SEARCH=0 degradation never
+    // happened and the search died with this error instead.
     return {
       items: [],
       error: {
         code: "runtime-unavailable",
         message: "native search disabled — using general web discovery",
-        retryable: false,
+        retryable: true,
       },
     };
   }
@@ -746,15 +750,24 @@ export class XiaohongshuSource implements SpecializedSource {
             signal,
           );
           if (searchRes && searchRes.ok && Array.isArray(searchRes.items) && searchRes.items.length > 0) {
+            // Strict identity only. Falling back to the first result made the
+            // source return a DIFFERENT note as the target's detail (e.g.
+            // requesting target123 served other456) without any error, so the
+            // model could cite wrong content as the requested note. No exact
+            // match means token resolution did not succeed here; navigation
+            // then proceeds and the final-URL check reports a clean error
+            // instead of silently serving another note.
             const matched = searchRes.items.find((item: any) => {
               const card = item?.note_card ?? item;
               const id = card?.note_id ?? card?.noteId ?? card?.id ?? item?.id;
               return id === noteId;
-            }) || searchRes.items[0];
+            });
 
             if (matched) {
               const mapped = mapXhsApiNote(matched);
-              if (mapped) {
+              // Belt and braces: only use the mapped item when it really is
+              // the requested note.
+              if (mapped && mapped.id === noteId) {
                 searchFallbackItem = mapped;
                 rememberGlobalNote(mapped);
                 if (hasXhsAccessToken(mapped.url)) {

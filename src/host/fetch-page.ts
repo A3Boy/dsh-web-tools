@@ -44,8 +44,14 @@ export function createFetchPage(fetchProvider: FetchProviderLike): FetchPage {
     if (!res || !res.body) {
       throw new Error(`fetchPage: empty response for ${url}`);
     }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw new Error(`fetchPage: HTTP ${res.statusCode}`);
+    }
     if (res.body.kind !== "text") {
       throw new Error(`fetchPage: expected text body but received ${res.body.kind}`);
+    }
+    if (!res.body.content?.trim()) {
+      throw new Error("fetchPage: no readable content extracted");
     }
     return {
       content: res.body.content,

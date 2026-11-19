@@ -79,6 +79,7 @@ export function buildReport(results: CaseResult[], meta: ReportMeta): { markdown
     `- Generated: ${meta.generatedAt}`,
     `- Command: \`${meta.command}\``,
     `- Split: **${meta.split}** · lock: ${meta.lockStatus}`,
+    "- Lock verification proves fixture/case integrity, not that cases were unseen during development.",
     `- Budgets (chars): ${meta.budgets.join(", ")} · max rounds: ${meta.maxRounds}`,
     `- Cases in file: ${meta.totalCases} · evaluated: ${new Set(results.map((r) => r.id)).size} · missing fixtures: ${meta.missingFixtures.length}`,
     "- Baseline: `web_fetch` (whole page, capped). Token counts are **estimates**; compare ratios, not absolutes.",

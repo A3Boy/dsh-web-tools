@@ -49,6 +49,12 @@ test("section mode returns only that section", () => {
   assert.equal(r.truncated, false);
 });
 
+test("page identity is checked before looking up a section removed by an update", () => {
+  const original = readPage("# Guide\nIntro\n## Details\nOriginal details");
+  assert.throws(() => readPage("# Guide\nUpdated", { section: "s1", contentId: original.contentId }), /page content has changed/);
+  assert.throws(() => readPage("# Guide\nUpdated", { section: "s1" }), UnknownSectionError);
+});
+
 test("section ids are stable across calls", () => {
   const doc = buildDoc();
   assert.deepEqual(readPage(doc).outline, readPage(doc, { focus: "pricing" }).outline);
@@ -92,6 +98,14 @@ test("Chinese focus finds the relevant Chinese passage", () => {
   const r = readPage(md, { focus: "续航多少小时", maxChars: 800 });
   assert.equal(r.focusMatched, true);
   assert.ok(r.passages.some((p) => p.text.includes("实测大约二十六小时")));
+});
+
+test("focus confidence distinguishes absent focus, no match, weak and strong lexical matches", () => {
+  assert.equal(readPage("alpha beta").focusConfidence, undefined);
+  assert.equal(readPage("alpha beta", { focus: "gamma" }).focusConfidence, "none");
+  assert.equal(readPage("alpha beta", { focus: "alpha beta" }).focusConfidence, "weak");
+  const doc = "# Relevant\n\nalpha beta\n\n" + Array.from({ length: 20 }, (_, i) => `## Filler ${i}\n\nunrelated material`).join("\n\n");
+  assert.equal(readPage(doc, { focus: "alpha beta" }).focusConfidence, "strong");
 });
 
 test("a large page is processed quickly", () => {

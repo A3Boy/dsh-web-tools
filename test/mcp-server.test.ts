@@ -3,6 +3,26 @@ import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { McpServer } from "../src/mcp/server.ts";
 import { CURRENT_VERSION } from "../src/shared/version.ts";
+import { readPage } from "../src/host/read/pipeline.ts";
+
+test("MCP web_read rejects bad fetch responses and detects removed sections on changed pages", async () => {
+  const original = readPage("# Guide\nIntro\n## Details\nOriginal details");
+  for (const entry of [
+    { statusCode: 404, kind: "text", content: "Not found", args: {}, expected: /HTTP 404/ },
+    { statusCode: 200, kind: "text", content: " \n", args: {}, expected: /no readable content/ },
+    { statusCode: 200, kind: "html", content: "<h1>Raw HTML</h1>", args: {}, expected: /expected text body/ },
+    { statusCode: 200, kind: "text", content: "# Guide\nUpdated", args: { section: "s1", contentId: original.contentId }, expected: /page content has changed/ },
+  ]) {
+    const harness = createTestHarness({ mockFetch: async () => ({ url: "https://example.com", statusCode: entry.statusCode, body: { kind: entry.kind, content: entry.content } }) });
+    try {
+      const response = harness.readResponse();
+      harness.send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "web_read", arguments: { url: "https://example.com", ...entry.args } } });
+      const result = (await response).result;
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, entry.expected);
+    } finally { await harness.server.close(); }
+  }
+});
 
 function createTestHarness(options: {
   mockSearch?: (req: any, signal?: AbortSignal) => Promise<any>;
@@ -520,4 +540,3 @@ test("mcp-server: tools/call web_read contentId mismatch returns isError", async
     harness.server.close();
   }
 });
-

@@ -41,6 +41,7 @@ test("registerWebRead: registers tool with required url parameter and valid outp
   assert.ok(registeredTool.output.schema.required.includes("url"));
   assert.ok(registeredTool.output.schema.required.includes("outline"));
   assert.ok(registeredTool.output.schema.required.includes("passages"));
+  assert.deepEqual(registeredTool.output.schema.properties.focusConfidence.enum, ["strong", "weak", "none"]);
   assert.ok(typeof registeredTool.execute === "function");
   assert.ok(typeof registeredTool.output.render === "function");
 });
@@ -250,7 +251,7 @@ test("contentId: identical content yields same id, altered content throws WEB_RE
   assert.equal(secondRes.section?.id, "s1");
 
   // Page content changes on the remote site
-  pageContent = "# Title\n\nIntro modified\n\n## Section 1\n\nContent B";
+  pageContent = "# Title\n\nIntro modified; Section 1 has been removed.";
 
   // Calling with old contentId throws WEB_READ_PAGE_CHANGED
   await assert.rejects(
@@ -269,4 +270,3 @@ test("contentId: identical content yields same id, altered content throws WEB_RE
     },
   );
 });
-

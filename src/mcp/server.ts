@@ -42,6 +42,7 @@ import {
   getCachedNoteItem,
 } from "../host/sources/xiaohongshu.ts";
 import { readPage, renderWebRead, UnknownSectionError } from "../host/read/index.ts";
+import { createFetchPage } from "../host/fetch-page.ts";
 
 /**
  * MCP protocol revisions this server understands, newest first. The server
@@ -568,34 +569,12 @@ export class McpServer {
           const contentId = typeof args.contentId === "string" ? args.contentId : undefined;
 
           try {
-            const res = await this.withDeadline((signal) => this.fetchProvider.fetch({ url }, signal));
-            const rawContent = res.body?.content || "";
-            if (!rawContent) {
-              this.sendResponse(id, {
-                isError: true,
-                content: [{ type: "text", text: "Fetch failed: no readable content extracted" }],
-              });
-              return;
-            }
-
-            const result = readPage(rawContent, { focus, maxChars, section });
-
-            if (contentId && result.contentId && contentId !== result.contentId) {
-              this.sendResponse(id, {
-                isError: true,
-                content: [
-                  {
-                    type: "text",
-                    text: `Error: page content has changed since previous call (expected contentId ${contentId}, found ${result.contentId}). Call web_read without section to get an updated outline.`,
-                  },
-                ],
-              });
-              return;
-            }
+            const res = await this.withDeadline((signal) => createFetchPage(this.fetchProvider)(url, signal));
+            const result = readPage(res.content, { focus, maxChars, section, contentId });
 
             const rendered = renderWebRead({
               url,
-              finalUrl: (res as { finalUrl?: string }).finalUrl ?? res.url,
+              finalUrl: res.finalUrl,
               focus,
               result,
               fetchTruncated: res.truncated ?? false,

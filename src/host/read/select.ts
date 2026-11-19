@@ -109,15 +109,18 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
 
     if (opts.queryTerms && opts.queryTerms.length > 1) {
       const querySet = new Set(opts.queryTerms);
-      const chunkTerms: Array<Set<string>> = chunks.map((c) => {
+      // Only eligible candidates and the reserved lead affect coverage.
+      const chunkTerms = new Map<number, Set<string>>();
+      for (const i of new Set([...order, ...picked.keys()])) {
+        const c = chunks[i];
         const tokens = tokenize(c.headingPath.join(" ") + " " + c.text);
-        return new Set(tokens.filter((t) => querySet.has(t)));
-      });
+        chunkTerms.set(i, new Set(tokens.filter((t) => querySet.has(t))));
+      }
 
       const uncovered = new Set(querySet);
       // Remove query terms already covered by lead chunk (if picked)
       if (picked.has(0)) {
-        for (const t of chunkTerms[0]) uncovered.delete(t);
+        for (const t of chunkTerms.get(0)!) uncovered.delete(t);
       }
 
       const candidates = new Set(order.filter((i) => !picked.has(i)));
@@ -129,7 +132,7 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
         for (const i of candidates) {
           if (used + chunks[i].chars > budget) continue;
           const baseScore = scores[i];
-          const terms = chunkTerms[i];
+          const terms = chunkTerms.get(i)!;
           let novelty = 0.3;
           if (terms.size > 0) {
             let hitUncovered = 0;
@@ -150,7 +153,7 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
 
         take(bestIdx);
         candidates.delete(bestIdx);
-        for (const t of chunkTerms[bestIdx]) {
+        for (const t of chunkTerms.get(bestIdx)!) {
           uncovered.delete(t);
         }
       }

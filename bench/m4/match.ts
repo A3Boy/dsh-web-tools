@@ -11,7 +11,7 @@ import type { Fact } from "./schema.ts";
 export type Scope = "text" | "passage";
 
 export function normalizeForMatch(text: string): string {
-  return text.normalize("NFKC").toLowerCase().replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
+  return text.normalize("NFKC").toLowerCase().replace(/\\([_\-\[\]()#.!])/g, "$1").replace(/[*`]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function has(normalizedText: string, keyword: string): boolean {

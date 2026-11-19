@@ -19,6 +19,19 @@ test("respects the budget, includes the lead and returns document order", () => 
   assert.equal(sel.truncated, true);
 });
 
+test("coverage prefers a new query term among eligible candidates and respects budget", () => {
+  const chunks = ["alpha", "alpha", "beta"].map((text, i) => ({ ...mk(i, text.length, `s${i}`), text }));
+  const selected = selectPassages(chunks, [10, 9, 8], { budgetChars: 9, includeLead: false, queryTerms: ["alpha", "beta"] });
+  assert.deepEqual(indices(selected), [0, 2]);
+  assert.equal(selected.returnedChars, 9);
+});
+
+test("coverage currently excludes below-threshold evidence in another section", () => {
+  const chunks = ["alpha", "beta"].map((text, i) => ({ ...mk(i, text.length, `s${i}`), text }));
+  const selected = selectPassages(chunks, [10, 2], { budgetChars: 8, includeLead: false, queryTerms: ["alpha", "beta"] });
+  assert.deepEqual(indices(selected), [0]);
+});
+
 test("without a match returns an in-order prefix of the page", () => {
   const chunks = Array.from({ length: 10 }, (_, i) => mk(i, 100));
   const sel = selectPassages(chunks, new Array(10).fill(0), { budgetChars: 450 });

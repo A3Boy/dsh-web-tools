@@ -10,7 +10,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { defineTool, type ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
-import { UnknownSectionError, readPage, type ReadPageResult } from "./pipeline.ts";
+import { UnknownSectionError, PageChangedError, readPage, type ReadPageResult } from "./pipeline.ts";
 import { renderWebRead } from "./render.ts";
 import type { FetchPage, FetchedPage } from "../fetch-page.ts";
 import type { WebToolsContext } from "../context-types.ts";
@@ -89,6 +89,7 @@ export const webReadOutputSchema = {
       items: passageSchema,
     },
     focusMatched: { type: "boolean", required: true },
+    focusConfidence: { type: "string", enum: ["strong", "weak", "none"] },
     truncated: { type: "boolean", required: true },
     fetchTruncated: { type: "boolean", required: true },
     totalChars: { type: "number", required: true },
@@ -183,14 +184,8 @@ export function registerWebRead(ctx: WebToolsContext | Context, fetchPage: Fetch
           focus: args.focus,
           maxChars: args.maxChars,
           section: args.section,
+          contentId: args.contentId,
         });
-
-        if (args.contentId && result.contentId && args.contentId !== result.contentId) {
-          throw new WebReadError(
-            `web_read: page content has changed since previous call (expected contentId ${args.contentId}, found ${result.contentId}). Call web_read without section to get an updated outline.`,
-            "WEB_READ_PAGE_CHANGED",
-          );
-        }
 
         return {
           ...result,
@@ -201,6 +196,9 @@ export function registerWebRead(ctx: WebToolsContext | Context, fetchPage: Fetch
         };
       } catch (err: unknown) {
         if (err instanceof WebReadError) throw err;
+        if (err instanceof PageChangedError) {
+          throw new WebReadError(`web_read: ${err.message}`, "WEB_READ_PAGE_CHANGED", { cause: err });
+        }
         if (err instanceof UnknownSectionError) {
           throw new WebReadError(err.message, "WEB_READ_UNKNOWN_SECTION", { cause: err });
         }

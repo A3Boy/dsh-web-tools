@@ -26,6 +26,8 @@ export interface ReadPageOptions {
   /** Read one section (id from a previous outline) instead of the whole page. */
   section?: string;
   maxChunkChars?: number;
+  /** Expected identity from a previous read, checked before section lookup. */
+  contentId?: string;
 }
 
 export interface OutlineEntry {
@@ -73,6 +75,13 @@ export class UnknownSectionError extends Error {
   }
 }
 
+export class PageChangedError extends Error {
+  constructor(expected: string, actual: string) {
+    super(`page content has changed since previous call (expected contentId ${expected}, found ${actual}). Call web_read without section to get an updated outline.`);
+    this.name = "PageChangedError";
+  }
+}
+
 export function clampMaxChars(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return DEFAULT_MAX_CHARS;
   return Math.min(MAX_MAX_CHARS, Math.max(MIN_MAX_CHARS, Math.floor(value)));
@@ -99,6 +108,8 @@ function extractTitle(markdown: string): string | undefined {
 }
 
 export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPageResult {
+  const contentId = createHash("sha256").update(markdown).digest("hex").slice(0, 8);
+  if (opts.contentId && opts.contentId !== contentId) throw new PageChangedError(opts.contentId, contentId);
   const budget = clampMaxChars(opts.maxChars);
   const { sections, chunks, totalChars } = splitMarkdown(markdown, { maxChunkChars: opts.maxChunkChars });
 
@@ -138,19 +149,15 @@ export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPage
     if (queryTokens.size <= 1) {
       focusConfidence = selection.passages.some((p) => p.score >= 1.5) ? "strong" : "weak";
     } else {
-      const passageMaxHits = Math.max(
-        0,
-        ...selection.passages.map((p) => {
-          const pTokens = new Set(tokenize(p.chunk.headingPath.join(" ") + " " + p.chunk.text));
-          let hit = 0;
-          for (const t of queryTokens) if (pTokens.has(t)) hit++;
-          return hit;
-        })
-      );
+      let passageMaxHits = 0;
       const allHits = new Set<string>();
       for (const p of selection.passages) {
-        const pTokens = tokenize(p.chunk.headingPath.join(" ") + " " + p.chunk.text);
-        for (const t of pTokens) if (queryTokens.has(t)) allHits.add(t);
+        const pTokens = new Set(tokenize(p.chunk.headingPath.join(" ") + " " + p.chunk.text));
+        let hit = 0;
+        for (const t of queryTokens) {
+          if (pTokens.has(t)) { hit++; allHits.add(t); }
+        }
+        passageMaxHits = Math.max(passageMaxHits, hit);
       }
       const coverageRatio = allHits.size / queryTokens.size;
       const topScore = selection.passages.reduce((m, p) => Math.max(m, p.score), 0);
@@ -174,6 +181,6 @@ export function readPage(markdown: string, opts: ReadPageOptions = {}): ReadPage
     totalChars,
     returnedChars: selection.returnedChars,
     section: sectionInfo,
-    contentId: createHash("sha256").update(markdown).digest("hex").slice(0, 8),
+    contentId,
   };
 }

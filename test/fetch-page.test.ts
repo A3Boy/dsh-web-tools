@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import { createFetchPage } from "../src/host/fetch-page.ts";
 import { createCachedFetchProvider } from "../src/host/cached-web.ts";
 
+test("createFetchPage rejects HTTP errors and empty or whitespace-only text", async () => {
+  for (const [statusCode, content] of [[404, "Not found"], [503, "Unavailable"], [200, ""], [200, " \n\t"]] as const) {
+    const fetchPage = createFetchPage({ fetch: async () => ({ url: "https://example.com", statusCode, body: { kind: "text", content } }) });
+    await assert.rejects(fetchPage("https://example.com", new AbortController().signal), /HTTP|no readable content/);
+  }
+});
+
 test("createFetchPage: maps body.content, finalUrl, truncated, and backend", async () => {
   const fakeProvider = {
     fetch: async (req: { url: string }) => ({

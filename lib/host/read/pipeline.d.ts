@@ -10,6 +10,8 @@ export interface ReadPageOptions {
     /** Read one section (id from a previous outline) instead of the whole page. */
     section?: string;
     maxChunkChars?: number;
+    /** Expected identity from a previous read, checked before section lookup. */
+    contentId?: string;
 }
 export interface OutlineEntry {
     id: string;
@@ -47,6 +49,9 @@ export declare class UnknownSectionError extends Error {
     readonly sectionId: string;
     readonly available: string[];
     constructor(sectionId: string, available: string[]);
+}
+export declare class PageChangedError extends Error {
+    constructor(expected: string, actual: string);
 }
 export declare function clampMaxChars(value: number | undefined): number;
 export declare function readPage(markdown: string, opts?: ReadPageOptions): ReadPageResult;

@@ -24,7 +24,7 @@ import { buildTavilySearchBody, tavilyCountryName } from "./providers/tavily.ts"
 import { buildYouSearchBody } from "./providers/you.ts";
 import { buildBraveLlmContextBody } from "./providers/brave.ts";
 import { buildExaSearchBody } from "./providers/exa.ts";
-import { buildSearxngUrl, buildSearxngAuth } from "./providers/searxng.ts";
+import { buildSearxngUrl, buildSearxngAuth, SearxngProvider } from "./providers/searxng.ts";
 import { createSearchProvider } from "./registry.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
@@ -482,6 +482,54 @@ test("buildExaSearchBody maps research topic to publication category and startPu
 });
 
 // ---- SearXNG deep adaptation tests ----
+
+test("SearXNG rejects empty results with upstream engine failures instead of reporting success", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    results: [],
+    answer: "  ",
+    unresponsive_engines: [["google cse", "timeout"], ["duckduckgo", "CAPTCHA"]],
+  }));
+  await assert.rejects(
+    SearxngProvider.search("SQLite WAL", 5, "", "http://127.0.0.1:8888"),
+    (error: any) => error.code === "server" && /upstream engine/i.test(error.message),
+  );
+});
+
+test("SearXNG preserves genuine empty results and usable partial results or answers", async (t) => {
+  let body: Record<string, unknown> = { results: [], unresponsive_engines: [] };
+  t.mock.method(globalThis, "fetch", async () => Response.json(body));
+  assert.deepEqual(await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888"), { sources: [] });
+  body = { results: [{ url: "https://sqlite.org/wal.html", title: "WAL" }], unresponsive_engines: [["duckduckgo", "CAPTCHA"]] };
+  assert.equal((await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888")).sources.length, 1);
+  body = { results: [], answer: "An answer", unresponsive_engines: [["duckduckgo", "CAPTCHA"]] };
+  assert.equal((await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888")).content, "An answer");
+});
+
+test("SearXNG upstream failure reaches the existing fallback chain as a failed attempt", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    results: [], unresponsive_engines: [["google cse", "timeout"]],
+  }));
+  const records: Array<{ provider: string; outcome: string }> = [];
+  const provider = createSearchProvider(
+    () => ({
+      enabled: true, defaultProvider: "searxng", providerAttemptTimeoutMs: 5000,
+      fallbackOrder: ["brave"], providerBaseUrls: { searxng: "http://127.0.0.1:8888" },
+      enabledProviders: { searxng: true, brave: true },
+    }),
+    async () => "test-key",
+    { record: (record) => records.push(record) },
+    {
+      searxng: SearxngProvider,
+      brave: {
+        ...SearxngProvider, name: "brave", needsBaseUrl: false,
+        async search() { return { sources: [{ url: "https://sqlite.org/wal.html", title: "WAL" }] }; },
+      },
+    },
+  );
+  const result = await provider.search({ query: "SQLite WAL", maxResults: 5 });
+  assert.equal(result.backend, "brave");
+  assert.ok(records.some(record => record.provider === "searxng" && record.outcome === "failed:server"));
+});
 
 test("buildSearxngUrl maps code topic but omits unsupported week time_range", () => {
   const hints = extractSearchHints("TypeScript compiler error this week");

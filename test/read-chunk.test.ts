@@ -62,6 +62,24 @@ test("prefers sentence boundaries when splitting a long paragraph", () => {
   for (const c of chunks.slice(0, -1)) assert.ok(c.text.endsWith("。"), c.text.slice(-6));
 });
 
+test("numbered inference never overrides ATX structure, including a later ATX heading", () => {
+  for (const md of ["# Guide\n\n1. Install the package\n\nInstall body\n\n2. Run the program\n\nRun body", "1. Install the package\n\nInstall body\n\n2. Run the program\n\nRun body\n\n# Guide\nBody"]) {
+    assert.ok(splitMarkdown(md).sections.every(s => !/^\d/.test(s.heading)));
+  }
+});
+
+test("numbered inference ignores fenced code and still recognizes plain RFC sections", () => {
+  const md = "```text\n\n1. Setup\n\n2. Execute\n```\n\n1. Introduction\n\nIntro body\n\n2. Protocol\n\nProtocol body\n\n2.1. Messages\n\nMessage body";
+  const result = splitMarkdown(md);
+  assert.deepEqual(result.sections.map(s => s.heading), ["", "1 Introduction", "2 Protocol", "2.1 Messages"]);
+  assert.ok(result.chunks[0].text.includes("1. Setup"));
+});
+
+test("numbered inference requires multiple increasing section numbers", () => {
+  assert.deepEqual(splitMarkdown("1. Install the package\n\nSome body").sections.map(s => s.heading), [""]);
+  assert.deepEqual(splitMarkdown("2. Protocol\n\nBody\n\n1. Introduction\n\nBody").sections.map(s => s.heading), [""]);
+});
+
 test("splitting is deterministic", () => {
   const md = "# A\n\n" + "word ".repeat(2000) + "\n\n## B\n\n" + "其他内容。".repeat(500);
   assert.deepEqual(splitMarkdown(md), splitMarkdown(md));

@@ -104,6 +104,31 @@ interface RawSection {
 
 function parseSections(markdown: string): RawSection[] {
   const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  // Infer plain-text structure only when no real ATX heading exists outside code.
+  const numbered = new Map<number, RegExpExecArray>();
+  let scanFence: string | null = null;
+  let hasAtx = false;
+  let previousNumber: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const inside = scanFence !== null;
+    scanFence = nextFenceState(scanFence, lines[i]);
+    if (inside || fenceMarker(lines[i])) continue;
+    if (HEADING_RE.test(lines[i])) hasAtx = true;
+    if ((i > 0 && lines[i - 1].trim() !== "") || lines[i].length > 80) continue;
+    const match = NUMBERED_HEADING_RE.exec(lines[i]);
+    if (!match) continue;
+    const body = match[2].trim();
+    const words = body.split(/\s+/);
+    if (/[.;,:]$/.test(body) || words.length > 8 || NON_HEADING_STARTS.has(words[0].toLowerCase())) continue;
+    const number = match[1].split(".").map(Number);
+    const different = number.findIndex((part, index) => part !== previousNumber[index]);
+    const increasing = previousNumber.length === 0 || (different >= 0 &&
+      (previousNumber[different] === undefined || number[different] > previousNumber[different]));
+    if (!increasing) continue;
+    numbered.set(i, match);
+    previousNumber = number;
+  }
+  if (hasAtx || numbered.size < 2) numbered.clear();
   const raw: RawSection[] = [{ heading: "", level: 0, path: [], lines: [] }];
   const stack: Array<{ level: number; heading: string }> = [];
   let fence: string | null = null;
@@ -130,25 +155,16 @@ function parseSections(markdown: string): RawSection[] {
       }
     }
 
-    if (!isFenceLine && prevBlankLine && line.trim().length > 0 && line.length <= 80) {
-      const nm = NUMBERED_HEADING_RE.exec(line);
+    if (!insideBefore && !isFenceLine && prevBlankLine) {
+      const nm = numbered.get(i);
       if (nm) {
-        const body = nm[2].trim();
-        if (!body.endsWith(".") && !body.endsWith(";") && !body.endsWith(",") && !body.endsWith(":")) {
-          const words = body.split(/\s+/);
-          if (words.length <= 8 && !NON_HEADING_STARTS.has(words[0].toLowerCase())) {
-            const dots = (nm[1].match(/\./g) ?? []).length;
-            const level = Math.min(6, 1 + dots);
-            const heading = cleanHeading(`${nm[1]} ${body}`);
-            if (heading) {
-              while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
-              stack.push({ level, heading });
-              raw.push({ heading, level, path: stack.map((s) => s.heading), lines: [] });
-              prevBlankLine = false;
-              continue;
-            }
-          }
-        }
+        const level = Math.min(6, nm[1].split(".").length);
+        const heading = cleanHeading(`${nm[1]} ${nm[2].trim()}`);
+        while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+        stack.push({ level, heading });
+        raw.push({ heading, level, path: stack.map((s) => s.heading), lines: [] });
+        prevBlankLine = false;
+        continue;
       }
     }
     prevBlankLine = line.trim() === "";

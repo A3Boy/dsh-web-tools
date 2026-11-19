@@ -28,14 +28,16 @@ test("shortCount converts numbers accurately without emojis", () => {
 test("relativeDate formats ISO / date strings into friendly text", () => {
   assert.equal(relativeDate(undefined), undefined);
   const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  assert.equal(relativeDate(todayStr), "今天");
+  const localDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  assert.equal(relativeDate(localDate(now)), "今天");
+  assert.equal(relativeDate(now.toISOString()), "今天");
 
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  assert.equal(relativeDate(yesterday), "昨天");
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  assert.equal(relativeDate(localDate(yesterday)), "昨天");
 
-  const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
-  assert.equal(relativeDate(threeDaysAgo), "3 天前");
+  const threeDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3);
+  assert.equal(relativeDate(localDate(threeDaysAgo)), "3 天前");
 });
 
 test("parseSearchResult parses markdown output containing Covers and Sources", () => {

@@ -57,6 +57,11 @@ interface PlatformLifecycleRecord {
   session?: RunningSession;
   targetMode?: BrowserRunMode;
   activeLeases: number;
+  // Target ids of pages currently held by an active lease (search / detail
+  // fetch / login inspection). The tab-hygiene sweep must never close these:
+  // a concurrent same-platform operation used to get its page swept away by
+  // the next createPage.
+  activeTargetIds: Set<string>;
   idleTimer?: NodeJS.Timeout;
   queue: Promise<unknown>;
   pendingCancel?: boolean;
@@ -131,6 +136,7 @@ export class SessionManager implements NativeBrowserRuntime {
         platform,
         state: "stopped",
         activeLeases: 0,
+        activeTargetIds: new Set<string>(),
         queue: Promise.resolve(),
       };
       this.records.set(platform, rec);
@@ -368,6 +374,10 @@ export class SessionManager implements NativeBrowserRuntime {
       if (platform === "xiaohongshu" && !loginPage) {
         throw new Error("Unable to inspect the Xiaohongshu login page");
       }
+      // The login tab belongs to a live interactive operation. Registering it
+      // keeps a concurrent same-platform sweep (tab hygiene) from closing the
+      // user's login page mid-login.
+      if (loginPage) rec.activeTargetIds.add(loginPage.targetId);
 
       const start = Date.now();
       const timeoutMs = 300000; // 5 min timeout for manual interaction
@@ -445,6 +455,7 @@ export class SessionManager implements NativeBrowserRuntime {
         } catch {
           // Detaching the inspector must never close the user's login tab.
         }
+        rec.activeTargetIds.delete(loginPage.targetId);
       }
       this.releaseLease(rec);
     }
@@ -528,6 +539,8 @@ export class SessionManager implements NativeBrowserRuntime {
     const rec = this.getRecord(platform);
     this.retainLease(rec);
 
+    // Hoisted so the catch path can unregister the target on failure.
+    let targetId: string | undefined;
     try {
       const session = await this.acquireSession(platform, mode, undefined, signal);
 
@@ -538,14 +551,21 @@ export class SessionManager implements NativeBrowserRuntime {
         undefined,
         signal,
       );
-      const targetId = createRes.targetId;
+      targetId = createRes.targetId;
+      // Narrowed alias for the closures below; TS cannot narrow the hoisted
+      // `let` inside the close callback.
+      const newTargetId: string = targetId;
+      // Register the new tab BEFORE sweeping so concurrent same-platform
+      // operations cannot close it in the window between createTarget and the
+      // sweep either.
+      rec.activeTargetIds.add(newTargetId);
 
       // 2. Sweep leftovers from earlier operations while PRESERVING our newly created tab
-      await this.closePlatformPagesInternal(session.cdp, platform, targetId, signal);
+      await this.closePlatformPagesInternal(session.cdp, platform, newTargetId, signal);
 
       const attachRes = await session.cdp.send<{ sessionId: string }>(
         "Target.attachToTarget",
-        { targetId, flatten: true },
+        { targetId: newTargetId, flatten: true },
         undefined,
         signal,
       );
@@ -553,7 +573,7 @@ export class SessionManager implements NativeBrowserRuntime {
 
       let closed = false;
       return new CdpPage(
-        targetId,
+        newTargetId,
         sessionId,
         session.cdp,
         async () => {
@@ -574,11 +594,12 @@ export class SessionManager implements NativeBrowserRuntime {
               // replaces it.
               await session.cdp.send("Target.detachFromTarget", { sessionId });
             } else {
-              await session.cdp.send("Target.closeTarget", { targetId });
+              await session.cdp.send("Target.closeTarget", { targetId: newTargetId });
             }
           } catch {
             // Ignore closeTarget failure
           } finally {
+            rec.activeTargetIds.delete(newTargetId);
             this.releaseLease(rec);
           }
         },
@@ -589,6 +610,7 @@ export class SessionManager implements NativeBrowserRuntime {
         },
       );
     } catch (err) {
+      if (targetId) rec.activeTargetIds.delete(targetId);
       this.releaseLease(rec);
       throw err;
     }
@@ -613,9 +635,14 @@ export class SessionManager implements NativeBrowserRuntime {
         targetInfos?: Array<{ targetId: string; type: string; url?: string }>;
       };
       const domains = PLATFORM_AUTH_CONFIG[platform].domains;
+      // Pages held by an active lease (a running search, detail fetch, or the
+      // interactive login tab) belong to a live operation — never close them,
+      // even when this sweep was requested by a concurrent operation.
+      const activeTargetIds = this.getRecord(platform).activeTargetIds;
       const stale = (res.targetInfos ?? []).filter((t) => {
         if (t.type !== "page") return false;
         if (keepTargetId && t.targetId === keepTargetId) return false;
+        if (activeTargetIds.has(t.targetId)) return false;
         try {
           const host = new URL(t.url ?? "").hostname.toLowerCase();
           return domains.some((d) => host === d || host.endsWith(`.${d}`));

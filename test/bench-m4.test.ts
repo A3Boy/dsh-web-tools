@@ -90,6 +90,12 @@ test("`any` requires at least one synonym", () => {
   assert.equal(factSatisfied(normalizeForMatch("timeout is long"), fact), false);
 });
 
+test("matching decodes Markdown escaped identifiers without erasing meaningful punctuation", () => {
+  assert.equal(factSatisfied(normalizeForMatch(String.raw`The WINDOW\_UPDATE frame and min\_trx\_id.`), { all: ["WINDOW_UPDATE", "min_trx_id"] }), true);
+  assert.equal(factSatisfied(normalizeForMatch("WINDOW UPDATE"), { all: ["WINDOW_UPDATE"] }), false);
+  assert.equal(normalizeForMatch(String.raw`C:\temp\notes`), String.raw`c:\temp\notes`);
+});
+
 test("passage scope is stricter than text scope", () => {
   const hits = evaluateFacts(["alpha beta", "gamma delta"], [{ all: ["alpha", "gamma"] }, { all: ["alpha", "beta"] }]);
   assert.deepEqual(hits.text, [true, true]);

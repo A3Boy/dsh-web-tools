@@ -2,8 +2,8 @@
  * dsh-web-tools — deterministic query-focused ranking (BM25).
  *
  * No model call and no dictionary: Latin/digit text is tokenised on word
- * boundaries; CJK text is tokenised into overlapping character bigrams plus
- * unigrams, which is robust without word segmentation and does not depend on
+ * boundaries; CJK text is tokenised into overlapping character bigrams (single
+ * characters stay unigrams), without word segmentation and without depending on
  * the ICU build of the running Node (unlike Intl.Segmenter).
  * @module
  */
