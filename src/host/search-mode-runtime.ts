@@ -224,7 +224,7 @@ export const SEARCH_DISABLED_TEXT =
   "Web search is switched OFF for this session. Do not call web_search or web_fetch; answer from the context you already have. If a question truly requires fresh web data, say what could not be verified.";
 
 /**
- * One-shot policy injected on step 1 of an `auto` turn.
+ * Policy injected on the first `auto` turn and when returning to `auto`.
  *
  * Auto used to inject NOTHING, and the observed result was that the model never
  * reached for the tools: DSH's own tool-web guidance only covers how to treat a
@@ -357,6 +357,10 @@ export function installSearchModeRuntime(
     // Register this agent's listeners inside its own scope so scope-filtered
     // dispatch reaches them; cleaning up when the agent scope unwinds.
     return agent.ctx.effect(() => {
+      // These snapshots become session history. Keep the auto criterion once
+      // while the mode stays unchanged; re-send it after required/off so the
+      // model sees that the previous restriction has been lifted.
+      let lastInjectedMode: SearchMode | undefined;
       // ---- layer 1: hide the web tools from this agent's tool list ---------
       // Scoped, so other sessions keep their tools. Applied at turn start and
       // lifted as soon as the mode leaves `off`.
@@ -388,6 +392,9 @@ export function installSearchModeRuntime(
           syncRestriction();
           const inject = searchModeStepMessage(state, payload.step, messages);
           if (!inject) return decision;
+          const mode: SearchMode = state.disabled ? "off" : state.required ? "required" : "auto";
+          if (mode === "auto" && lastInjectedMode === "auto") return decision;
+          lastInjectedMode = mode;
           const entered = decision as { kind: "enter"; messages: unknown[] };
           // Prepend so the Search Mode policy sits before the user's direct
           // message (the model's last user-role input remains the user query).

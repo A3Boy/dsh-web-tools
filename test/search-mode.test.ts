@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
   SearchModeRuntime,
+  installSearchModeRuntime,
   createSearchModeMessages,
   searchModeStepMessage,
   webResearchCompleted,
@@ -28,6 +29,47 @@ import { nextSearchMode } from "../src/shared/api-types.ts";
 function runtime(available = true): SearchModeRuntime {
   return new SearchModeRuntime(() => available);
 }
+
+test("auto criterion is not appended on consecutive turns, but returns after a mode switch (#17)", async () => {
+  const r = runtime();
+  const listeners = new Map<string, (...args: any[]) => any>();
+  let cleanup: (() => void) | undefined;
+  const ctx: any = { on: (event: string, listener: (...args: any[]) => any) => {
+    listeners.set(event, listener);
+    return () => listeners.delete(event);
+  } };
+  const agent: any = { id: "s1", ctx: { on: ctx.on, effect: (fn: () => () => void) => { cleanup = fn(); } } };
+  const messages = createSearchModeMessages((input) => input);
+  const dispose = installSearchModeRuntime(ctx, { searchAvailable: () => true }, r, messages);
+  listeners.get("agent/created")!({ agent });
+  const step = (turn: number, step = 1, kind = "enter", signal?: AbortSignal) =>
+    listeners.get("agent/pre-step")!({ turn, step, signal }, async () => ({ kind, messages: ["user query"] }));
+  const policy = (result: any) => result.messages.filter((m: any) => m !== "user query");
+  try {
+    assert.equal(policy(await step(1)).length, 1);
+    assert.equal(policy(await step(2)).length, 0, "unchanged auto mode must not append another criterion");
+    assert.equal(policy(await step(2, 2)).length, 0);
+    r.setMode("s1", "required");
+    assert.equal(policy(await step(3)).length, 1);
+    assert.equal(policy(await step(4)).length, 1, "required mode still applies to every turn");
+    r.setMode("s1", "auto");
+    assert.equal(policy(await step(5)).length, 1, "auto must override the previous required instruction");
+    assert.equal(policy(await step(6)).length, 0);
+    r.setMode("s1", "off");
+    assert.equal(policy(await step(7)).length, 1);
+    r.setMode("s1", "auto");
+    assert.equal((await step(8, 1, "reject")).kind, "reject");
+    assert.equal(policy(await step(8, 1, "enter", AbortSignal.abort())).length, 0);
+    assert.equal(policy(await step(8)).length, 1, "rejected/aborted steps must not consume the mode change");
+    assert.equal(policy(await step(9)).length, 0);
+    cleanup!();
+    listeners.get("agent/created")!({ agent });
+    assert.equal(policy(await step(10)).length, 1, "a newly created agent gets its own criterion");
+  } finally {
+    cleanup?.();
+    dispose();
+  }
+});
 
 test("default mode is auto and does not mark a turn required", () => {
   const r = runtime();
