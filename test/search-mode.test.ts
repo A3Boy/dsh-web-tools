@@ -32,18 +32,22 @@ function runtime(available = true): SearchModeRuntime {
 
 test("auto criterion is not appended on consecutive turns, but returns after a mode switch (#17)", async () => {
   const r = runtime();
+  const history: unknown[] = [];
   const listeners = new Map<string, (...args: any[]) => any>();
   let cleanup: (() => void) | undefined;
   const ctx: any = { on: (event: string, listener: (...args: any[]) => any) => {
     listeners.set(event, listener);
     return () => listeners.delete(event);
   } };
-  const agent: any = { id: "s1", ctx: { on: ctx.on, effect: (fn: () => () => void) => { cleanup = fn(); } } };
-  const messages = createSearchModeMessages((input) => input);
+  const agent: any = { id: "s1", session: { deriveMessages: () => history }, ctx: { on: ctx.on, effect: (fn: () => () => void) => { cleanup = fn(); } } };
+  const messages = createSearchModeMessages((input) => ({ role: "user", ...(input as object) }));
   const dispose = installSearchModeRuntime(ctx, { searchAvailable: () => true }, r, messages);
   listeners.get("agent/created")!({ agent });
-  const step = (turn: number, step = 1, kind = "enter", signal?: AbortSignal) =>
-    listeners.get("agent/pre-step")!({ turn, step, signal }, async () => ({ kind, messages: ["user query"] }));
+  const step = async (turn: number, step = 1, kind = "enter", signal?: AbortSignal) => {
+    const result = await listeners.get("agent/pre-step")!({ turn, step, signal }, async () => ({ kind, messages: ["user query"] }));
+    if (kind === "enter" && !signal?.aborted) history.push(...result.messages);
+    return result;
+  };
   const policy = (result: any) => result.messages.filter((m: any) => m !== "user query");
   try {
     assert.equal(policy(await step(1)).length, 1);
@@ -64,7 +68,10 @@ test("auto criterion is not appended on consecutive turns, but returns after a m
     assert.equal(policy(await step(9)).length, 0);
     cleanup!();
     listeners.get("agent/created")!({ agent });
-    assert.equal(policy(await step(10)).length, 1, "a newly created agent gets its own criterion");
+    assert.equal(policy(await step(10)).length, 0, "restoring an agent must reuse its visible session policy");
+    history.length = 0;
+    assert.equal(policy(await step(10, 2)).length, 1, "after compaction removes the policy, restore it even mid-turn");
+    assert.equal(policy(await step(11)).length, 0);
   } finally {
     cleanup?.();
     dispose();
@@ -77,6 +84,32 @@ test("default mode is auto and does not mark a turn required", () => {
   const turn = r.beginTurn("s1", 1);
   assert.equal(turn.required, false);
   assert.equal(turn.webSearchCompleted, false);
+});
+
+test("auto criterion follows real Session restore and surface compaction", async () => {
+  const { Session } = await import("@deepseek-ai/dsh-session");
+  const { createUserMessage } = await import("@deepseek-ai/dsh-llm");
+  const messages = createSearchModeMessages(createUserMessage as any);
+  const session = Session.create("auto-policy-lifecycle" as any);
+  const state = runtime().beginTurn("auto-policy-lifecycle", 1);
+  session.append("user/message", messages.auto() as any, { surfaceOp: "append" });
+  assert.equal(searchModeStepMessage(state, 1, messages, session.deriveMessages()), undefined);
+  const restored = Session.create(session.id, JSON.parse(JSON.stringify(session.events)));
+  assert.equal(searchModeStepMessage(state, 1, messages, restored.deriveMessages()), undefined);
+  const nodes = [...restored.surface.nodes];
+  restored.append("user/message", createUserMessage({
+    content: [{ type: "text", text: "Summary of the previous conversation" }],
+    source: { kind: "plugin", plugin: "compaction" },
+  }), {
+    surfaceOp: { op: "replace", start: nodes[0], end: nodes[nodes.length - 1] },
+    sourceEventSeqs: nodes,
+  });
+  assert.ok(restored.events.some((e) => e.type === "user/message" && JSON.stringify(e.data).includes(SEARCH_AUTO_TEXT)),
+    "the old policy remains in the durable log but is no longer model-visible");
+  const replacement: any = searchModeStepMessage(state, 2, messages, restored.deriveMessages());
+  assert.equal(replacement.content[0].text, SEARCH_AUTO_TEXT);
+  restored.append("user/message", replacement, { surfaceOp: "append" });
+  assert.equal(searchModeStepMessage(state, 3, messages, restored.deriveMessages()), undefined);
 });
 
 test("setMode(required) freezes the flag for the CURRENT turn only", () => {
@@ -424,8 +457,9 @@ test("auto turns get the optional-use criterion, never the requirement", () => {
   assert.ok(SEARCH_AUTO_TEXT.includes("not required"), "auto must not read as a requirement");
   assert.ok(SEARCH_AUTO_TEXT.includes("otherwise answer directly"), "the default must be stated");
 
-  // Later steps stay silent, and a missing turn state injects nothing.
-  assert.equal(searchModeStepMessage(turnState({ required: false, webSearchCompleted: true }), 2, messages), undefined);
+  // Later steps reuse the visible policy; missing state injects nothing.
+  assert.equal(searchModeStepMessage(turnState({ required: false, webSearchCompleted: true }), 2, messages,
+    [{ role: "user", ...(first as any).__built }]), undefined);
   assert.equal(searchModeStepMessage(undefined, 1, messages), undefined);
 });
 

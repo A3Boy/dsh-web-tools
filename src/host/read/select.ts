@@ -102,16 +102,25 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
     if ((opts.includeLead ?? true) && chunks[0].chars <= leadCap) take(0);
 
     const threshold = maxScore * (opts.minRelativeScore ?? DEFAULT_MIN_RELATIVE_SCORE);
-    const order = chunks
-      .map((_, i) => i)
-      .filter((i) => scores[i] > 0 && scores[i] >= threshold)
+    const positive = chunks.map((_, i) => i).filter((i) => scores[i] > 0);
+    const order = positive
+      .filter((i) => scores[i] >= threshold)
       .sort((a, b) => scores[b] - scores[a] || a - b);
+    // Chunks below the noise threshold. They are NOT eligible in the plain
+    // path, but the coverage-aware loop may reach for them: a chunk carrying
+    // an as-yet uncovered fact term must stay reachable even when its BM25
+    // score is modest, otherwise the second fact of a multi-fact question can
+    // never enter the selection (coverage can only reorder survivors of the
+    // filter, not add to them). The priority formula (score x novelty) keeps
+    // them behind every threshold-passing chunk that still carries new terms.
+    const belowThreshold = positive.filter((i) => scores[i] < threshold);
 
     if (opts.queryTerms && opts.queryTerms.length > 1) {
       const querySet = new Set(opts.queryTerms);
-      // Only eligible candidates and the reserved lead affect coverage.
+      // Eligible candidates, below-threshold carriers, and the reserved lead
+      // all affect coverage.
       const chunkTerms = new Map<number, Set<string>>();
-      for (const i of new Set([...order, ...picked.keys()])) {
+      for (const i of new Set([...order, ...belowThreshold, ...picked.keys()])) {
         const c = chunks[i];
         const tokens = tokenize(c.headingPath.join(" ") + " " + c.text);
         chunkTerms.set(i, new Set(tokens.filter((t) => querySet.has(t))));
@@ -123,7 +132,9 @@ export function selectPassages(chunks: Chunk[], scores: number[], opts: SelectOp
         for (const t of chunkTerms.get(0)!) uncovered.delete(t);
       }
 
-      const candidates = new Set(order.filter((i) => !picked.has(i)));
+      const candidates = new Set(
+        [...order, ...belowThreshold].filter((i) => !picked.has(i)),
+      );
 
       while (candidates.size > 0 && used < budget) {
         let bestIdx = -1;

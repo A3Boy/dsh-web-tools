@@ -5,7 +5,14 @@ All notable changes to `dsh-web-tools` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - 2026-11-13
+## [0.5.0]
+
+> ⚠️ 账号风险提示：小红书检索基于真实登录会话模拟浏览器行为，平台风控可能导致账号被限制或封禁，请谨慎使用（建议小号、控制频率）；Twitter / X 亦受账号限额约束。 - 2026-11-24
+
+### Fixed
+- Validate default ports and protocol together for pinned custom-provider connections (#18).
+- Reuse Auto-mode guidance from effective session history; restore it after compaction and avoid duplicates after session resume (#17).
+- Reject mismatched tweet identities before serving public fallback content or merging engagement metadata; preserve caller cancellation and bound public upstream calls.
 
 ### Added
 - **Focused Page Reading (`web_read`)**:
@@ -17,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Exposed as standard tool in standalone stdio MCP server (`dsh-web-tools-mcp`) with `readOnlyHint` and `openWorldHint` annotations.
   - Configurable `webReadEnabled` setting (default `true`) with English and Simplified Chinese localizations.
 
-## [0.4.0] - 2026-11-09
+## v0.4 development features — first released in v0.5.0
 
 ### Added
 - **Search Sorting & Filtering Across Surfaces**:

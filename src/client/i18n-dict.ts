@@ -177,6 +177,9 @@ export const zhDict: Record<string, string> = {
   searchModeRequiredDesc: "每轮对话至少进行一次联网查询",
   searchModeOff: "关闭联网",
   searchModeOffDesc: "不使用联网搜索和网页读取工具",
+  searchModeLabel: "联网搜索",
+  searxngDefaultHint: "SearXNG 等自建源默认无需密钥",
+  apiKeyConfigured: "已配置密钥",
   // --- 搜索顺序 ---
   routingLabel: "当前搜索策略",
   routingConfigure: "编辑",
@@ -643,6 +646,9 @@ export const enDict: Record<string, string> = {
   searchModeRequiredDesc: "At least one web lookup every turn",
   searchModeOff: "Off",
   searchModeOffDesc: "No web search and no page-reading tools",
+  searchModeLabel: "Web search",
+  searxngDefaultHint: "Self-hosted sources like SearXNG need no key by default",
+  apiKeyConfigured: "Key configured",
   // --- Search order ---
   routingLabel: "Current search strategy",
   routingConfigure: "Edit",

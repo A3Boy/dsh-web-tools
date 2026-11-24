@@ -452,7 +452,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
           <div style={{ fontSize: 13, fontWeight: 600, color: text.primary }}>{t("authMode")}</div>
           {currentMode === "template" && draft.auth.mode === "none" && (
             <span style={{ fontSize: 11, color: text.tertiary }}>
-              {t("searxngDefaultHint") || "默认无需密钥"}
+              {t("searxngDefaultHint")}
             </span>
           )}
         </div>
@@ -602,7 +602,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>{t("httpMethod")}</label>
+                  <label style={labelStyle}>{t("method")}</label>
                   <select
                     style={{ ...inputStyle, cursor: "pointer" }}
                     value={draft.endpoint.method}

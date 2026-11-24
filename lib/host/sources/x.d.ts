@@ -7,9 +7,35 @@ export declare function buildXSearchUrl(query: string, req?: SourceSearchRequest
  * SourceItem. Free endpoint, no auth, no browser.
  */
 export declare function mapSyndicationTweet(json: any, fallbackUrl: string): SourceItem | null;
+/**
+ * Map the FxTwitter proxy payload to a SourceItem — the standalone fallback
+ * when the official syndication endpoint returns nothing.
+ */
+export declare function mapFxTwitterTweet(tweet: any, fallbackUrl: string): SourceItem | null;
+/**
+ * Fill missing fields on an item (from the official syndication payload or a
+ * browser extraction) with what FxTwitter knows. Strictly additive: a value
+ * already present from a first-party source always wins.
+ */
+export declare function mergeFxTwitterInto(item: SourceItem, tweet: any): void;
 type SyndicationFetcher = (tweetId: string, signal?: AbortSignal) => Promise<any | null>;
+/** Fetch one tweet from X's public embed endpoint (no auth, no browser). */
+export declare function defaultSyndicationFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null>;
 /** Test seam: replace the network fetcher (pass a null-returning stub). */
 export declare function setSyndicationFetcher(fn: SyndicationFetcher): void;
+type FxTwitterFetcher = (tweetId: string, signal?: AbortSignal) => Promise<any | null>;
+/**
+ * Fetch one tweet from the FxTwitter public proxy API (no auth, no browser).
+ *
+ * The post https://x.com/vincent_ddup/status/2122917213342720381 popularised
+ * this channel for "X intelligence research": one JSON GET returns the full
+ * text, the author profile, engagement counts, and media URLs. It is a
+ * THIRD-PARTY service — availability is best-effort and every failure here is
+ * non-fatal by design; callers must treat null as "channel down".
+ */
+export declare function defaultFxTwitterFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null>;
+/** Test seam: replace the FxTwitter network fetcher (pass a null-returning stub). */
+export declare function setFxTwitterFetcher(fn: FxTwitterFetcher): void;
 export declare class XSource implements SpecializedSource {
     readonly id: "x";
     readonly name = "Twitter / X";

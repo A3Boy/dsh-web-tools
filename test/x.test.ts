@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { XSource, buildXSearchUrl, parseXMetricNumber, setSyndicationFetcher } from "../src/host/sources/x.ts";
+import { XSource, buildXSearchUrl, parseXMetricNumber, setSyndicationFetcher, setFxTwitterFetcher } from "../src/host/sources/x.ts";
 // Keep every test hermetic: the public syndication endpoint is network I/O.
 setSyndicationFetcher(async () => null);
 import type { NativeBrowserRuntime, CdpPageLease, JsonCaptureHandle, NetworkCaptureOutcome } from "../src/host/browser/types.ts";
@@ -395,6 +395,10 @@ test("P7.2-B: fetch falls back to DOM and matches EXACT ID (rejects batch[0] mis
 });
 
 test("P7.2-B: fetch returns parse-failed if exact ID not found in DOM fallback", async () => {
+  // The public no-auth channels (syndication / FxTwitter) hold real tweets:
+  // stub them out so this test exercises ONLY the browser error mapping.
+  setSyndicationFetcher(async () => null);
+  setFxTwitterFetcher(async () => null);
   const { page } = pageWithCapture({ state: "timeout" });
   (page as any).call = async () => [
     { id: "unrelated_999", url: "https://x.com/other/status/unrelated_999", text: "Unrelated tweet" },
@@ -406,6 +410,9 @@ test("P7.2-B: fetch returns parse-failed if exact ID not found in DOM fallback",
 });
 
 test("P7.2-B: fetch maps 401/403 and login redirect to auth-expired", async () => {
+  // Same reason: keep the public channels off so the browser error is asserted.
+  setSyndicationFetcher(async () => null);
+  setFxTwitterFetcher(async () => null);
   const { page } = pageWithCapture({
     state: "captured",
     json: { errors: [{ message: "Unauthorized" }] },

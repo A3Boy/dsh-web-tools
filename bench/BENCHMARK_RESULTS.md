@@ -1,3 +1,11 @@
+> **LEGACY — synthetic data, superseded.** The 20 pages below are synthetic and mostly
+> **smaller than the character budgets**, so "whole page" and "focused read" are nearly the
+> same size and 14/20 cases show negative savings (page-size noise plus `web_read`'s small
+> wrapper). Do not quote these numbers as real-world results. The real-world evidence is
+> the frozen held-out test split: **[bench/m4/RESULTS.md](m4/RESULTS.md)** (machine reports
+> under `bench/m4/results/`). This file is kept only as a record of the synthetic
+> methodology. Note its "recall 100%" is an artifact of page size, not a retrieval claim.
+
 # web_read vs web_fetch Benchmark Evaluation Report (M4)
 
 - **Evaluation Date**: 2026-11-18T16:35:17.828Z
@@ -68,7 +76,7 @@ When `web_read` returns an outline, callers can follow up with `section="<id>"` 
 
 ## Analysis and Preliminary Observations
 
-> Note: These are preliminary evaluation results on a 20-case synthetic long-form dataset. Real-world end-to-end evaluation on 30+ live production web pages (20k–200k chars) is scheduled for the full M4 benchmark.
+> Note: These are preliminary evaluation results on a 20-case synthetic long-form dataset (legacy). The real-world end-to-end evaluation on the frozen held-out test split has since been completed - see **m4/RESULTS.md** and the machine reports under m4/results/. Headline: on long technical pages, net token savings median 90-96% with fact-pass 55.6-83.3% on the first call.
 
 1. **Token Efficiency on Synthetic Pages**: On documents exceeding budget (>6,000 chars), focused reading extracts high-scoring passages and limits prompt context, while short pages fitting within budget are returned in full without outline overhead.
 2. **BM25 Passage Ranking & Context Expansion**: Combining BM25 keyword matching with adjacent chunk expansion captures relevant passages and adjacent narrative context without model inference.

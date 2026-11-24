@@ -26,10 +26,22 @@ test("coverage prefers a new query term among eligible candidates and respects b
   assert.equal(selected.returnedChars, 9);
 });
 
-test("coverage currently excludes below-threshold evidence in another section", () => {
-  const chunks = ["alpha", "beta"].map((text, i) => ({ ...mk(i, text.length, `s${i}`), text }));
-  const selected = selectPassages(chunks, [10, 2], { budgetChars: 8, includeLead: false, queryTerms: ["alpha", "beta"] });
-  assert.deepEqual(indices(selected), [0]);
+test("coverage reaches below-threshold evidence carrying an uncovered fact term", () => {
+  // The second fact chunk scores below 30% of the best; without this it could
+  // never enter the selection and multi-fact questions silently lost facts.
+  // A large zero-score chunk keeps the total above the budget so the greedy
+  // selection (not the whole-page early return) is exercised.
+  const chunks = [
+    { ...mk(0, 5, "s0"), text: "alpha" },
+    { ...mk(1, 4, "s1"), text: "beta" },
+    mk(2, 20, "s2"),
+  ];
+  const selected = selectPassages(chunks, [10, 2, 0], { budgetChars: 12, includeLead: false, queryTerms: ["alpha", "beta"] });
+  assert.deepEqual(indices(selected), [0, 1]);
+
+  // The plain path (no query terms) still drops the weak match.
+  const plain = selectPassages(chunks, [10, 2, 0], { budgetChars: 12, includeLead: false });
+  assert.deepEqual(indices(plain), [0]);
 });
 
 test("without a match returns an in-order prefix of the page", () => {

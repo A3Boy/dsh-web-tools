@@ -56,10 +56,10 @@ Native Deep Capabilities across 10 Search Engines · Hedged & Fused Concurrent R
 
 | Version | Date | Highlights |
 | :--- | :--- | :--- |
-| **v0.5.0** | 2026-11-13 | • **Focused Page Reading (`web_read`)**: Deterministic BM25 passage ranking and section outline extraction; cuts token consumption by 85–95% while keeping 100% answer recall<br/>• **Progressive Drilling & Anti-Drift**: Multi-turn `section` reading with 8-char SHA-256 `contentId` drift protection<br/>• **M4 Real-Page Benchmark Suite**: Automated evaluation across 50 real-world technical and domain-specific cases<br/>• **Ecosystem**: Added `web_read` to standalone MCP server; integrated search mode gating (`off` isolation) |
-| **v0.4.0** | 2026-11-09 | • **Concurrent Retrieval**: Added Hedged (speculative racing) and Fused (Reciprocal Rank Fusion - RRF) retrieval<br/>• **Intelligent Routing**: Adaptive (24h health/p95 latency), Fastest, and Cheapest (cost-tier) policies<br/>• **Standalone MCP Server**: Decoupled stdio MCP service for Cursor, Claude Code, and Windsurf<br/>• **Serper Adapter**: Native Google Search integration with `answerBox` normalization<br/>• **Long-Document TOC**: Automatic Table of Contents generation for documents > 8,000 characters |
-| **v0.3.9** | 2026-11-07 | Integrated Keenable search with `site` domain scoping and date range filtering. |
-| **v0.3.5** | 2026-11-01 | Custom search providers with 3 parallel access paths and SSRF defense; native Xiaohongshu and Twitter / X browser session retrieval. |
+| **v0.5.0** | 2026-11-24 | • **Focused Page Reading (`web_read`)**: Deterministic BM25 passage ranking and section outline extraction; median 92–96% token reduction on long technical pages (frozen M4 test set, see [bench/m4/RESULTS.md](bench/m4/RESULTS.md))<br/>• **Progressive Drilling & Anti-Drift**: Multi-turn `section` reading with 8-char SHA-256 `contentId` drift protection<br/>• **M4 Real-Page Benchmark Suite**: Automated evaluation across 50 real-world technical and domain-specific cases<br/>• **Ecosystem**: Added `web_read` to standalone MCP server; integrated search mode gating (`off` isolation) |
+| **v0.4 features** | Included in v0.5.0 | • **Concurrent Retrieval**: Added Hedged (speculative racing) and Fused (Reciprocal Rank Fusion - RRF) retrieval<br/>• **Intelligent Routing**: Adaptive (24h health/p95 latency), Fastest, and Cheapest (cost-tier) policies<br/>• **Standalone MCP Server**: Decoupled stdio MCP service for Cursor, Claude Code, and Windsurf<br/>• **Serper Adapter**: Native Google Search integration with `answerBox` normalization<br/>• **Long-Document TOC**: Automatic Table of Contents generation for documents > 8,000 characters |
+| **v0.3.9** | 2026-11-04 | Integrated Keenable search with `site` domain scoping and date range filtering. |
+| **v0.3.5** | 2026-10-05 | Custom search providers with 3 parallel access paths and SSRF defense; native Xiaohongshu and Twitter / X browser session retrieval. |
 
 For detailed change logs, see [CHANGELOG.md](CHANGELOG.md).
 
@@ -135,6 +135,8 @@ Single Hedged Fused            (CDP Profile Mode)            Cloud Extractors
 - **Multi-Level Fault Tolerance**: Multi-API-key pooling, 429 cooldown windows, circuit breakers, short-lived result caching (60s search, 5min fetch), and in-flight request deduplication.
 - **Standalone MCP Server**: Standard stdio MCP protocol (`2025-06-18`, `2025-03-26`, `2024-11-05`) compatible with Cursor, Claude Code, Windsurf, Claude Desktop, and custom agents.
 
+> ⚠️ **Account Risk Notice (important)**: Xiaohongshu retrieval drives your real logged-in session like a browser (searching, scrolling, paginating, re-sorting). The platform actively detects automated access — **your account may be rate-limited or banned**. Strongly consider a secondary account, keep the frequency low, and use at your own risk; Twitter / X has similar per-account limits and may temporarily block requests.
+
 ---
 
 ## Quick Start
@@ -164,7 +166,7 @@ Restart DSH Web (`dsh web`), and navigate to **Settings** → **Web Search** in 
 #### In-Chat Usage
 
 - **Search Mode Shortcut**: Press `Alt+S` in the chat input box to cycle through **Smart** (auto), **Always** (enforced search), and **Off** (hard network isolation).
-- **Social Platform Search**: Prefix queries with `小红书:` or `X:` (e.g. `小红书: 杭州西湖小众喝茶路线` or `X: DeepSeek Harness architecture discussions`) to route to dedicated social platform sessions.
+- **Social Platform Search**: Prefix queries with `小红书:` or `X:` (e.g. `小红书: 杭州西湖小众喝茶路线` or `X: DeepSeek Harness architecture discussions`) to route to dedicated social platform sessions. **Note: Xiaohongshu search carries account restriction/ban risk — prefer a secondary account and low frequency.**
 
 ---
 
@@ -280,14 +282,15 @@ Turn 2: web_read(url, section: "s3", contentId: "e7a1b4c9")
 
 ### Real-World Evaluation Benchmark (M4)
 
-Evaluated against 50 diverse real-world technical documentation pages:
+Measured on the **frozen regression test split** (20 cases across 6 unique pages; 18 cases have scored facts). Formal report with per-case failure list: [bench/m4/RESULTS.md](bench/m4/RESULTS.md).
 
-| Metric | Result | Impact |
-| :--- | :---: | :--- |
-| **Token Reduction** | **85.0% – 95.0%** | Massive token savings on long documentation pages |
-| **Answer Fact Recall** | **100%** | All key facts preserved in returned excerpts |
-| **Target Section Discovery** | **100%** | Relevant sections identified accurately in outline |
-| **Pipeline Latency** | **~2.1 ms** (P95: 9.4 ms) | Pure local computation, zero LLM overhead |
+| Metric (budget 2000 / 4000 / 6000 chars) | Result (net, incl. follow-ups) |
+| :--- | :---: |
+| **Token Reduction** (median) | **95.9% / 92.9% / 90.0%** (min 76.4% / 63.9% / 51.0%) |
+| **Fact Pass (1st call)** | **55.6% / 55.6% / 83.3%** |
+| **Pipeline Latency** | **median 13.6–15.1 ms** per call, max 48.5 ms |
+
+Applies to **long technical reference pages**. Pages smaller than the character budget are returned whole — `web_read` then costs roughly `web_fetch` plus a small wrapper. "Fact pass" means every benchmark fact's keyword set was found in the returned text; missing facts are listed per case in the report.
 
 ---
 
@@ -329,6 +332,8 @@ Unlike scraper relays that get blocked or leak credentials, `dsh-web-tools` uses
 - **Deep Structured Parsing**:
   - **Xiaohongshu**: Navigates authentic search views, parses note content, cover images, like/collect/reply counts, and complete multi-level nested comment trees.
   - **Twitter / X**: Captures native GraphQL responses, accurately reconstructing tweets, media attachments, quote tweets, and conversation reply threads.
+
+> ⚠️ **Ban risk**: Xiaohongshu risk-controls automated behavior on logged-in sessions (unusual frequency, bulk pagination). Use cautiously with low frequency, preferably a secondary account.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/A3Boy/dsh-web-tools/main/assets/platformSessions.png" width="900" alt="Xiaohongshu and Twitter X signed-in sessions verified automatically" />
@@ -434,7 +439,7 @@ If a web page updates its live content while an agent is reading multiple sectio
 This is a transport bug in affected versions: Undici's empty default-port value was interpreted as port 0. Adding `:443` to the URL does not work around it because URL normalization removes default ports. Install a version containing the default-port fix and restart the host; changing your API key or weakening outbound permissions is unnecessary for this error.
 
 ### 5. Does Auto mode append its web-search criterion every turn?
-The criterion is now appended once per agent lifetime while Auto remains active, and again when returning from Required or Off mode. Required mode still adds its instruction each turn because that turn must complete a web tool call.
+The criterion is reused while it remains in the effective model history, including after session restore. It is appended again after compaction removes it or when returning from Required or Off mode. Required mode still adds its instruction each turn because that turn must complete a web tool call.
 
 ---
 

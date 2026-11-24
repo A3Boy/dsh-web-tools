@@ -267,10 +267,99 @@ export function mapSyndicationTweet(json: any, fallbackUrl: string): SourceItem 
   };
 }
 
+/** FxTwitter returns Twitter's raw date; normalise to ISO where possible. */
+function fxTwitterPublishedAt(tweet: any): string | undefined {
+  const ts = tweet?.created_timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts) && ts > 0) {
+    return new Date(ts * 1000).toISOString();
+  }
+  const raw = typeof tweet?.created_at === "string" ? tweet.created_at : undefined;
+  if (!raw) return undefined;
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? raw : new Date(parsed).toISOString();
+}
+
+function fxTwitterMedia(tweet: any): { images: string[]; videoUrl?: string } {
+  const photos = Array.isArray(tweet?.media?.photos)
+    ? tweet.media.photos
+    : Array.isArray(tweet?.photos)
+      ? tweet.photos
+      : [];
+  const videos = Array.isArray(tweet?.media?.videos)
+    ? tweet.media.videos
+    : Array.isArray(tweet?.videos)
+      ? tweet.videos
+      : [];
+  const images = photos
+    .map((p: any) => (typeof p?.url === "string" ? p.url : undefined))
+    .filter(Boolean);
+  const videoUrl = videos
+    .map((v: any) => (typeof v?.url === "string" ? v.url : undefined))
+    .filter(Boolean)[0];
+  return { images, videoUrl };
+}
+
+/**
+ * Map the FxTwitter proxy payload to a SourceItem — the standalone fallback
+ * when the official syndication endpoint returns nothing.
+ */
+export function mapFxTwitterTweet(tweet: any, fallbackUrl: string): SourceItem | null {
+  const text = typeof tweet?.text === "string" ? tweet.text : "";
+  const id = tweet?.id !== undefined ? String(tweet.id) : "";
+  if (!id && !text) return null;
+  const author = tweet?.author ?? {};
+  const handle = typeof author?.screen_name === "string" ? `@${author.screen_name}` : undefined;
+  const { images, videoUrl } = fxTwitterMedia(tweet);
+  return {
+    id,
+    title: text.slice(0, 80) || "X Tweet",
+    url: typeof tweet?.url === "string" && tweet.url.startsWith("https://x.com/") ? tweet.url : fallbackUrl,
+    text: text || undefined,
+    snippet: text ? text.slice(0, 240) : undefined,
+    author: author?.name || handle
+      ? {
+          name: author?.name ? String(author.name) : handle!,
+          handle,
+          url: author?.url ? String(author.url) : undefined,
+        }
+      : undefined,
+    publishedAt: fxTwitterPublishedAt(tweet),
+    likes: typeof tweet?.likes === "number" ? tweet.likes : undefined,
+    retweets: typeof tweet?.retweets === "number" ? tweet.retweets : undefined,
+    replies: typeof tweet?.replies === "number" ? tweet.replies : undefined,
+    ...(images.length ? { images } : {}),
+    ...(videoUrl ? { videoUrl } : {}),
+    platform: "x",
+  };
+}
+
+/**
+ * Fill missing fields on an item (from the official syndication payload or a
+ * browser extraction) with what FxTwitter knows. Strictly additive: a value
+ * already present from a first-party source always wins.
+ */
+export function mergeFxTwitterInto(item: SourceItem, tweet: any): void {
+  if (item.likes === undefined && typeof tweet?.likes === "number") item.likes = tweet.likes;
+  if (item.retweets === undefined && typeof tweet?.retweets === "number") item.retweets = tweet.retweets;
+  if (item.replies === undefined && typeof tweet?.replies === "number") item.replies = tweet.replies;
+  if (item.publishedAt === undefined) item.publishedAt = fxTwitterPublishedAt(tweet);
+  if (!item.author && (tweet?.author?.name || tweet?.author?.screen_name)) {
+    const handle = typeof tweet.author.screen_name === "string" ? `@${tweet.author.screen_name}` : undefined;
+    item.author = {
+      name: tweet.author.name ? String(tweet.author.name) : handle!,
+      handle,
+      url: tweet.author.url ? String(tweet.author.url) : undefined,
+    };
+  }
+  const { images, videoUrl } = fxTwitterMedia(tweet);
+  if (!item.images?.length && images.length) item.images = images;
+  if (!item.videoUrl && videoUrl) item.videoUrl = videoUrl;
+}
+
 type SyndicationFetcher = (tweetId: string, signal?: AbortSignal) => Promise<any | null>;
 
 /** Fetch one tweet from X's public embed endpoint (no auth, no browser). */
-async function defaultSyndicationFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null> {
+export async function defaultSyndicationFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null> {
   try {
     const res = await fetchWithProxy(
       `https://cdn.syndication.twimg.com/tweet-result?id=${encodeURIComponent(tweetId)}&lang=zh-cn&token=a`,
@@ -289,6 +378,38 @@ let syndicationFetcher: SyndicationFetcher = defaultSyndicationFetcher;
 /** Test seam: replace the network fetcher (pass a null-returning stub). */
 export function setSyndicationFetcher(fn: SyndicationFetcher): void {
   syndicationFetcher = fn;
+}
+
+type FxTwitterFetcher = (tweetId: string, signal?: AbortSignal) => Promise<any | null>;
+
+/**
+ * Fetch one tweet from the FxTwitter public proxy API (no auth, no browser).
+ *
+ * The post https://x.com/vincent_ddup/status/2122917213342720381 popularised
+ * this channel for "X intelligence research": one JSON GET returns the full
+ * text, the author profile, engagement counts, and media URLs. It is a
+ * THIRD-PARTY service — availability is best-effort and every failure here is
+ * non-fatal by design; callers must treat null as "channel down".
+ */
+export async function defaultFxTwitterFetcher(tweetId: string, signal?: AbortSignal): Promise<any | null> {
+  try {
+    const res = await fetchWithProxy(
+      `https://api.fxtwitter.com/i/status/${encodeURIComponent(tweetId)}`,
+      { signal, headers: { accept: "application/json" } },
+    );
+    if (!res.ok) return null;
+    const json: any = await res.json();
+    return json?.tweet && typeof json.tweet === "object" ? json.tweet : null;
+  } catch {
+    return null;
+  }
+}
+
+let fxTwitterFetcher: FxTwitterFetcher = defaultFxTwitterFetcher;
+
+/** Test seam: replace the FxTwitter network fetcher (pass a null-returning stub). */
+export function setFxTwitterFetcher(fn: FxTwitterFetcher): void {
+  fxTwitterFetcher = fn;
 }
 
 export class XSource implements SpecializedSource {  readonly id = "x" as const;
@@ -697,6 +818,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
   }
 
   async fetch(url: string, signal?: AbortSignal): Promise<SourceFetchOutcome> {
+    if (signal?.aborted) return { error: { code: "aborted", message: "X fetch aborted", retryable: false } };
     const targetTweetId = extractTweetIdFromUrl(url);
     if (!targetTweetId) {
       return { error: { code: "parse-failed", message: `Invalid X status URL: "${url}"`, retryable: false } };
@@ -719,12 +841,36 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
       }
     }
 
-    // FAST FALLBACK: no login, no browser, no paid API — the endpoint behind
-    // X's own embed widget. Text only (no replies/media).
-    const syndicated = await syndicationFetcher(targetTweetId, signal);
-    if (syndicated) {
-      const item = mapSyndicationTweet(syndicated, url);
-      if (item) return { item, retrievalMode: "public-api" };
+    // FAST FALLBACK: no login, no browser, no paid API. Two public endpoints
+    // fetched in parallel — X's own embed widget API (text-level) and the
+    // FxTwitter proxy (retweet counts, media URLs, author profile). Either
+    // alone is enough; when both answer, first-party values win and FxTwitter
+    // fills only the gaps. Both failures are non-fatal by design.
+    let syndicated: any | null = null;
+    let fxTweet: any | null = null;
+    // Public enrichment must not hang an otherwise usable detail read when
+    // one of the independent upstreams stalls. Caller cancellation still wins.
+    const publicSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(8_000)]);
+    await Promise.all([
+      syndicationFetcher(targetTweetId, publicSignal).then(
+        (v) => { syndicated = v; },
+        () => {},
+      ),
+      fxTwitterFetcher(targetTweetId, publicSignal).then(
+        (v) => { fxTweet = v; },
+        () => {},
+      ),
+    ]);
+    if (signal?.aborted) return { error: { code: "aborted", message: "X fetch aborted", retryable: false } };
+    // A successful response is not proof of identity. Never relabel another
+    // post's text or merge its metrics into the requested post.
+    if (syndicated && String(syndicated.id_str ?? syndicated.id ?? "") !== targetTweetId) syndicated = null;
+    if (fxTweet && String(fxTweet.id ?? "") !== targetTweetId) fxTweet = null;
+    let item = syndicated ? mapSyndicationTweet(syndicated, url) : null;
+    if (!item && fxTweet) item = mapFxTwitterTweet(fxTweet, url);
+    if (item) {
+      if (fxTweet) mergeFxTwitterInto(item, fxTweet);
+      return { item, retrievalMode: "public-api" };
     }
 
     if (browserOutcome) return browserOutcome;

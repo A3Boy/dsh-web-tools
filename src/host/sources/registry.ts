@@ -1,4 +1,5 @@
 import { validatePlatformUrl } from "../browser/paths.ts";
+import { extractTweetIdFromUrl } from "./x/normalize.ts";
 import { refinePlatformQuery } from "../search-hints.ts";
 import { fallbackSearchToGeneralWeb, fallbackFetchToGeneralWeb } from "./web-fallback.ts";
 import type {
@@ -190,7 +191,12 @@ export class SpecializedSourceRegistry {
     let targetPlatform: SpecializedPlatformId | undefined;
     if (validatePlatformUrl(url, "xiaohongshu")) {
       targetPlatform = "xiaohongshu";
-    } else if (validatePlatformUrl(url, "x")) {
+    } else if (validatePlatformUrl(url, "x") && extractTweetIdFromUrl(url)) {
+      // A twitter.com domain alone is NOT enough: publish.twitter.com (oEmbed
+      // endpoints, embed pages) is a twitter.com subdomain but carries no
+      // status path, and the native source hard-fails such URLs. Only URLs
+      // with an actual status ID go native; everything else falls to the
+      // general fetch provider below.
       targetPlatform = "x";
     }
 
@@ -220,7 +226,10 @@ export class SpecializedSourceRegistry {
 
     const outcome = await source.fetch(url, signal);
     if (outcome.error === undefined && outcome.item) {
-      return { ...outcome, retrievalMode: "native-browser" };
+      // Sources may legitimately serve success from a non-browser channel
+      // (e.g. X's public syndication endpoint is tagged "public-api"); keep
+      // their label instead of relabelling everything as native-browser.
+      return { ...outcome, retrievalMode: outcome.retrievalMode ?? "native-browser" };
     }
 
     if (signal?.aborted || outcome.error?.code === "aborted") {

@@ -103,7 +103,11 @@ test("Chinese focus finds the relevant Chinese passage", () => {
 test("focus confidence distinguishes absent focus, no match, weak and strong lexical matches", () => {
   assert.equal(readPage("alpha beta").focusConfidence, undefined);
   assert.equal(readPage("alpha beta", { focus: "gamma" }).focusConfidence, "none");
-  assert.equal(readPage("alpha beta", { focus: "alpha beta" }).focusConfidence, "weak");
+  // A one-chunk page whose only chunk contains every query term is a strong
+  // structural match. The old absolute-1.5 rule labelled it "weak" purely
+  // because a tiny corpus deflates IDF — the cross-page inconsistency the
+  // background-normalised rule removes.
+  assert.equal(readPage("alpha beta", { focus: "alpha beta" }).focusConfidence, "strong");
   const doc = "# Relevant\n\nalpha beta\n\n" + Array.from({ length: 20 }, (_, i) => `## Filler ${i}\n\nunrelated material`).join("\n\n");
   assert.equal(readPage(doc, { focus: "alpha beta" }).focusConfidence, "strong");
 });
