@@ -15,7 +15,8 @@ import { poolSummary, type PoolEntry } from "./pool.ts";
 import { buildPool, hintOf } from "./pool.ts";
 import { credRefOf, PROVIDER_LIST } from "./providers/index.ts";
 import type { QuotaSnapshot } from "./quota.ts";
-import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, VersionCheckView } from "../shared/api-types.ts";
+import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutingPolicy, RetrievalStrategy, VersionCheckView } from "../shared/api-types.ts";
+import { isRetrievalStrategy, isSearchRoutingPolicy } from "../shared/api-types.ts";
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 import { endpointViewOf, isForeignOverride, PROVIDER_ENDPOINTS } from "./endpoints.ts";
@@ -54,10 +55,13 @@ async function handlePlatformStatus(deps: RouteDeps): Promise<PlatformStatusResp
   if (needsVerification.length > 0) {
     const results = await Promise.allSettled(
       needsVerification.map(async (status) => {
+        // Both platforms run their operations in the visible (minimized) browser:
+        // x.com refuses to hydrate the app under --headless=new, which made the
+        // status probe disagree with what the user sees in the window.
         const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(
           status.id,
           undefined,
-          status.id === "xiaohongshu" ? "interactive" : "headless",
+          "interactive",
         );
         return { id: status.id, isAuth };
       }),
@@ -176,6 +180,12 @@ export interface RouteDeps {
   forgetSource?: (sourceId: string) => void;
   /** Injectable DNS resolver for testing. */
   lookupAll?: LookupAllFn;
+  /** Recent specialized social searches for instant picker rendering. */
+  getRecentSocialSearches?: () => Array<{
+    query: string;
+    time: number;
+    items: import("./sources/types.ts").SourceItem[];
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +431,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
+    retrievalStrategy: (cfg.retrievalStrategy as RetrievalStrategy) ?? "single",
     platformEnabled,
     providers,
     outboundAuthorizations: (cfg.outboundAuthorizations as OutboundAuthorization[]) ?? [],
@@ -446,16 +457,26 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   }
   if (Array.isArray(p.outboundAuthorizations)) patch.outboundAuthorizations = p.outboundAuthorizations;
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
+  // Routing fields are validated against the shared policy lists so a typo
+  // can never be persisted into the settings document.
+  if (isSearchRoutingPolicy(p.searchRoutingPolicy)) patch.searchRoutingPolicy = p.searchRoutingPolicy;
+  if (isRetrievalStrategy(p.retrievalStrategy)) patch.retrievalStrategy = p.retrievalStrategy;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
 }
 
-/** Dedicated routing edit: policy + ordered provider list in ONE atomic write. */
+/** Dedicated routing edit: policy + ordered provider list + retrieval strategy in ONE atomic write. */
 async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
-  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown };
+  const p = (payload ?? {}) as { policy?: unknown; orderedProviders?: unknown; retrievalStrategy?: unknown };
   const policy = p.policy;
-  if (policy !== "ordered" && policy !== "round-robin" && policy !== "random") {
+  // Validated against the shared policy list: the previous hand-written
+  // equality check silently rejected adaptive/fastest/cheapest, which made the
+  // new strategies unreachable from the product.
+  if (!isSearchRoutingPolicy(policy)) {
     throw new RouteError("config", "invalid routing policy", 400);
+  }
+  if (p.retrievalStrategy !== undefined && !isRetrievalStrategy(p.retrievalStrategy)) {
+    throw new RouteError("config", "invalid retrieval strategy", 400);
   }
   if (!Array.isArray(p.orderedProviders) || p.orderedProviders.length === 0) {
     throw new RouteError("config", "orderedProviders required", 400);
@@ -477,12 +498,26 @@ async function handleRoutingSet(deps: RouteDeps, payload: unknown) {
   }
   if (ordered.length === 0) throw new RouteError("config", "no valid providers", 400);
 
+  const currentStrategy = (deps.readConfig() as { retrievalStrategy?: unknown }).retrievalStrategy;
+  const retrievalStrategy: RetrievalStrategy = isRetrievalStrategy(p.retrievalStrategy)
+    ? p.retrievalStrategy
+    : isRetrievalStrategy(currentStrategy)
+      ? currentStrategy
+      : "single";
+
   await deps.writeConfig({
     searchRoutingPolicy: policy,
     defaultProvider: ordered[0],
     fallbackOrder: ordered.slice(1),
+    retrievalStrategy,
   });
-  return { saved: true, policy, defaultProvider: ordered[0], fallbackOrder: ordered.slice(1) };
+  return {
+    saved: true,
+    policy,
+    defaultProvider: ordered[0],
+    fallbackOrder: ordered.slice(1),
+    retrievalStrategy,
+  };
 }
 
 function resolveProviderRef(deps: RouteDeps, provider: string): string {
@@ -1201,7 +1236,102 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "platform/login": (deps, payload) => handlePlatformLogin(deps, payload),
   "platform/stop": (deps, payload) => handlePlatformStop(deps, payload),
   "platform/reset": (deps, payload) => handlePlatformReset(deps, payload),
+  "social-posts/recent": async (deps) => {
+    const list = deps.getRecentSocialSearches?.() ?? [];
+    const recent = list.map((search) => {
+      const posts = search.items
+        .filter((item) => item.platform !== "general")
+        .map((item) => {
+          const isX = item.platform === "x";
+          return {
+            title: item.title,
+            url: item.url,
+            platform: {
+              label: isX ? "X" : "小红书",
+              color: isX ? "#0f1419" : "#ff2442",
+            },
+            author: item.author?.handle
+              ? item.author.handle.replace(/^@+/, "")
+              : item.author?.name?.replace(/^@+/, ""),
+            summary: item.text || item.snippet || "",
+            publishedAt: item.publishedAt,
+            likes: typeof item.likes === "number" ? item.likes : undefined,
+            collects: typeof item.collects === "number" ? item.collects : undefined,
+            replies: typeof item.replies === "number" ? item.replies : undefined,
+            retweets: typeof item.retweets === "number" ? item.retweets : undefined,
+            cover: item.coverImage || item.images?.[0],
+          };
+        });
+      const raw = search.items
+        .map(
+          (item, i) =>
+            `${i + 1}. [${item.title}](${item.url})${
+              item.author?.name ? ` · @${item.author.name}` : ""
+            }${item.snippet ? ` — ${item.snippet}` : ""}`,
+        )
+        .join("\n\n");
+      return {
+        query: search.query,
+        time: search.time,
+        posts,
+        raw,
+      };
+    });
+    return { recent };
+  },
 };
+
+const ALLOWED_IMAGE_HOSTS = [
+  /(^|\.)xhscdn\.com$/i,
+  /(^|\.)twimg\.com$/i,
+  /(^|\.)sinaimg\.cn$/i,
+];
+
+async function handleImageProxy(req: WebToolsHttpRequest, res: WebToolsHttpResponse): Promise<void> {
+  const urlObj = new URL(req.url ?? "/", "http://dsh.internal");
+  const target = urlObj.searchParams.get("url");
+  if (!target) {
+    writeError(res, 400, "bad-request", "missing url parameter");
+    return;
+  }
+  let targetUrl: URL;
+  try {
+    targetUrl = new URL(target);
+  } catch {
+    writeError(res, 400, "bad-request", "invalid url");
+    return;
+  }
+  if (!ALLOWED_IMAGE_HOSTS.some((pattern) => pattern.test(targetUrl.hostname))) {
+    writeError(res, 403, "forbidden", "image host not allowed");
+    return;
+  }
+
+  try {
+    const isXhs = targetUrl.hostname.endsWith("xhscdn.com");
+    const upstreamRes = await fetch(targetUrl.href, {
+      headers: {
+        Referer: isXhs ? "https://www.xiaohongshu.com/" : "https://x.com/",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      },
+    });
+    if (!upstreamRes.ok) {
+      res.writeHead(upstreamRes.status);
+      res.end();
+      return;
+    }
+    const contentType = upstreamRes.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await upstreamRes.arrayBuffer());
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=86400",
+      "Access-Control-Allow-Origin": "*",
+    });
+    res.end(buffer);
+  } catch (err: any) {
+    writeError(res, 502, "bad-gateway", err?.message || "failed to fetch upstream image");
+  }
+}
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */
 export function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => void {
@@ -1209,6 +1339,15 @@ export function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => voi
     kind: "prefix",
     path: API_PREFIX,
     handler: async (req, res) => {
+      const pathname = new URL(req.url ?? "/", "http://dsh.internal").pathname;
+      if (req.method === "GET") {
+        if (pathname === `${API_PREFIX}/image-proxy`) {
+          await handleImageProxy(req, res);
+          return;
+        }
+        writeError(res, 405, "method-error", "method not allowed");
+        return;
+      }
       // Configuration plane: loopback PEER only + same-origin, never trustedHosts.
       if (configPlaneTrust(req) === false) {
         writeError(res, 403, "forbidden", "forbidden");
@@ -1218,7 +1357,6 @@ export function registerRoutes(ctx: WebToolsContext, deps: RouteDeps): () => voi
         writeError(res, 405, "method-error", "method not allowed");
         return;
       }
-      const pathname = new URL(req.url ?? "/", "http://dsh.internal").pathname;
       // Endpoint names carry a slash ("config/get", "test/search"); take the
       // whole remaining path after the prefix as the method key.
       const method = pathname.startsWith(`${API_PREFIX}/`) ? pathname.slice(API_PREFIX.length + 1) : undefined;

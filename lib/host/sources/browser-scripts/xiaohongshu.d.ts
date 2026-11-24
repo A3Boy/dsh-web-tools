@@ -25,6 +25,8 @@ export declare function extractXhsDetailState(noteId: string): {
     collects?: number;
     comments?: number;
     images?: string[];
+    videoUrl?: string;
+    tags?: string[];
 };
 /** Extract the comments already hydrated into the signed-in detail page state. */
 export declare function extractXhsCommentState(noteId: string): unknown | undefined;

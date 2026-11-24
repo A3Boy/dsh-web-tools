@@ -142,16 +142,12 @@ export declare const SEARCH_AUTO_TEXT = "Web search is available but not require
  */
 export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown, platformsEnabled?: () => boolean): SearchModeMessages;
 /**
- * Decide which pre-step Search Mode message (if any) to inject for one step.
- * Pure and one-shot: ONLY step 1 injects — the research policy (required
- * turns), the optional-use criterion (auto turns), or the "switched off" notice
- * (off turns). Later steps inject NOTHING: the web tool result(s) are the
- * freshest context, and enforcement happens at the tool gate, not by
- * re-reminding the model every step.
- * @returns undefined (no injection) outside step 1 or without a turn state.
+ * Required/off notices apply on step 1. Auto guidance is present once in the
+ * effective model history, rather than tracked in process memory: resume can
+ * reuse it, and compaction that removes it causes it to be restored.
  */
-export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages): unknown | undefined;
-/** The two model-facing web tools this plugin owns the policy for. */
+export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages, history?: readonly unknown[]): unknown | undefined;
+/** The model-facing web tools this plugin owns the policy for. */
 export declare const WEB_TOOL_NAMES: readonly string[];
 /** Denial reason shown to the model when it calls a web tool while OFF. */
 export declare const WEB_DISABLED_DENIAL = "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";

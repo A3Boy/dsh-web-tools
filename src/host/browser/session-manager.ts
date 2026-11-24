@@ -8,7 +8,7 @@ import { ProfileStore } from "./profile-store.ts";
 import { StateStore } from "./state-store.ts";
 import { verifyLiveBrowserSession, type LiveSessionVerifier } from "./live-auth-verifier.ts";
 import { detectXhsPageState } from "./xiaohongshu-page-state.ts";
-import { isPidAlive as defaultIsPidAlive, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
+import { isPidAlive as defaultIsPidAlive, killProcessTree as defaultKillProcessTree, launchBrowserProcess, type SpawnedBrowserProcess } from "./process-manager.ts";
 import type {
   BrowserInfo,
   BrowserPlatform,
@@ -57,6 +57,11 @@ interface PlatformLifecycleRecord {
   session?: RunningSession;
   targetMode?: BrowserRunMode;
   activeLeases: number;
+  // Target ids of pages currently held by an active lease (search / detail
+  // fetch / login inspection). The tab-hygiene sweep must never close these:
+  // a concurrent same-platform operation used to get its page swept away by
+  // the next createPage.
+  activeTargetIds: Set<string>;
   idleTimer?: NodeJS.Timeout;
   queue: Promise<unknown>;
   pendingCancel?: boolean;
@@ -110,11 +115,7 @@ export class SessionManager implements NativeBrowserRuntime {
       return cdp;
     },
     isPidAliveFn: PidChecker = defaultIsPidAlive,
-    killPidFn: PidKiller = (pid) => {
-      try {
-        process.kill(pid);
-      } catch {}
-    },
+    killPidFn: PidKiller = defaultKillProcessTree,
     liveSessionVerifier: LiveSessionVerifier = verifyLiveBrowserSession,
   ) {
     this.browserChoice = browserChoice;
@@ -135,6 +136,7 @@ export class SessionManager implements NativeBrowserRuntime {
         platform,
         state: "stopped",
         activeLeases: 0,
+        activeTargetIds: new Set<string>(),
         queue: Promise.resolve(),
       };
       this.records.set(platform, rec);
@@ -173,24 +175,23 @@ export class SessionManager implements NativeBrowserRuntime {
       // dedicated profile still contains valid cookies. Operations must verify
       // the real profile so the next search can self-heal without another login.
       const session = await this.acquireSession(platform, mode, undefined, signal);
-      const isAuth = await this.internalCheckAuth(session, signal);
-      if (isAuth) {
-        this.profileStore.saveMetadata(platform, {
-          platform,
-          sessionEstablished: true,
-          browserKind: session.browser.kind,
-          lastVerifiedAt: Date.now(),
-        });
-        return true;
-      } else {
-        this.profileStore.saveMetadata(platform, {
-          platform,
-          sessionEstablished: false,
-          browserKind: session.browser.kind,
-          lastVerifiedAt: Date.now(),
-        });
-        return false;
+      let isAuth = await this.internalCheckAuth(session, signal);
+      if (!isAuth && !signal?.aborted) {
+        // A browser that was just launched (status probes and the first search
+        // after a restart both do this) can answer the very first probe before
+        // its first page has settled, which reads as "signed out" for a profile
+        // that is perfectly valid. One settle retry separates "cold" from
+        // "really logged out" — a truly signed-out profile fails both.
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (!signal?.aborted) isAuth = await this.internalCheckAuth(session, signal);
       }
+      this.profileStore.saveMetadata(platform, {
+        platform,
+        sessionEstablished: isAuth,
+        browserKind: session.browser.kind,
+        lastVerifiedAt: Date.now(),
+      });
+      return isAuth;
     } catch {
       return false;
     }
@@ -373,6 +374,10 @@ export class SessionManager implements NativeBrowserRuntime {
       if (platform === "xiaohongshu" && !loginPage) {
         throw new Error("Unable to inspect the Xiaohongshu login page");
       }
+      // The login tab belongs to a live interactive operation. Registering it
+      // keeps a concurrent same-platform sweep (tab hygiene) from closing the
+      // user's login page mid-login.
+      if (loginPage) rec.activeTargetIds.add(loginPage.targetId);
 
       const start = Date.now();
       const timeoutMs = 300000; // 5 min timeout for manual interaction
@@ -450,6 +455,7 @@ export class SessionManager implements NativeBrowserRuntime {
         } catch {
           // Detaching the inspector must never close the user's login tab.
         }
+        rec.activeTargetIds.delete(loginPage.targetId);
       }
       this.releaseLease(rec);
     }
@@ -533,20 +539,33 @@ export class SessionManager implements NativeBrowserRuntime {
     const rec = this.getRecord(platform);
     this.retainLease(rec);
 
+    // Hoisted so the catch path can unregister the target on failure.
+    let targetId: string | undefined;
     try {
       const session = await this.acquireSession(platform, mode, undefined, signal);
 
+      // 1. Create the new tab FIRST so Chromium never reaches 0 open tabs (which would terminate the browser)
       const createRes = await session.cdp.send<{ targetId: string }>(
         "Target.createTarget",
         { url: "about:blank" },
         undefined,
         signal,
       );
-      const targetId = createRes.targetId;
+      targetId = createRes.targetId;
+      // Narrowed alias for the closures below; TS cannot narrow the hoisted
+      // `let` inside the close callback.
+      const newTargetId: string = targetId;
+      // Register the new tab BEFORE sweeping so concurrent same-platform
+      // operations cannot close it in the window between createTarget and the
+      // sweep either.
+      rec.activeTargetIds.add(newTargetId);
+
+      // 2. Sweep leftovers from earlier operations while PRESERVING our newly created tab
+      await this.closePlatformPagesInternal(session.cdp, platform, newTargetId, signal);
 
       const attachRes = await session.cdp.send<{ sessionId: string }>(
         "Target.attachToTarget",
-        { targetId, flatten: true },
+        { targetId: newTargetId, flatten: true },
         undefined,
         signal,
       );
@@ -554,17 +573,33 @@ export class SessionManager implements NativeBrowserRuntime {
 
       let closed = false;
       return new CdpPage(
-        targetId,
+        newTargetId,
         sessionId,
         session.cdp,
         async () => {
           if (closed) return;
           closed = true;
           try {
-            await session.cdp.send("Target.closeTarget", { targetId });
+            // Never close the LAST tab: Chromium terminates when the window
+            // loses its only page. Turn it into a blank tab instead.
+            const info = (await session.cdp.send("Target.getTargets", {}, undefined, undefined)) as {
+              targetInfos?: Array<{ targetId: string; type: string }>;
+            };
+            const pageCount = (info.targetInfos ?? []).filter((t) => t.type === "page").length;
+            if (pageCount <= 1) {
+              // Last tab: do NOT blank it. Navigating to about:blank made the
+              // window look crashed to anyone watching the search, and closing
+              // it would terminate the browser. Leave the page on its results
+              // and just drop the CDP session; the next operation's sweep
+              // replaces it.
+              await session.cdp.send("Target.detachFromTarget", { sessionId });
+            } else {
+              await session.cdp.send("Target.closeTarget", { targetId: newTargetId });
+            }
           } catch {
             // Ignore closeTarget failure
           } finally {
+            rec.activeTargetIds.delete(newTargetId);
             this.releaseLease(rec);
           }
         },
@@ -575,8 +610,69 @@ export class SessionManager implements NativeBrowserRuntime {
         },
       );
     } catch (err) {
+      if (targetId) rec.activeTargetIds.delete(targetId);
       this.releaseLease(rec);
       throw err;
+    }
+  }
+
+  /**
+   * Close every existing page that belongs to the platform origin.
+   *
+   * Called right before we open our own tab, so a search always starts from a
+   * clean window: leftover tabs from a previous operation (or from Edge
+   * restoring a crashed session) are removed. Internal new-tab pages are left
+   * untouched — closing the last tab would terminate the browser.
+   */
+  private async closePlatformPagesInternal(
+    cdp: { send: Function },
+    platform: BrowserPlatform,
+    keepTargetId?: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      const res = (await cdp.send("Target.getTargets", {}, undefined, signal)) as {
+        targetInfos?: Array<{ targetId: string; type: string; url?: string }>;
+      };
+      const domains = PLATFORM_AUTH_CONFIG[platform].domains;
+      // Pages held by an active lease (a running search, detail fetch, or the
+      // interactive login tab) belong to a live operation — never close them,
+      // even when this sweep was requested by a concurrent operation.
+      const activeTargetIds = this.getRecord(platform).activeTargetIds;
+      const stale = (res.targetInfos ?? []).filter((t) => {
+        if (t.type !== "page") return false;
+        if (keepTargetId && t.targetId === keepTargetId) return false;
+        if (activeTargetIds.has(t.targetId)) return false;
+        try {
+          const host = new URL(t.url ?? "").hostname.toLowerCase();
+          return domains.some((d) => host === d || host.endsWith(`.${d}`));
+        } catch {
+          return false;
+        }
+      });
+      for (const page of stale) {
+        try {
+          await cdp.send("Target.closeTarget", { targetId: page.targetId }, undefined, signal);
+        } catch {
+          // Best effort: a closing target may already be gone.
+        }
+      }
+    } catch {
+      // Never let tab hygiene fail a search.
+    }
+  }
+
+  /** Public wrapper: close platform tabs (optionally keeping one target). */
+  async closePlatformPages(
+    platform: BrowserPlatform,
+    keepTargetId?: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    try {
+      const session = await this.acquireSession(platform, "interactive", undefined, signal);
+      await this.closePlatformPagesInternal(session.cdp, platform, keepTargetId, signal);
+    } catch {
+      // Tab hygiene is best-effort.
     }
   }
 
@@ -648,6 +744,13 @@ export class SessionManager implements NativeBrowserRuntime {
       const config = PLATFORM_AUTH_CONFIG[platform];
       const startUrl = initialUrl || (isVisible ? config.initialUrl : undefined);
 
+      // Clean up any stale recorded process from a prior run before spawning
+      const stored = this.stateStore.loadState(platform);
+      if (stored && stored.pid && this.isPidAliveFn(stored.pid)) {
+        this.killPidFn(stored.pid);
+        this.stateStore.clearState(platform);
+      }
+
       let spawned: SpawnedBrowserProcess;
       try {
         spawned = await this.launcher(browser, profileDir, startUrl, isVisible, !isVisible);
@@ -665,14 +768,28 @@ export class SessionManager implements NativeBrowserRuntime {
       }
 
       let cdp: CdpClient;
+      const exitAbort = new AbortController();
+      const onProcessExit = () => {
+        exitAbort.abort(new Error("Browser process terminated unexpectedly before CDP connection"));
+      };
+      if (spawned.process && typeof (spawned.process as any).once === "function") {
+        (spawned.process as any).once("exit", onProcessExit);
+      }
+      const connectionSignal = signal
+        ? (AbortSignal as any).any([signal, exitAbort.signal])
+        : exitAbort.signal;
       try {
-        cdp = await this.cdpFactory(spawned.port, signal);
+        cdp = await this.cdpFactory(spawned.port, connectionSignal);
       } catch (err) {
         if (spawned.process.pid) {
           this.killPidFn(spawned.process.pid);
         }
         rec.state = "error";
         throw err;
+      } finally {
+        if (spawned.process && typeof (spawned.process as any).removeListener === "function") {
+          (spawned.process as any).removeListener("exit", onProcessExit);
+        }
       }
 
       if (rec.pendingCancel || this.disposed || signal?.aborted) {

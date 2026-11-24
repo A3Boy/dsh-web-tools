@@ -642,7 +642,9 @@ test("XHS auth: valid cookie names still require a usable live page", async () =
 
   try {
     assert.equal(await sm.verifyAuthenticationForOperation("xiaohongshu", undefined, "interactive"), false);
-    assert.equal(liveCalls, 1);
+    // One settle retry is allowed (a cold launch can answer the first probe
+    // before its page has settled); an unusable live page still fails both.
+    assert.equal(liveCalls, 2);
     assert.equal(profileStore.loadMetadata("xiaohongshu")?.sessionEstablished, false);
   } finally {
     await sm.dispose();

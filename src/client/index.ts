@@ -18,6 +18,7 @@
  * @module
  */
 import { WebToolsSection } from "./WebToolsSection.tsx";
+import { TurnTailPicker } from "./SocialPostPicker.ts";
 import { registerSettingsSection, type UiFace } from "./registration.ts";
 import { SearchModeButton } from "./SearchModeButton.tsx";
 import { zhDict, enDict } from "./i18n-dict.ts";
@@ -116,6 +117,42 @@ export function apply(ctx: any) {
         label: () => t("searchModeLabel"),
       },
       SearchModeControl,
+    ),
+  );
+
+  class TurnTailErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+    state: { error: Error | null } = { error: null };
+    static getDerivedStateFromError(error: Error) {
+      return { error };
+    }
+    componentDidCatch(error: Error, info: React.ErrorInfo) {
+      console.error("[dsh-web-tools] TurnTailPicker error:", error, info);
+    }
+    render() {
+      if (this.state.error !== null) return null;
+      return this.props.children;
+    }
+  }
+
+  function TurnTailWithBoundary(props: any) {
+    return React.createElement(TurnTailErrorBoundary, null, React.createElement(TurnTailPicker, props));
+  }
+
+  // The human face of a platform search: a post picker instead of markdown.
+  // Mounted in the Turn tail, NOT at the `web_search` tool key: that key is
+  // already held by the shell's own row and a plugin registration merely
+  // coexists with it (the shell's entry stays active at any priority), so the
+  // picker would never render there. The tail is a plugin-owned seat and hands
+  // us the Turn whose tool result the card reads.
+  ctx.slots.inject("conversation.chat.turnTail", () =>
+    ctx.slots.register(
+      {
+        name: "conversation.chat.turnTail",
+        id: "dsh-web-tools-social-picker",
+        order: 10,
+        label: "帖子推荐",
+      },
+      TurnTailWithBoundary,
     ),
   );
 }

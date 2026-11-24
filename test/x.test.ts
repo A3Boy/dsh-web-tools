@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { XSource, buildXSearchUrl, parseXMetricNumber } from "../src/host/sources/x.ts";
+import { XSource, buildXSearchUrl, parseXMetricNumber, setSyndicationFetcher, setFxTwitterFetcher } from "../src/host/sources/x.ts";
+// Keep every test hermetic: the public syndication endpoint is network I/O.
+setSyndicationFetcher(async () => null);
 import type { NativeBrowserRuntime, CdpPageLease, JsonCaptureHandle, NetworkCaptureOutcome } from "../src/host/browser/types.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -393,6 +395,10 @@ test("P7.2-B: fetch falls back to DOM and matches EXACT ID (rejects batch[0] mis
 });
 
 test("P7.2-B: fetch returns parse-failed if exact ID not found in DOM fallback", async () => {
+  // The public no-auth channels (syndication / FxTwitter) hold real tweets:
+  // stub them out so this test exercises ONLY the browser error mapping.
+  setSyndicationFetcher(async () => null);
+  setFxTwitterFetcher(async () => null);
   const { page } = pageWithCapture({ state: "timeout" });
   (page as any).call = async () => [
     { id: "unrelated_999", url: "https://x.com/other/status/unrelated_999", text: "Unrelated tweet" },
@@ -404,6 +410,9 @@ test("P7.2-B: fetch returns parse-failed if exact ID not found in DOM fallback",
 });
 
 test("P7.2-B: fetch maps 401/403 and login redirect to auth-expired", async () => {
+  // Same reason: keep the public channels off so the browser error is asserted.
+  setSyndicationFetcher(async () => null);
+  setFxTwitterFetcher(async () => null);
   const { page } = pageWithCapture({
     state: "captured",
     json: { errors: [{ message: "Unauthorized" }] },
@@ -444,4 +453,303 @@ test("P7.2-B: fetch rejects invalid status URLs before opening browser", async (
   const res = await new XSource(runtime).fetch("https://x.com/home");
   assert.equal(createPageCalled, false, "Must not create browser page for non-tweet URL");
   assert.equal(res.error?.code, "parse-failed");
+});
+
+test("XSource: buildXSearchUrl forceLatest switches to the chronological tab", () => {
+  const top = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus" } });
+  const latest = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus" } }, true);
+  assert.ok(top.includes("src=typed_query"));
+  assert.ok(!top.includes("f=live"));
+  assert.ok(latest.includes("&f=live"));
+});
+
+test("XSource: retries the Latest tab when Top yields no tweets", async () => {
+  const navigations: string[] = [];
+  let attempt = 0;
+
+  const makePage = (): CdpPageLease => {
+    const index = ++attempt;
+    return {
+      targetId: `target-${index}`,
+      sessionId: `session-${index}`,
+      navigate: async (url: string) => {
+        navigations.push(url);
+      },
+      waitForLoad: async () => {},
+      waitForSelector: async () => {},
+      evaluate: async () => "",
+      call: async (fn: any) => {
+        if (fn.name !== "extractVisibleXTweets") return null as any;
+        // Top tab: nothing indexed yet. Latest tab: the fresh post.
+        return index === 1
+          ? []
+          : [{ id: "999", url: "https://x.com/someone/status/999", text: "GPTPLus 还值得开吗", authorName: "Someone", authorHandle: "@someone" }];
+      },
+      scrollBy: async () => {},
+      beginJsonCapture: async () => ({
+        wait: async () => ({ state: "captured" as const, json: {}, url: "", status: 200 }),
+        cancel: () => {},
+      }),
+      close: async () => {},
+    };
+  };
+
+  const fakeRuntime: NativeBrowserRuntime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({
+      platform: "x",
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authState: "authenticated",
+      authenticated: true,
+    }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => makePage(),
+    createPage: async () => makePage(),
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  };
+
+  const source = new XSource(fakeRuntime);
+  const res = await source.search("GPTPLus", { maxResults: 5 });
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].id, "999");
+  const searchNavigations = navigations.filter((u) => u.includes("/search?q="));
+  assert.equal(searchNavigations.length, 2, "both tabs must be attempted");
+  assert.ok(!searchNavigations[0].includes("f=live"), "first pass is the Top tab");
+  assert.ok(searchNavigations[1].includes("f=live"), "second pass is the Latest tab");
+});
+
+test("XSource: search URL excludes reply noise and honors media intent", () => {
+  const plain = buildXSearchUrl("GPTPLus", { hints: { platform: "x", cleanQuery: "GPTPLus", rawQuery: "GPTPLus" } });
+  assert.ok(plain.includes("-filter%3Areplies"), "replies are excluded by default");
+
+  const replies = buildXSearchUrl("OpenAI 回复", { hints: { platform: "x", cleanQuery: "OpenAI 回复", rawQuery: "OpenAI 回复" } });
+  assert.ok(!replies.includes("-filter%3Areplies"), "an explicit reply request keeps replies");
+
+  const video = buildXSearchUrl("DeepSeek video", { hints: { platform: "x", cleanQuery: "DeepSeek video", rawQuery: "DeepSeek video" } });
+  assert.ok(video.includes("filter%3Avideos"));
+
+  const trending = buildXSearchUrl("AI trending", { hints: { platform: "x", cleanQuery: "AI trending", rawQuery: "AI trending" } });
+  assert.ok(trending.includes("min_faves%3A10"));
+
+  // CJK queries must NOT get negative/operator suffixes: x.com mis-parses them.
+  const cjk = buildXSearchUrl("DeepSeek 视频", { hints: { platform: "x", cleanQuery: "DeepSeek 视频", rawQuery: "DeepSeek 视频" } });
+  assert.ok(!cjk.includes("filter%3Avideos"));
+  assert.ok(!cjk.includes("-filter%3Areplies"));
+});
+
+test("XSource: the public syndication endpoint serves a tweet without any session", async () => {
+  setSyndicationFetcher(async () => ({
+    id_str: "123",
+    text: "GPTPLus 又涨价了",
+    created_at: "2026-11-09T10:00:00.000Z",
+    favorite_count: 42,
+    conversation_count: 7,
+    user: { name: "测试用户", screen_name: "tester" },
+  }));
+  let pageCreated = false;
+  const runtime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({ platform: "x", runtimeAvailable: true, runtimeState: "stopped", authState: "signed-out", authenticated: false }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => false,
+    verifyAuthenticationForOperation: async () => false,
+    openPage: async () => { pageCreated = true; throw new Error("should not open a page"); },
+    createPage: async () => { pageCreated = true; throw new Error("should not create a page"); },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  } as any;
+
+  const source = new XSource(runtime);
+  const res = await source.fetch("https://x.com/tester/status/123");
+
+  assert.equal(res.item?.text, "GPTPLus 又涨价了");
+  assert.equal(res.item?.author?.handle, "@tester");
+  assert.equal(res.item?.likes, 42);
+  assert.equal(res.retrievalMode, "public-api");
+  assert.equal(pageCreated, false, "no browser page may be opened for a public tweet");
+
+  setSyndicationFetcher(async () => null);
+});
+
+test("XSource: authenticated fetch falls back to the public endpoint when the browser path fails", async () => {
+  setSyndicationFetcher(async () => ({
+    id_str: "555",
+    text: "fallback text",
+    user: { name: "用户", screen_name: "tester" },
+  }));
+  const runtime = {
+    detect: async () => ({ kind: "edge", executablePath: "msedge.exe" }),
+    status: async () => ({ platform: "x", runtimeAvailable: true, runtimeState: "ready", authState: "authenticated", authenticated: true }),
+    login: async () => ({} as any),
+    checkAuthentication: async () => true,
+    verifyAuthenticationForOperation: async () => true,
+    openPage: async () => { throw new Error("browser down"); },
+    createPage: async () => { throw new Error("browser down"); },
+    resetSession: async () => {},
+    stop: async () => {},
+    dispose: async () => {},
+  } as any;
+
+  const res = await new XSource(runtime).fetch("https://x.com/tester/status/555");
+  assert.equal(res.retrievalMode, "public-api");
+  assert.equal(res.item?.text, "fallback text");
+
+  setSyndicationFetcher(async () => null);
+});
+
+test("XSource: automatically recovers from '出错了。请尝试重新加载。' error panel via retry capture", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
+  );
+
+  let captureIndex = 0;
+  const page: CdpPageLease = {
+    targetId: "t-error-panel",
+    sessionId: "s-error-panel",
+    navigate: async () => {},
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async (script: string) => {
+      if (typeof script === "string" && script.includes("SideNav_AccountSwitcher_Button")) {
+        // readXPageSnapshot
+        return {
+          href: "https://x.com/search?q=test",
+          title: "搜索 / X",
+          text: "出错了。请尝试重新加载。",
+          tweets: 0,
+          graphql: 0,
+          loggedIn: true,
+          loginCta: false,
+          errorPanel: true,
+          readyState: "complete",
+        };
+      }
+      if (typeof script === "string" && script.includes("重新加载")) {
+        // clickXRetryIfPresent
+        return true;
+      }
+      return "";
+    },
+    call: async () => [],
+    scrollBy: async () => {},
+    beginJsonCapture: async () => {
+      const idx = ++captureIndex;
+      return {
+        wait: async () => {
+          if (idx === 1) {
+            // First pass fails / times out because of the error panel
+            return { state: "timeout" as const };
+          }
+          // Second pass (the late retry capture) catches the reload!
+          return {
+            state: "captured" as const,
+            status: 200,
+            json: fixture,
+            url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+          };
+        },
+        cancel: () => {},
+      };
+    },
+    close: async () => {},
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+  const res = await xSource.search("test query");
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3);
+  assert.equal(captureIndex, 2, "must have triggered the late retry capture");
+});
+
+test("XSource: un-stalls hanging splash screen via reload and late capture", async () => {
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "x-searchtimeline.json"), "utf-8"),
+  );
+
+  let captureIndex = 0;
+  let reloadsCount = 0;
+  const page: CdpPageLease = {
+    targetId: "t-splash",
+    sessionId: "s-splash",
+    navigate: async () => {},
+    waitForLoad: async () => {},
+    waitForSelector: async () => {},
+    evaluate: async (script: string) => {
+      if (typeof script === "string" && script.includes("location.reload")) {
+        reloadsCount++;
+        return "";
+      }
+      if (typeof script === "string" && script.includes("SideNav_AccountSwitcher_Button")) {
+        // First snapshot checks show unhydrated splash screen
+        if (reloadsCount === 0) {
+          return {
+            href: "https://x.com/search?q=test",
+            title: "X",
+            text: "",
+            tweets: 0,
+            graphql: 0,
+            loggedIn: false,
+            loginCta: false,
+            errorPanel: false,
+            readyState: "complete",
+          };
+        }
+        return {
+          href: "https://x.com/search?q=test",
+          title: "搜索 / X",
+          text: "搜索结果",
+          tweets: 3,
+          graphql: 1,
+          loggedIn: true,
+          loginCta: false,
+          errorPanel: false,
+          readyState: "complete",
+        };
+      }
+      return "";
+    },
+    call: async () => [],
+    scrollBy: async () => {},
+    beginJsonCapture: async () => {
+      const idx = ++captureIndex;
+      return {
+        wait: async () => {
+          if (idx === 1) {
+            // Initial capture times out because splash screen stalled
+            return { state: "timeout" as const };
+          }
+          // The late capture from reload catches SearchTimeline
+          return {
+            state: "captured" as const,
+            status: 200,
+            json: fixture,
+            url: "https://x.com/i/api/graphql/abc/SearchTimeline",
+          };
+        },
+        cancel: () => {},
+      };
+    },
+    close: async () => {},
+  };
+
+  const { runtime } = runtimeWithPage(page);
+  const xSource = new XSource(runtime);
+  const res = await xSource.search("test splash query");
+
+  assert.equal(res.error, undefined);
+  assert.equal(res.retrievalMode, "native-browser");
+  assert.equal(res.items.length, 3);
+  assert.equal(reloadsCount, 1, "must have triggered window.location.reload() to un-stall");
+  assert.equal(captureIndex, 2, "must have captured SearchTimeline after reload");
 });

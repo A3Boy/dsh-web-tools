@@ -10,14 +10,18 @@
 import z from "@deepseek-ai/schemastery";
 import type { WebToolsContext } from "./context-types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
+import type { KeenableUsageBucket } from "./providers/keenable-usage.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
-import type { SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { SearchRoutingPolicy, RetrievalStrategy } from "../shared/api-types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import type { OutboundAuthorization } from "./provider-transport.ts";
 import { loadCustomProviders } from "./custom-provider-schema.ts";
 
 /** Persistent search routing policy id (shared with the client card). */
 export type ToolSearchRoutingPolicy = SearchRoutingPolicy;
+
+/** Persistent retrieval strategy id (shared with the client card). */
+export type ToolRetrievalStrategy = RetrievalStrategy;
 
 /** Settings namespace for this plugin. */
 export const SETTINGS_NS = "dsh-web-tools";
@@ -36,6 +40,7 @@ export const DEFAULT_PROVIDER = "exa";
  */
 export const DEFAULT_SETTINGS = {
   enabled: true,
+  webReadEnabled: true,
   defaultProvider: DEFAULT_PROVIDER,
   // Per-attempt budget for ONE provider call (the DSH tool owns the overall
   // web_search timeout). Distinct from tool-level timeout: this is how long a
@@ -50,10 +55,23 @@ export const DEFAULT_SETTINGS = {
   // response header captured during a real search. Persisted here so a
   // restart does not forget the last known balance (keyed by API key).
   braveQuotaCache: {} as Record<string, QuotaSnapshot>,
+  // Keenable bills per call and reports the charge in the response body; the
+  // per-key monthly ledger derived from those `usage` objects lives here so a
+  // restart does not reset the "spent this month" figure.
+  keenableUsageCache: {} as Record<string, KeenableUsageBucket>,
   // Search routing policy: how the runtime picks the starting provider per
   // search query. "ordered" = always from the first available; "round-robin"
   // and "random" rotate the start offset (see routing-policy.ts).
   searchRoutingPolicy: "ordered" as ToolSearchRoutingPolicy,
+  // Cross-provider retrieval orchestration: "single" keeps the classic
+  // one-at-a-time chain; "hedged" adds a latency-triggered second request;
+  // "fused" runs two providers and merges them with RRF (more coverage, more
+  // cost). Default stays "single" so upgrading never silently doubles spend.
+  retrievalStrategy: "single" as ToolRetrievalStrategy,
+  // Platform session keep-alive: every N hours, visit the signed-in platform
+  // once in the existing browser profile so the site refreshes its cookies
+  // (小红书 web_session / X auth_token expire when unused). 0 disables it.
+  sessionKeepAliveHours: 8,
   // Operator-defined search sources (Issue #9). Kept in their OWN array rather
   // than merged into providerBaseUrls/providerEnabled: a merge would force a
   // migration of every existing profile for no benefit, and custom sources
@@ -69,6 +87,8 @@ export const DEFAULT_SETTINGS = {
 /** Resolved settings shape (explicit interface — portable in emitted d.ts). */
 export interface WebToolsSettings {
   enabled: boolean;
+  /** Enable the focused page reading (web_read) tool. */
+  webReadEnabled?: boolean;
   defaultProvider: string;
   providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
@@ -78,8 +98,14 @@ export interface WebToolsSettings {
   providerOptions: StoredProviderOptions;
   /** Brave per-key quota snapshots captured from search response headers. */
   braveQuotaCache: Record<string, QuotaSnapshot>;
+  /** Keenable per-key, per-month credit ledger (from per-call `usage` objects). */
+  keenableUsageCache: Record<string, KeenableUsageBucket>;
   /** Search routing policy (see shared api-types). */
   searchRoutingPolicy: ToolSearchRoutingPolicy;
+  /** Cross-provider retrieval strategy (see shared api-types). */
+  retrievalStrategy: ToolRetrievalStrategy;
+  /** Hours between platform session keep-alive visits (0 = disabled). */
+  sessionKeepAliveHours: number;
   /** Operator-defined custom search sources (Issue #9). */
   customProviders: CustomProviderConfig[];
   /** Operator-granted outbound destinations for internal gateways / private IPs. */
@@ -89,6 +115,7 @@ export interface WebToolsSettings {
 /** The schema object for settings registration (official z<T> annotation). */
 export const Config: z<WebToolsSettings> = z.object({
   enabled: z.boolean(),
+  webReadEnabled: z.boolean().default(true),
   defaultProvider: z.string(),
   providerAttemptTimeoutMs: z.number().step(1).min(1000).max(60000),
   fallbackOrder: z.array(z.string()),
@@ -97,7 +124,21 @@ export const Config: z<WebToolsSettings> = z.object({
   platformEnabled: z.dict(z.boolean()),
   providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
-  searchRoutingPolicy: z.union([z.const("ordered"), z.const("round-robin"), z.const("random")]),
+  keenableUsageCache: z.dict(z.any()),
+  searchRoutingPolicy: z.union([
+    z.const("ordered"),
+    z.const("round-robin"),
+    z.const("random"),
+    z.const("adaptive"),
+    z.const("fastest"),
+    z.const("cheapest"),
+  ]),
+  retrievalStrategy: z.union([
+    z.const("single"),
+    z.const("hedged"),
+    z.const("fused"),
+  ]),
+  sessionKeepAliveHours: z.number().step(1).min(0).max(168),
   // Validated structurally on load; a bad entry is dropped, never thrown, so a
   // hand-edited profile cannot make the plugin fail to register.
   customProviders: z.array(z.any()),

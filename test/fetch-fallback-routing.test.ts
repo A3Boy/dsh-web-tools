@@ -187,4 +187,61 @@ describe("fetch fallback routing: Native -> Generic fallback", () => {
     assert.equal(res.backend, "builtin-http");
     assert.equal(res.body.content, "Fallback content after Exa failure");
   });
+
+  it("falls back to generic fetch when native fetch returns low-quality content or bot wall", async () => {
+    let genericCalled = false;
+
+    const mockAdapters: Record<string, ProviderAdapterLike> = {
+      tavily: {
+        name: "tavily",
+        needsBaseUrl: false,
+        fetchCapable: true,
+        async search() { return { sources: [] }; },
+        async fetch() {
+          // Return a Cloudflare bot wall response
+          return { text: "Please enable JavaScript and reload the page. Cloudflare Ray ID: 12345" };
+        },
+      },
+    };
+
+    const config = stubConfig({
+      defaultProvider: "tavily",
+      fallbackOrder: ["tavily"],
+    });
+
+    const mockGeneric = async (url: string): Promise<GenericFetchResult> => {
+      genericCalled = true;
+      return {
+        url,
+        finalUrl: url,
+        statusCode: 200,
+        contentType: "text/html",
+        content: "Complete page content extracted by built-in browser engine",
+        truncated: false,
+        backend: "builtin-http",
+        extraction: "defuddle",
+      };
+    };
+
+    const recordedStats: any[] = [];
+    const fetchProvider = createFetchProvider(
+      () => config,
+      async () => "tavily-key",
+      mockAdapters,
+      undefined,
+      undefined,
+      mockGeneric,
+      undefined,
+      { record: (e) => recordedStats.push(e) },
+    );
+
+    const res = await fetchProvider.fetch({ url: "https://example.com/bot-protected" });
+    assert.equal(genericCalled, true);
+    assert.equal(res.backend, "builtin-http");
+    assert.equal(res.body.content, "Complete page content extracted by built-in browser engine");
+    // Verify stats were recorded with latencyMs
+    assert.equal(recordedStats.length >= 2, true);
+    assert.equal(typeof recordedStats[0].latencyMs, "number");
+    assert.equal(recordedStats[0].outcome, "failed:low-quality");
+  });
 });

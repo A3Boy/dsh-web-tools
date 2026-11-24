@@ -15,6 +15,8 @@ export interface XhsRawInteractInfo {
 export interface XhsRawNoteCard {
     type?: string;
     displayTitle?: string;
+    /** Note body. Many life-log notes have no title; the first line substitutes. */
+    desc?: string;
     user?: XhsRawUser;
     interactInfo?: XhsRawInteractInfo;
     cover?: {

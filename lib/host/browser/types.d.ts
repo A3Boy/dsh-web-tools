@@ -62,7 +62,10 @@ export interface JsonCaptureHandle {
 export interface CdpPageLease {
     targetId: string;
     sessionId: string;
-    navigate(url: string, signal?: AbortSignal): Promise<void>;
+    /** Bring the tab to the foreground (un-throttles a background renderer). */
+    bringToFront?(signal?: AbortSignal): Promise<void>;
+    navigate(url: string, signal?: AbortSignal, timeoutMs?: number, referrer?: string): Promise<void>;
+    deleteCookies?(name: string, domain?: string): Promise<void>;
     waitForSelector(selector: string, timeoutMs?: number, signal?: AbortSignal): Promise<void>;
     waitForLoad(signal?: AbortSignal): Promise<void>;
     evaluate<T>(expression: string, signal?: AbortSignal): Promise<T>;
@@ -90,6 +93,12 @@ export interface NativeBrowserRuntime {
     /** Create a blank (about:blank) attached page WITHOUT navigating. Lets callers
      *  install network capture listeners before triggering navigation. */
     createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
+    /**
+     * Close every page on the platform origin except `keepTargetId` (when given).
+     * Used for tab hygiene: the site itself opens search tabs, so a long-lived
+     * profile otherwise accumulates one per operation.
+     */
+    closePlatformPages?(platform: BrowserPlatform, keepTargetId?: string, signal?: AbortSignal): Promise<void>;
     resetSession(platform: BrowserPlatform): Promise<void>;
     stop(platform: BrowserPlatform): Promise<void>;
     dispose(): Promise<void>;

@@ -47,6 +47,8 @@ export interface SourceItem {
     title: string;
     url: string;
     snippet?: string;
+    /** Rich, model-facing summary replacing snippet in DSH tool-web prompt injection. */
+    summary?: string;
     text?: string;
     author?: SourceAccountInfo;
     publishedAt?: string;
@@ -57,18 +59,50 @@ export interface SourceItem {
     comments?: SourceComment[];
     commentsTruncated?: boolean;
     images?: string[];
+    /** Direct MP4 URL when the post carries a video. */
+    videoUrl?: string;
+    /** Hashtags / topic tags, without the leading `#`. */
+    tags?: string[];
     coverImage?: string;
     platform: SpecializedPlatformId | "general";
 }
 export interface SourceSearchOutcome {
     items: SourceItem[];
+    /** Direct synthesized answer (e.g. from Tavily LLM or Serper Knowledge Graph). */
+    content?: string;
     error?: SourceFailure;
     retrievalMode?: "native-browser" | "degraded-web" | "general-web";
+    /**
+     * Set when the answer did NOT come from the platform itself (native search
+     * unavailable) and a site:-filtered web search was used instead. Callers must
+     * surface this: silently labelling web results as platform results is the
+     * failure mode this field exists to prevent.
+     */
+    degraded?: SourceDegradation;
+    /** Which provider(s) served a general-web fallback (`a+b` when fused). */
+    backend?: string;
+    /** Per-provider attempt ledger of a general-web fallback. */
+    attempts?: Array<{
+        provider: string;
+        outcome: string;
+        latencyMs?: number;
+    }>;
+    /** True when the fallback merged two providers with RRF. */
+    fused?: boolean;
+    /** Human-readable channel diagnostics (why a fast path was skipped). */
+    diagnostics?: string[];
+}
+/** Why a platform search was served by a web-search fallback instead. */
+export interface SourceDegradation {
+    code: SourceErrorCode | "platform-disabled";
+    message: string;
+    /** `xiaohongshu` / `x`, when the degradation came from a platform source. */
+    platform?: SpecializedPlatformId;
 }
 export interface SourceFetchOutcome {
     item?: SourceItem;
     error?: SourceFailure;
-    retrievalMode?: "native-browser" | "degraded-web" | "general-web";
+    retrievalMode?: "native-browser" | "degraded-web" | "general-web" | "public-api";
 }
 export interface SpecializedSource {
     readonly id: SpecializedPlatformId;

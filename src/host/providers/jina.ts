@@ -17,6 +17,7 @@ import type { QuotaSnapshot } from "../quota.ts";
 import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { JinaProviderOptions } from "../../shared/provider-options.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 /** Official fallbacks. Search is overridable; the Reader is a different host
  *  (`r.jina.ai`) and stays pinned. */
@@ -132,17 +133,23 @@ export function parseJinaSearchJson(body: unknown, maxResults: number): Source[]
   for (const item of data) {
     if (sources.length >= maxResults) break;
     if (!item || typeof item !== "object") continue;
-    const { url, title, description, publishedTime } = item as {
+    const { url, title, description, content, publishedTime } = item as {
       url?: unknown;
       title?: unknown;
       description?: unknown;
+      content?: unknown;
       publishedTime?: unknown;
     };
     if (typeof url !== "string" || url.length === 0) continue;
+    const desc = typeof description === "string" ? description.trim() : "";
+    const cnt = typeof content === "string" ? content.trim() : "";
+    const summary = truncate(cnt || desc, SUMMARY_MAX);
+    const snippet = truncate(toSingleLine(desc || cnt), SNIPPET_MAX);
     sources.push({
       url,
       ...(typeof title === "string" && title ? { title } : {}),
-      ...(typeof description === "string" && description ? { snippet: description } : {}),
+      ...(snippet ? { snippet } : {}),
+      ...(summary ? { summary } : {}),
       ...(typeof publishedTime === "string" && publishedTime ? { publishedAt: publishedTime } : {}),
     });
   }

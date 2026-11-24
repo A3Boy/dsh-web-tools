@@ -17,6 +17,13 @@ import { type ProviderAdapter } from "./types.ts";
 import type { TavilyProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
 /**
+ * Normalize a locale country into a value Tavily accepts.
+ * Accepts an ISO 3166-1 alpha-2 code or an already-valid country name.
+ * Returns undefined for anything else, so that an unknown/unsupported country
+ * is dropped (geo boost only) instead of failing the whole search with 400.
+ */
+export declare function tavilyCountryName(country: string | undefined): string | undefined;
+/**
  * Build the POST request body for Tavily's /search endpoint.
  * Supports:
  *  - search_depth: "basic" | "advanced" | "fast" | "ultra-fast"
@@ -25,6 +32,7 @@ import type { SearchHints } from "../search-hints.ts";
  *  - time_range: "day" | "week" | "month" | "year"
  *  - start_date: RFC3339 / YYYY-MM-DD from hints
  *  - include_domains / exclude_domains
+ *  - country: lowercase country NAME, only when topic stays "general"
  */
 export declare function buildTavilySearchBody(query: string, maxResults: number | undefined, options?: Readonly<TavilyProviderOptions>, hints?: Readonly<SearchHints>): Record<string, unknown>;
 export declare const TAVILY_META: {

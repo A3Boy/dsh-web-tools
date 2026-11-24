@@ -31,6 +31,17 @@ export declare class SessionManager implements NativeBrowserRuntime {
     private prepareInteractiveLogin;
     openPage(platform: BrowserPlatform, url: string, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
     createPage(platform: BrowserPlatform, signal?: AbortSignal, mode?: BrowserRunMode): Promise<CdpPageLease>;
+    /**
+     * Close every existing page that belongs to the platform origin.
+     *
+     * Called right before we open our own tab, so a search always starts from a
+     * clean window: leftover tabs from a previous operation (or from Edge
+     * restoring a crashed session) are removed. Internal new-tab pages are left
+     * untouched — closing the last tab would terminate the browser.
+     */
+    private closePlatformPagesInternal;
+    /** Public wrapper: close platform tabs (optionally keeping one target). */
+    closePlatformPages(platform: BrowserPlatform, keepTargetId?: string, signal?: AbortSignal): Promise<void>;
     private retainLease;
     private releaseLease;
     private scheduleIdleTimer;

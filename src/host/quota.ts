@@ -44,6 +44,12 @@ export interface QuotaSnapshot {
   resetAt?: string;
   /** Extra per-feature usage breakdown (Tavily) when available. */
   breakdown?: Record<string, number>;
+  /**
+   * Optional pool-group id. Snapshots sharing a group describe ONE upstream
+   * balance (an organization-level bill, for instance), so merging a key pool
+   * must count them once instead of once per key.
+   */
+  group?: string;
   source: QuotaSource;
   /** Epoch ms when the snapshot was fetched. */
   fetchedAt: number;
@@ -124,14 +130,26 @@ export function isLow(snapshot: QuotaSnapshot | undefined, fraction = 0.1): bool
  * @returns the combined snapshot (same shape as a single-key one).
  */
 export function mergePoolQuota(snapshots: QuotaSnapshot[]): QuotaSnapshot {
-  const first = snapshots[0];
+  // Organization-level balances (same `group`) must not be summed per key:
+  // every key of the same console account reports the same organization total.
+  const unique: QuotaSnapshot[] = [];
+  const seenGroups = new Set<string>();
+  for (const s of snapshots) {
+    if (s.group) {
+      if (seenGroups.has(s.group)) continue;
+      seenGroups.add(s.group);
+    }
+    unique.push(s);
+  }
+  const effective = unique.length > 0 ? unique : snapshots;
+  const first = effective[0];
   let remaining: number | undefined;
   let used: number | undefined;
   let limit: number | undefined;
   let resetAt = first.resetAt;
   const breakdown: Record<string, number> = {};
 
-  for (const s of snapshots) {
+  for (const s of effective) {
     if (s.remaining !== undefined) remaining = (remaining ?? 0) + s.remaining;
     if (s.used !== undefined) used = (used ?? 0) + s.used;
     if (s.limit !== undefined) limit = (limit ?? 0) + s.limit;
@@ -139,7 +157,7 @@ export function mergePoolQuota(snapshots: QuotaSnapshot[]): QuotaSnapshot {
     for (const [k, v] of Object.entries(s.breakdown ?? {})) breakdown[k] = (breakdown[k] ?? 0) + v;
   }
 
-  const note = snapshots.length > 1 ? `聚合 ${snapshots.length} 把 Key 的总额度` : first.note;
+  const note = effective.length > 1 ? `聚合 ${effective.length} 把 Key 的总额度` : first.note;
   return {
     supported: first.supported,
     authoritative: first.authoritative,

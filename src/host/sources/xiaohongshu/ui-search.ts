@@ -21,6 +21,7 @@ export async function navigateXhsSearchViaUi(
   page: CdpPageLease,
   query: string,
   signal?: AbortSignal,
+  sort?: string,
 ): Promise<XhsSearchNavigationOutcome> {
   await page.navigate("https://www.xiaohongshu.com/explore", signal);
   await page.waitForLoad(signal);
@@ -64,6 +65,30 @@ export async function navigateXhsSearchViaUi(
       const structured = await page.call(extractXhsSearchState, [], signal);
       const domCount = await page.evaluate<number>("document.querySelectorAll('section.note-item').length", signal);
       if ((structured.available && structured.feeds.length > 0) || domCount > 0) {
+        if (sort && sort !== "general") {
+          const sortTagMap: Record<string, string> = {
+            time_descending: "最新",
+            popularity_descending: "最多点赞",
+            comment_descending: "最多评论",
+            collect_descending: "最多收藏",
+          };
+          const targetTag = sortTagMap[sort];
+          if (targetTag) {
+            await page.evaluate(
+              `((tagName) => {
+                const panel = document.querySelector(".filter-panel, .filter-container");
+                if (!panel) {
+                  const filterBtn = document.querySelector(".filter") || document.querySelector(".filter-icon");
+                  if (filterBtn) filterBtn.click();
+                }
+                const allTags = Array.from(document.querySelectorAll(".filter-panel .tags, .filter-container .tags"));
+                const target = allTags.find(t => t.textContent.trim() === tagName);
+                if (target) target.click();
+              })(${JSON.stringify(targetTag)})`,
+              signal,
+            ).catch(() => {});
+          }
+        }
         return { state: "ready", stage: "after-submit", url };
       }
     }

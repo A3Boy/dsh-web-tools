@@ -34,3 +34,11 @@ pnpm-lock.yaml
 
 # local test SearXNG deployment data
 searxng-data/
+
+# probe & verification reports
+.tmp-probe/
+reports/
+
+# M4 benchmark local fixtures and run results (third-party page bodies do not enter git)
+bench/m4/fixtures/
+bench/m4/results/

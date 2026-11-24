@@ -28,12 +28,15 @@ export interface QuotaPersistOptions {
   now?: () => number;
 }
 
-/** Coalescing writer for Brave's last-known quota snapshots. */
-export interface QuotaPersistScheduler {
+/**
+ * Coalescing writer for display-only per-key caches (Brave snapshots,
+ * Keenable's usage ledger). `T` keeps the stored shape explicit.
+ */
+export interface QuotaPersistScheduler<T = QuotaSnapshot> {
   /** Adopt the cache loaded from settings so unrelated keys survive a flush. */
-  seed: (cache: Record<string, QuotaSnapshot>) => void;
+  seed: (cache: Record<string, T>) => void;
   /** Record a snapshot; schedules at most one write per quiet window. */
-  record: (apiKey: string, snapshot: QuotaSnapshot) => void;
+  record: (apiKey: string, snapshot: T) => void;
   /** Write any pending change immediately. */
   flushNow: () => void;
   /** Pending keys not yet written. */
@@ -48,13 +51,13 @@ export interface QuotaPersistScheduler {
  * @param options - Window and clock overrides.
  * @returns The scheduler.
  */
-export function createQuotaPersistScheduler(
-  write: (cache: Record<string, QuotaSnapshot>) => void,
+export function createQuotaPersistScheduler<T = QuotaSnapshot>(
+  write: (cache: Record<string, T>) => void,
   options: QuotaPersistOptions = {},
-): QuotaPersistScheduler {
+): QuotaPersistScheduler<T> {
   const delayMs = options.delayMs ?? 60_000;
-  let known: Record<string, QuotaSnapshot> = {};
-  let dirty: Record<string, QuotaSnapshot> = {};
+  let known: Record<string, T> = {};
+  let dirty: Record<string, T> = {};
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   const flushNow = () => {

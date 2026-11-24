@@ -35,6 +35,7 @@ import {
   type TestSearchView,
   type ProviderView,
   type SearchRoutingPolicy,
+  type RetrievalStrategy,
   type VersionCheckView,
   type PlatformStatusResponse,
 } from "./api.ts";
@@ -346,6 +347,9 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
 
   const attempts = result?.attempts ?? [];
   const label = (name: string) => config.providers.find((p) => p.name === name)?.label ?? name;
+  /** A fused answer reports `a+b`; label both sides instead of showing the raw id. */
+  const backendLabel = (backend?: string) =>
+    (backend ?? "").split("+").filter(Boolean).map(label).join(" + ");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -371,8 +375,24 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: stateColor.success, fontSize: 13 }}>
               <StateDot state="done" size={8} />
               <span style={{ fontWeight: 600 }}>
-                {t("usingProviderPrefix")}{label(result.backend ?? "")} · {((result.latencyMs ?? 0) / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
+                {t("usingProviderPrefix")}{backendLabel(result.backend)} · {((result.latencyMs ?? 0) / 1000).toFixed(2)} {t("secondsUnit")} · {t("resultCount", { n: result.resultCount ?? 0 })}
               </span>
+              {result.fused && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 500,
+                    padding: "2px 7px",
+                    borderRadius: 4,
+                    background: surface.layer2,
+                    color: text.secondary,
+                    border: `1px solid ${surface.border}`,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {t("fusedBadge")}
+                </span>
+              )}
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
               </span>
@@ -384,6 +404,23 @@ function TestSearchBlock(props: { t: TFunc; config: ConfigView; onError: (msg: s
               <span style={{ marginLeft: "auto" }}>
                 <Button size="sm" variant="ghost" onClick={() => setCleared(true)}>{t("clearResult")}</Button>
               </span>
+            </div>
+          )}
+
+          {/* A platform query served by web results must say so. */}
+          {result.ok && result.degraded && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: text.secondary,
+                background: surface.layer2,
+                border: `1px solid ${surface.border}`,
+                borderRadius: 6,
+                padding: "6px 8px",
+              }}
+            >
+              {t("degradedSearchNotice", { reason: result.degraded.code })}
             </div>
           )}
 
@@ -479,6 +516,12 @@ export function WebToolsSection(props: SectionProps) {
   const orderWriteInFlight = useRef(false);
   /** True while a routing edit is being persisted in the background. */
   const [savingOrder, setSavingOrder] = useState(false);
+  /** Newest config patch not yet confirmed by the Host (coalesced). */
+  const pendingConfigPatch = useRef<Record<string, unknown> | null>(null);
+  /** Whether one config write is currently in flight. */
+  const configWriteInFlight = useRef(false);
+  /** A read that arrived mid-write must be re-run once the write settles. */
+  const reloadAfterWrite = useRef(false);
 
   useEffect(() => {
     if (config?.providerAttemptTimeoutMs !== undefined) {
@@ -507,6 +550,12 @@ export function WebToolsSection(props: SectionProps) {
   };
 
   const load = async () => {
+    // A read landing mid-write would repaint the pre-edit value and visibly
+    // undo the click; re-run it once the write queue is empty instead.
+    if (configWriteInFlight.current || pendingConfigPatch.current) {
+      reloadAfterWrite.current = true;
+      return;
+    }
     const seq = readSeq.current.begin();
     try {
       const cfg = await api.configGet();
@@ -594,19 +643,52 @@ export function WebToolsSection(props: SectionProps) {
     );
   }
 
-  const save = async (patch: Record<string, unknown>) => {
-    setSaving(true);
-    try {
-      await api.configSave(patch);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
+  /**
+   * Persist a config patch optimistically.
+   *
+   * A DSH settings write costs ~1.7-2.5s (profile patch + loader
+   * reconciliation). Repainting only after it settled made every switch feel
+   * dead, and `disabled={saving}` then froze the rest of the card for the same
+   * window. So: paint the intended value immediately, coalesce rapid edits into
+   * ONE write, and re-read only when the write fails.
+   */
+  const drainConfigWrites = () => {
+    if (configWriteInFlight.current) return; // the in-flight settle drains next
+    const patch = pendingConfigPatch.current;
+    if (!patch) {
       setSaving(false);
+      if (reloadAfterWrite.current) {
+        reloadAfterWrite.current = false;
+        void load();
+      }
+      return;
     }
+    pendingConfigPatch.current = null;
+    configWriteInFlight.current = true;
+    setSaving(true);
+    void api
+      .configSave(patch)
+      .then(() => setError(""))
+      .catch((e) => {
+        // The Host is the source of truth: drop queued edits and resync.
+        pendingConfigPatch.current = null;
+        setError(e instanceof Error ? e.message : String(e));
+        reloadAfterWrite.current = true;
+      })
+      .finally(() => {
+        configWriteInFlight.current = false;
+        drainConfigWrites();
+      });
   };
 
-  const setEnabled = (enabled: boolean) => void save({ enabled });
+  /** Apply `patch` to the UI now and persist it behind the scenes. */
+  const save = (patch: Record<string, unknown>, optimistic?: (prev: ConfigView) => ConfigView) => {
+    if (optimistic) setConfig((prev) => (prev ? optimistic(prev) : prev));
+    pendingConfigPatch.current = { ...(pendingConfigPatch.current ?? {}), ...patch };
+    drainConfigWrites();
+  };
+
+  const setEnabled = (enabled: boolean) => save({ enabled }, (prev) => ({ ...prev, enabled }));
 
   // Dedicated Browser Profile Login
   const loginPlatform = async (platform: "xiaohongshu" | "x") => {
@@ -627,13 +709,22 @@ export function WebToolsSection(props: SectionProps) {
     }
   };
   const toggleProvider = (name: string, enabled: boolean) => {
-    const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
-    void save({ providerEnabled });
+    const current = configRef.current;
+    if (!current) return;
+    // Read the LIVE provider list, not this render's closure: two quick toggles
+    // used to overwrite each other with a stale map.
+    const providerEnabled = Object.fromEntries(
+      current.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]),
+    );
+    save({ providerEnabled }, (prev) => ({
+      ...prev,
+      providers: prev.providers.map((p) => (p.name === name ? { ...p, enabled } : p)),
+    }));
   };
   const togglePlatform = (name: "xiaohongshu" | "x", enabled: boolean) => {
-    const current = config.platformEnabled ?? { xiaohongshu: true, x: true };
+    const current = configRef.current?.platformEnabled ?? { xiaohongshu: true, x: true };
     const platformEnabled = { ...current, [name]: enabled };
-    void save({ platformEnabled });
+    save({ platformEnabled }, (prev) => ({ ...prev, platformEnabled }));
   };
   const setBaseUrl = async (name: string, baseUrl: string) => {
     try {
@@ -664,7 +755,7 @@ export function WebToolsSection(props: SectionProps) {
     const ms = Math.min(60000, Math.max(1000, Math.round(num * 1000)));
     setTimeoutDraftSec(String(Math.round(ms / 1000)));
     if (!config || ms !== config.providerAttemptTimeoutMs) {
-      void save({ providerAttemptTimeoutMs: ms });
+      save({ providerAttemptTimeoutMs: ms }, (prev) => ({ ...prev, providerAttemptTimeoutMs: ms }));
     }
   };
 
@@ -702,8 +793,12 @@ export function WebToolsSection(props: SectionProps) {
    * Writes are drained one at a time; a newer edit replaces the pending intent
    * instead of racing a second multi-second recomposition.
    */
-  const saveOrder = (ordered: readonly string[], policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered") => {
-    const fields = routingFields(ordered, policy);
+  const saveOrder = (
+    ordered: readonly string[],
+    policy: SearchRoutingPolicy = config.searchRoutingPolicy ?? "ordered",
+    retrievalStrategy: RetrievalStrategy = config.retrievalStrategy ?? "single",
+  ) => {
+    const fields = routingFields(ordered, policy, retrievalStrategy);
     ++orderWriteSeq.current;
     pendingOrder.current = fields;
 
@@ -725,7 +820,7 @@ export function WebToolsSection(props: SectionProps) {
     orderWriteInFlight.current = true;
 
     void api
-      .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder])
+      .routingSet(fields.policy, [fields.defaultProvider, ...fields.fallbackOrder], fields.retrievalStrategy)
       .then((result) => {
         if (seq !== orderWriteSeq.current) return; // a newer intent owns the view
         pendingOrder.current = null;
@@ -796,7 +891,8 @@ export function WebToolsSection(props: SectionProps) {
           <p style={{ margin: "2px 0 0", fontSize: 14, lineHeight: "22px", color: text.tertiary }}>{t("tagline")}</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2, flex: "none", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <Switch checked={config.enabled} onChange={setEnabled} disabled={saving} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
+          {saving && <span style={{ color: text.tertiary, fontSize: 12 }}>{t("saving")}</span>}
+          <Switch checked={config.enabled} onChange={setEnabled} label={config.enabled ? t("enabledLabel") : t("disabledLabel")} />
         </div>
       </div>
 
@@ -905,15 +1001,40 @@ export function WebToolsSection(props: SectionProps) {
               <SegmentedControl
                 style={{ display: "flex", width: "100%" }}
                 options={[
-                  { value: "ordered", label: t("routingPolicy.ordered") },
-                  { value: "round-robin", label: t("routingPolicy.round-robin") },
-                  { value: "random", label: t("routingPolicy.random") },
+                  { value: "ordered", label: t("routingPolicyShort.ordered"), title: t("routingPolicy.ordered") },
+                  { value: "round-robin", label: t("routingPolicyShort.round-robin"), title: t("routingPolicy.round-robin") },
+                  { value: "random", label: t("routingPolicyShort.random"), title: t("routingPolicy.random") },
+                  { value: "adaptive", label: t("routingPolicyShort.adaptive"), title: t("routingPolicy.adaptive") },
+                  { value: "fastest", label: t("routingPolicyShort.fastest"), title: t("routingPolicy.fastest") },
+                  { value: "cheapest", label: t("routingPolicyShort.cheapest"), title: t("routingPolicy.cheapest") },
                 ]}
                 value={config.searchRoutingPolicy ?? "ordered"}
                 onChange={(v) => saveOrder(liveOrder(), v as SearchRoutingPolicy)}
+                size="sm"
               />
               <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
                 {t(`routingPolicyHint.${config.searchRoutingPolicy ?? "ordered"}`)}
+              </div>
+            </div>
+            <div style={{ padding: "10px 14px", borderTop: `1px solid ${surface.border}` }}>
+              <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: text.secondary }}>
+                {t("retrievalStrategyLabel")}
+              </div>
+              <SegmentedControl
+                style={{ display: "flex", width: "100%" }}
+                options={[
+                  { value: "single", label: t("retrievalStrategy.single"), title: t("retrievalStrategyHint.single") },
+                  { value: "hedged", label: t("retrievalStrategy.hedged"), title: t("retrievalStrategyHint.hedged") },
+                  { value: "fused", label: t("retrievalStrategy.fused"), title: t("retrievalStrategyHint.fused") },
+                ]}
+                value={config.retrievalStrategy ?? "single"}
+                onChange={(v) =>
+                  saveOrder(liveOrder(), config.searchRoutingPolicy ?? "ordered", v as RetrievalStrategy)
+                }
+                size="sm"
+              />
+              <div style={{ marginTop: 8, fontSize: 12, color: text.tertiary }}>
+                {t(`retrievalStrategyHint.${config.retrievalStrategy ?? "single"}`)}
               </div>
             </div>
           </SettingsGroup>
@@ -1213,6 +1334,14 @@ export function WebToolsSection(props: SectionProps) {
           onBaseUrl={(url) => setBaseUrl(detailProvider.name, url)}
           onTest={() => testProvider(detailProvider.name)}
           onRefreshQuota={() => void loadQuotas(true)}
+          onAddToChain={() => {
+            const current = liveOrder();
+            if (!current.includes(detailProvider.name)) saveOrder([...current, detailProvider.name]);
+          }}
+          onRemoveFromChain={() => {
+            const next = liveOrder().filter((n) => n !== detailProvider.name);
+            if (next.length > 0) saveOrder(next);
+          }}
           onConfigChanged={async () => {
             // Credentials or preferences changed: drop the stale probe so a
             // previous "no key" / auth error does not linger after the edit.

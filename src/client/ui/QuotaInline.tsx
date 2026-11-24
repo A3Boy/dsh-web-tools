@@ -56,6 +56,11 @@ export function formatQuotaNumbers(q?: QuotaView, t?: TFunc): { main: string; un
     const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
     return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaCreditsUnit") : "credits" };
   }
+  // Local ledger (Keenable): the authoritative balance is the console's, so
+  // show what this install was charged instead of inventing a remaining figure.
+  if (q.unit === "credits" && q.used !== undefined) {
+    return { main: fmt(q.used), unit: t ? t("quotaCreditsUsed") : "credits used" };
+  }
   if (q.unit === "requests" && q.remaining !== undefined) {
     const lim = q.limit !== undefined && q.limit > 0 ? ` / ${fmt(q.limit)}` : "";
     return { main: `${fmt(q.remaining)}${lim}`, unit: t ? t("quotaRequestsUnit") : "" };
@@ -202,10 +207,17 @@ export function QuotaCard(props: {
     );
   }
 
-  // Fallback card when no quota snapshot or for dashboard-only providers
+  // Fallback card when no quota snapshot or for dashboard-only providers.
+  // The note explains WHY there is no number yet (e.g. Keenable only reports a
+  // charge after the first billed call), so an empty card is never a dead end.
   if (!quota || !quota.supported || quota.source === "dashboard") {
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
+        {quota?.note && (
+          <div style={{ fontSize: 11, color: text.tertiary, padding: "8px 16px 6px", lineHeight: 1.5 }}>
+            {quota.note}
+          </div>
+        )}
         {dash && (
           <a
             href={dash.url}

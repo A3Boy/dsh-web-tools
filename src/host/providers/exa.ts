@@ -14,6 +14,7 @@ import { fetchWithProxy } from "../fetch-proxy.ts";
 import { endpointViewOf } from "../endpoints.ts";
 import type { ExaProviderOptions } from "../../shared/provider-options.ts";
 import type { SearchHints } from "../search-hints.ts";
+import { SNIPPET_MAX, SUMMARY_MAX, truncate, toSingleLine } from "../text-limits.ts";
 
 /** Official fallback. The search endpoint is overridable via providerBaseUrls;
  *  `/contents` (web_fetch) stays pinned to the official host on purpose — a
@@ -178,14 +179,27 @@ export const ExaProvider: ProviderAdapter = {
       .map((r: Record<string, unknown>) => {
         const url = typeof r?.url === "string" ? r.url : "";
         if (!url) return null;
-        const s: { url: string; title?: string; snippet?: string; publishedAt?: string } = { url };
+        const s: { url: string; title?: string; snippet?: string; summary?: string; publishedAt?: string } = { url };
         if (typeof r.title === "string" && r.title) s.title = r.title;
-        // highlights[] is query-relevant extractive markup (preferred over raw text for agent density)
+        const parts: string[] = [];
+        if (typeof r.author === "string" && r.author.trim()) {
+          parts.push(`[Author: ${r.author.trim()}]`);
+        }
+        if (typeof r.summary === "string" && r.summary.trim()) {
+          parts.push(`Summary: ${r.summary.trim()}`);
+        }
         if (Array.isArray(r.highlights) && r.highlights.length > 0) {
           const joined = r.highlights.filter((h): h is string => typeof h === "string").join("\n\n").trim();
-          if (joined) s.snippet = joined.length > 1200 ? joined.slice(0, 1200) + "…" : joined;
-        } else if (typeof r.text === "string" && r.text) {
-          s.snippet = r.text.length > 600 ? r.text.slice(0, 600) + "…" : r.text;
+          if (joined) parts.push(joined);
+        } else if (typeof r.text === "string" && r.text.trim()) {
+          parts.push(r.text.trim());
+        }
+        const fullContent = parts.join("\n\n").trim();
+        if (fullContent) {
+          s.summary = truncate(fullContent, SUMMARY_MAX);
+          // Clean single-line snippet for UI card presentation
+          const primaryText = (Array.isArray(r.highlights) && r.highlights[0]) || (typeof r.summary === "string" && r.summary) || (typeof r.text === "string" && r.text) || fullContent;
+          s.snippet = truncate(toSingleLine(String(primaryText)), SNIPPET_MAX);
         }
         if (typeof r.publishedDate === "string" && r.publishedDate) s.publishedAt = r.publishedDate;
         return s;

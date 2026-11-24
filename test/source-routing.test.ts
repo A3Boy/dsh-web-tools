@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractSearchHints } from "../src/host/search-hints.ts";
+import { extractSearchHints, refinePlatformQuery } from "../src/host/search-hints.ts";
 import { buildFallbackQuery } from "../src/host/sources/web-fallback.ts";
 import { SpecializedSourceRegistry } from "../src/host/sources/registry.ts";
 import type { SpecializedSource, SourceStatus, SourceSearchRequest, SourceSearchOutcome, SourceFetchOutcome } from "../src/host/sources/types.ts";
@@ -315,4 +315,163 @@ test("SpecializedSourceRegistry: platformEnabled toggle disables platform routin
   assert.equal(nativeCalled, false, "Native source should NOT be called when platform is disabled");
   assert.equal(fallbackQuery, "site:xiaohongshu.com 探店");
   assert.equal(outcome.retrievalMode, "degraded-web");
+});
+
+test("SearchHints: country detection avoids false positives on common words like 'us' or 'de'", () => {
+  // Lowercase 'us' must NOT match country US
+  const h1 = extractSearchHints("give us the latest React docs");
+  assert.equal(h1.locale?.country, undefined);
+
+  const h2 = extractSearchHints("contact us for support");
+  assert.equal(h2.locale?.country, undefined);
+
+  // Explicit uppercase 'US' or names should match
+  const h3 = extractSearchHints("US stock market updates");
+  assert.equal(h3.locale?.country, "US");
+
+  const h4 = extractSearchHints("United States inflation report");
+  assert.equal(h4.locale?.country, "US");
+
+  const h5 = extractSearchHints("美国联储利率决议");
+  assert.equal(h5.locale?.country, "US");
+});
+
+test("SearchHints: topic classification disambiguates financial vs code queries", () => {
+  // 'bond issue 财报' contains 'issue', but finance signals dominate
+  const h1 = extractSearchHints("bond issue 财报");
+  assert.equal(h1.topic, "finance");
+
+  // 'pr crisis' should NOT be misclassified as code
+  const h2 = extractSearchHints("PR crisis management in hotel chains");
+  assert.equal(h2.topic, "general");
+
+  // Genuine code issue with strong code indicator
+  const h3 = extractSearchHints("React useEffect hook issue");
+  assert.equal(h3.topic, "code");
+
+  // Research paper query
+  const h4 = extractSearchHints("DeepSeek-R1 论文消融实验");
+  assert.equal(h4.topic, "research");
+});
+
+test("SpecializedSourceRegistry: forwards the executor diagnostics on the general-web path", async () => {
+  const registry = new SpecializedSourceRegistry();
+
+  const provider = {
+    search: async () => ({
+      sources: [{ title: "A", url: "https://a.example/1" }],
+      backend: "tavily+firecrawl",
+      fused: true,
+      attempts: [{ provider: "tavily", outcome: "success", latencyMs: 120 }],
+    }),
+  };
+  registry.setFallbackProviders(provider as any, undefined);
+
+  // No platform hint: the ordinary search path.
+  const plain = await registry.search("plain query");
+  assert.equal(plain.backend, "tavily+firecrawl");
+  assert.equal(plain.fused, true);
+  assert.equal(plain.attempts?.[0]?.provider, "tavily");
+
+  // Platform hint without a registered source: the degraded-web fallback path.
+  const degraded = await registry.search("plain query", { hints: { platform: "x", cleanQuery: "plain query" } });
+  assert.equal(degraded.backend, "tavily+firecrawl");
+  assert.equal(degraded.fused, true);
+  assert.equal(degraded.attempts?.[0]?.provider, "tavily");
+});
+
+test("SpecializedSourceRegistry: an auth failure degrades to web results WITH a marker", async () => {
+  const registry = new SpecializedSourceRegistry();
+
+  const signedOutSource: SpecializedSource = {
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: false,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
+    }),
+    fetch: async () => ({
+      error: { code: "auth-required", message: "Xiaohongshu session is not authenticated", retryable: false },
+    }),
+  };
+
+  registry.registerSource(signedOutSource);
+  registry.setFallbackProviders(
+    {
+      search: async () => ({
+        sources: [{ title: "降级笔记", url: "https://www.xiaohongshu.com/explore/1", snippet: "s" }],
+      }),
+    } as any,
+    undefined,
+  );
+
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
+
+  // Degrade instead of hard-failing: the caller still gets candidates...
+  assert.equal(outcome.error, undefined);
+  assert.equal(outcome.items.length, 1);
+  // ...but the answer is explicitly marked as NOT native platform data.
+  assert.equal(outcome.degraded?.code, "auth-required");
+  assert.equal(outcome.degraded?.platform, "xiaohongshu");
+  assert.equal(outcome.retrievalMode, "degraded-web");
+});
+
+test("SpecializedSourceRegistry: non-auth, non-retryable failures still return immediately", async () => {
+  const registry = new SpecializedSourceRegistry();
+  let fallbackCalled = false;
+
+  registry.registerSource({
+    id: "xiaohongshu",
+    name: "小红书",
+    status: async () => ({
+      id: "xiaohongshu",
+      name: "小红书",
+      enabled: true,
+      runtimeAvailable: true,
+      runtimeState: "ready",
+      authenticated: true,
+    }),
+    search: async () => ({
+      items: [],
+      error: { code: "search-restricted", message: "Search is restricted", retryable: false },
+    }),
+    fetch: async () => ({ error: { code: "blocked", message: "blocked", retryable: false } }),
+  });
+  registry.setFallbackProviders(
+    {
+      search: async () => {
+        fallbackCalled = true;
+        return { sources: [] };
+      },
+    } as any,
+    undefined,
+  );
+
+  const outcome = await registry.search("小红书 探店", {
+    hints: { platform: "xiaohongshu", cleanQuery: "探店" },
+  });
+  assert.equal(outcome.error?.code, "search-restricted");
+  assert.equal(fallbackCalled, false);
+  assert.equal(outcome.degraded, undefined);
+});
+
+test("refinePlatformQuery strips question tails that poison platform keyword search", () => {
+  assert.equal(refinePlatformQuery("GPTPLus 还值得开吗"), "GPTPLus");
+  assert.equal(refinePlatformQuery("GPT Plus 值得订阅吗？"), "GPT Plus");
+  assert.equal(refinePlatformQuery("小红书 探店 怎么样"), "小红书 探店");
+  assert.equal(refinePlatformQuery("请问 Claude 好不好用"), "Claude");
+  // English and untouched queries keep their wording.
+  assert.equal(refinePlatformQuery("OpenAI latest model"), "OpenAI latest model");
+  // A query that is ONLY a question tail must not become empty.
+  assert.equal(refinePlatformQuery("值得开吗"), "值得开吗");
 });

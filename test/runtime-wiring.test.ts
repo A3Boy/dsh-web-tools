@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { apply, toRoutedFetchResponse } from "../src/host/index.ts";
+import { apply, toRoutedFetchResponse, executeRoutedFetchWithRecovery } from "../src/host/index.ts";
 
 test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async () => {
   let registeredSearchProvider: any = null;
@@ -99,4 +99,69 @@ test("Runtime Wiring: routed fetch never turns source failures or empty content 
   assert.match(response.body.content, /Author: 作者/);
   assert.match(response.body.content, /Engagement: likes 12, comments\/replies 3/);
   assert.match(response.body.content, /\n\n正文$/);
+});
+
+test("Runtime Wiring: executeRoutedFetchWithRecovery recovers content from cache when native fetch fails", async () => {
+  const url = "https://www.xiaohongshu.com/explore/698c3f460000000016008c28";
+
+  const response = await executeRoutedFetchWithRecovery(
+    url,
+    async () => ({
+      error: { code: "blocked", message: "Xiaohongshu detail navigation redirected away from target note 698c3f460000000016008c28", retryable: false },
+    }),
+    {
+      lookupCache: (lookupUrl) => ({
+        id: "698c3f460000000016008c28",
+        title: "小红书缓存笔记标题",
+        url: lookupUrl,
+        snippet: "搜索结果缓存正文摘要",
+        author: { name: "缓存博主" },
+        likes: 999,
+        platform: "xiaohongshu",
+      }),
+    },
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.content, /# 小红书缓存笔记标题/);
+  assert.match(response.body.content, /Author: 缓存博主/);
+  assert.match(response.body.content, /Engagement: likes 999/);
+  assert.match(response.body.content, /搜索结果缓存正文摘要/);
+});
+
+test("Runtime Wiring: executeRoutedFetchWithRecovery recovers content from search fallback when native fetch is blocked", async () => {
+  const url = "https://www.xiaohongshu.com/explore/698c3f460000000016008c28";
+
+  const response = await executeRoutedFetchWithRecovery(
+    url,
+    async () => ({
+      error: { code: "blocked", message: "Xiaohongshu detail navigation redirected away from target note 698c3f460000000016008c28", retryable: false },
+    }),
+    {
+      searchFallback: async () => "网络搜索索引摘录的正文内容",
+    },
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.content, /网络搜索索引摘录的正文内容/);
+});
+
+test("Runtime Wiring: executeRoutedFetchWithRecovery returns graceful diagnostic response on 300031 platform restriction instead of crashing", async () => {
+  const url = "https://www.xiaohongshu.com/explore/698c3f460000000016008c28";
+
+  const response = await executeRoutedFetchWithRecovery(
+    url,
+    async () => ({
+      error: {
+        code: "blocked",
+        message: "Xiaohongshu detail navigation redirected away from target note 698c3f460000000016008c28 (小红书提示 300031: 当前笔记暂时无法浏览，可能已被作者删除、设为私密或缺少有效 xsec_token)",
+        retryable: false,
+      },
+    }),
+  );
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.body.content, /300031/);
+  assert.match(response.body.content, /当前笔记暂时无法浏览/);
+  assert.match(response.metadata?.title ?? "", /300031/);
 });

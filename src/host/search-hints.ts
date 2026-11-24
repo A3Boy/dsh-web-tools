@@ -18,6 +18,13 @@ export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
 
 export type PlatformHint = "xiaohongshu" | "x";
 
+export type SearchSort =
+  | "general"
+  | "time_descending"
+  | "popularity_descending"
+  | "comment_descending"
+  | "collect_descending";
+
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 
 export interface FreshnessHint {
@@ -50,6 +57,7 @@ export interface SearchHints {
   /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
   platformExplicit?: boolean;
   freshness?: FreshnessHint;
+  sort?: SearchSort;
   domains?: DomainHints;
   locale?: LocaleHint;
   /** Cleaned query string with explicit operators (e.g. site:) removed */
@@ -90,6 +98,34 @@ export function calculateAfterDate(preset: FreshnessPreset, now: Date = new Date
   return formatDateYMD(d);
 }
 
+/**
+ * Normalize an arbitrary sort string into canonical SearchSort.
+ */
+export function normalizeSearchSort(raw: unknown): SearchSort | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim().toLowerCase();
+  if (!s) return undefined;
+  if (/^(?:time|latest|newest|date|time_descending)$/.test(s)) return "time_descending";
+  if (/^(?:likes?|popularity|hot|popular|popularity_descending)$/.test(s)) return "popularity_descending";
+  if (/^(?:comments?|comment_descending)$/.test(s)) return "comment_descending";
+  if (/^(?:collects?|collect_descending)$/.test(s)) return "collect_descending";
+  if (/^(?:general|relevance|default)$/.test(s)) return "general";
+  return undefined;
+}
+
+// Sort intent indicators and query cleaners (ordered by precedence)
+const SORT_COMMENT_RE = /(?:按评论(?:量|数)?(?:排序)?|最多评论|评论(?:最多|最高|量最高|量排序|数排序)|最热评|most commented|sort by comments)/i;
+const SORT_POPULARITY_RE = /(?:按点赞(?:量|数)?(?:排序)?|最多点赞|点赞(?:最多|最高|量最高|量排序|数排序)|最高赞|最多赞|按热度(?:排序)?|最热|热门|最火|most liked|most popular|sort by likes|top liked)/i;
+const SORT_COLLECT_RE = /(?:按收藏(?:量|数)?(?:排序)?|最多收藏|收藏(?:最多|最高|量最高|量排序|数排序)|most collected|sort by collects)/i;
+const SORT_TIME_RE = /(?:按(?:发布)?时间(?:排序)?|按最新(?:排序)?|时间倒序|最新(?!消息|动态|资讯|进展|版本|模型|论文|功能|特性|新闻|公告|通知|更新)|实时|刚发布|sort by (?:time|date)|newest|latest(?!\s+(?:news|version|update|model|paper|release)))/i;
+
+const SORT_EXTRACTORS: Array<{ re: RegExp; sort: SearchSort }> = [
+  { re: SORT_COMMENT_RE, sort: "comment_descending" },
+  { re: SORT_POPULARITY_RE, sort: "popularity_descending" },
+  { re: SORT_COLLECT_RE, sort: "collect_descending" },
+  { re: SORT_TIME_RE, sort: "time_descending" },
+];
+
 // Regex patterns for operator extraction
 const SITE_INCLUDE_RE = /(?:^|\s)site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)/gi;
 const SITE_EXCLUDE_RE = /(?:^|\s)-site:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?:\b|\s|$)/gi;
@@ -103,27 +139,48 @@ const X_ROUTE_PREFIX_RE = /^\s*X\s*[:：]\s*/i;
 const X_CLEAN_RE = /(?:(?:请\s*)?(?:在|去)?\s*(?:X(?:上|里|中)|(?:twitter|推特)(?:上|里|中)?|X\s*(?:平台|推特|社区|帖子|动态|热搜)(?:上|里|中)?)\s*(?:搜索|搜|查找|找|看看)?)/gi;
 
 // Code topic indicators (keywords or patterns)
-const CODE_INDICATORS = [
-  /\b(github|gitlab|npm|pnpm|cargo|pip|pypi|nuget|crates\.io|stackoverflow|golang|typescript|python|rust|c\+\+|javascript|react|vue|svelte|docker|k8s|kubernetes|linux|bash|powershell|sql|postgres|redis|git|api|sdk|graphql|rest|grpc|webhook|bug|error|issue|pr|pull request|stacktrace|exception|panic|segfault|syntax|compiler|traceback)\b/i,
-  /(?:代码|函数|接口|报错|崩溃|源码|组件|配置|版本号|仓库|提交|异常|编译)/,
+const STRONG_CODE_INDICATORS = [
+  /\b(github|gitlab|npm|pnpm|cargo|pip|pypi|nuget|crates\.io|stackoverflow|golang|typescript|python|rust|c\+\+|javascript|react|vue|svelte|docker|k8s|kubernetes|bash|powershell|postgres|redis|graphql|grpc|webhook|stacktrace|exception|panic|segfault|traceback|compiler)\b/i,
+  /(?:代码|函数|报错|崩溃|源码|组件|编译|堆栈)/,
+  /\b(pull request|async\/await|npm install|git commit|git push|git clone)\b/i,
+];
+
+const AMBIGUOUS_CODE_INDICATORS = [
+  /\b(api|sdk|rest|bug|error|issue|pr|git|linux|sql|syntax)\b/i,
+  /(?:接口|仓库|提交|版本号|配置|异常)/,
 ];
 
 // News topic indicators
-const NEWS_INDICATORS = [
-  /\b(news|breaking|announced|announcement|press release|headline|journal|report|coverage)\b/i,
-  /(?:新闻|快讯|发布会|报道|最新消息|突发|动态|头条)/,
+const STRONG_NEWS_INDICATORS = [
+  /\b(breaking news|press release|headline)\b/i,
+  /(?:快讯|发布会|突发新闻|动态播报)/,
+];
+
+const AMBIGUOUS_NEWS_INDICATORS = [
+  /\b(news|breaking|announced|announcement|report|coverage)\b/i,
+  /(?:新闻|报道|最新消息|动态|头条)/,
 ];
 
 // Finance topic indicators
-const FINANCE_INDICATORS = [
-  /\b(stock|shares|nasdaq|nyse|sec|10-k|10-q|earnings|revenue|market cap|valuation|ipo|crypto|bitcoin|ethereum|dividend|fiscal|quarterly|ebitda)\b/i,
-  /(?:财报|股价|营收|市值|估值|财季|分红|股票|证券|上市|收益率|净利润)/,
+const STRONG_FINANCE_INDICATORS = [
+  /\b(stock|shares|nasdaq|nyse|sec|10-k|10-q|earnings|revenue|market cap|valuation|ipo|crypto|bitcoin|ethereum|dividend|fiscal|quarterly|ebitda|bond issue|treasury yield|balance sheet|cash flow)\b/i,
+  /(?:财报|股价|营收|市值|估值|财季|分红|股票|证券|上市|收益率|净利润|债券发行|资产负债表|现金流)/,
+];
+
+const AMBIGUOUS_FINANCE_INDICATORS = [
+  /\b(bank|bond|fund|fed|inflation|interest rate|yield)\b/i,
+  /(?:基金|银行|利率|通胀|国债)/,
 ];
 
 // Research topic indicators
-const RESEARCH_INDICATORS = [
-  /\b(arxiv|paper|research|benchmark|ablation|evaluation|dataset|methodology|conference|neurips|icml|iclr|cvpr|acl|ieee|springer|nature|science)\b/i,
-  /(?:论文|学术|评测|基准|消融实验|数据集|学术会议|研报|文献)/,
+const STRONG_RESEARCH_INDICATORS = [
+  /\b(arxiv|ablation|methodology|neurips|icml|iclr|cvpr|acl|ieee|springer|nature|science|state-of-the-art|sota)\b/i,
+  /(?:论文|学术|消融实验|学术会议|研报|文献)/,
+];
+
+const AMBIGUOUS_RESEARCH_INDICATORS = [
+  /\b(paper|research|study|benchmark|evaluation|dataset)\b/i,
+  /(?:基准|评测|数据集)/,
 ];
 
 // Freshness indicators
@@ -161,16 +218,53 @@ const GLOBAL_SCOPE_INDICATORS = [
 ];
 
 // Country indicators (only assign country when explicitly mentioned in the query)
-const EXPLICIT_COUNTRY_PATTERNS: Array<{ re: RegExp; country: string }> = [
-  { re: /(?:美国|美股|美联储|United States|USA|\bUS\b)/i, country: "US" },
-  { re: /(?:中国|国内|A股|China|\bCN\b)/i, country: "CN" },
-  { re: /(?:日本|日经|Japan|\bJP\b)/i, country: "JP" },
-  { re: /(?:英国|United Kingdom|\bUK\b|\bGB\b)/i, country: "GB" },
-  { re: /(?:新加坡|Singapore|\bSG\b)/i, country: "SG" },
-  { re: /(?:德国|Germany|\bDE\b)/i, country: "DE" },
-  { re: /(?:法国|France|\bFR\b)/i, country: "FR" },
-  { re: /(?:加拿大|Canada|\bCA\b)/i, country: "CA" },
+// Note: 2-letter country codes (US, CN, JP, UK, GB, SG, DE, FR, CA) MUST be uppercase
+// without /i to prevent false positives on common words (e.g. "give us the latest React docs", "de", "ca").
+const EXPLICIT_COUNTRY_PATTERNS: Array<{
+  namesRe: RegExp;
+  codeRe: RegExp;
+  country: string;
+}> = [
+  { namesRe: /(?:美国|美股|美联储|United States|USA)/i, codeRe: /\bUS\b/, country: "US" },
+  { namesRe: /(?:中国|国内|A股|China)/i, codeRe: /\bCN\b/, country: "CN" },
+  { namesRe: /(?:日本|日经|Japan)/i, codeRe: /\bJP\b/, country: "JP" },
+  { namesRe: /(?:英国|United Kingdom)/i, codeRe: /\b(?:UK|GB)\b/, country: "GB" },
+  { namesRe: /(?:新加坡|Singapore)/i, codeRe: /\bSG\b/, country: "SG" },
+  { namesRe: /(?:德国|Germany)/i, codeRe: /\bDE\b/, country: "DE" },
+  { namesRe: /(?:法国|France)/i, codeRe: /\bFR\b/, country: "FR" },
+  { namesRe: /(?:加拿大|Canada)/i, codeRe: /\bCA\b/, country: "CA" },
 ];
+
+/**
+ * Strip conversational tails that hurt IN-PLATFORM keyword search.
+ *
+ * Platform search (X, Xiaohongshu) matches literal tokens: "GPTPLus 还值得开吗"
+ * asks the platform for posts containing 还/值得/开, which mostly returns
+ * unrelated opinion posts. General web engines handle natural language fine, so
+ * this refinement is applied ONLY to the native platform query.
+ *
+ * Deliberately conservative: only well-known question/opinion tails and
+ * leading politeness are removed; everything else is left intact.
+ */
+export function refinePlatformQuery(query: string): string {
+  const original = (query ?? "").trim();
+  if (!original) return original;
+
+  let q = original;
+  // Leading politeness ("请问…", "想问下…").
+  q = q.replace(/^(?:请问|求问|想问一下|想问下|想请教一下|请教一下)[\s,，:：]*/u, "");
+  // "值得买吗 / 还值得开吗 / 值不值得订阅" style tails.
+  q = q.replace(/\s*(?:还)?(?:值得|值不值)(?:得)?(?:开|买|订阅|续费|用|入手)?(?:吗|么|呢)?[?？]?$/u, "");
+  // Plain evaluation questions.
+  q = q.replace(/\s*(?:怎么样|好不好用|好不好|行不行|靠谱吗|好用吗|如何)[?？]?$/u, "");
+  // Dangling question marks / punctuation.
+  q = q.replace(/[?？\s]+$/u, "");
+
+  const refined = q.trim();
+  // Never return an empty query: fall back to the original when the whole
+  // query was a question tail.
+  return refined.length > 0 ? refined : original;
+}
 
 /**
  * Extract structured SearchHints from a raw query.
@@ -223,6 +317,16 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     cleanQuery = cleanQuery.replace(X_ROUTE_PREFIX_RE, " ").replace(X_CLEAN_RE, " ");
   }
 
+  // 1.2 Extract Sort Intent (comments, likes/popularity, collects, time)
+  let sort: SearchSort | undefined;
+  for (const extractor of SORT_EXTRACTORS) {
+    if (extractor.re.test(cleanQuery)) {
+      sort = extractor.sort;
+      cleanQuery = cleanQuery.replace(new RegExp(extractor.re.source, "gi"), " ");
+      break;
+    }
+  }
+
   // 2. Extract explicit after: / before: dates
   let afterDate: string | undefined;
   let beforeDate: string | undefined;
@@ -237,18 +341,51 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     cleanQuery = cleanQuery.replace(BEFORE_DATE_RE, " ");
   }
 
-  // 3. Topic classification (needed before freshness rules to avoid over-constraining evergreen technical queries)
+  // 3. Topic classification: multi-signal scoring system
+  // Prevents ambiguous words (e.g. "bond issue 财报", "pr crisis") from being misclassified as "code".
   let topic: SearchTopic = "general";
-  if (includeDomains.some((d) => d.includes("github.com") || d.includes("gitlab.com") || d.includes("stackoverflow.com")) ||
-      CODE_INDICATORS.some((re) => re.test(rawQuery))) {
-    topic = "code";
-  } else if (includeDomains.some((d) => d.includes("arxiv.org")) ||
-             RESEARCH_INDICATORS.some((re) => re.test(rawQuery))) {
-    topic = "research";
-  } else if (FINANCE_INDICATORS.some((re) => re.test(rawQuery))) {
-    topic = "finance";
-  } else if (NEWS_INDICATORS.some((re) => re.test(rawQuery))) {
-    topic = "news";
+  const scores: Record<SearchTopic, number> = {
+    code: 0,
+    finance: 0,
+    research: 0,
+    news: 0,
+    general: 0,
+  };
+
+  // Domain signals (decisive +10)
+  if (includeDomains.some((d) => d.includes("github.com") || d.includes("gitlab.com") || d.includes("stackoverflow.com"))) {
+    scores.code += 10;
+  }
+  if (includeDomains.some((d) => d.includes("arxiv.org"))) {
+    scores.research += 10;
+  }
+
+  // Strong keywords (+3) and ambiguous keywords (+1)
+  if (STRONG_CODE_INDICATORS.some((re) => re.test(rawQuery))) scores.code += 3;
+  if (AMBIGUOUS_CODE_INDICATORS.some((re) => re.test(rawQuery))) scores.code += 1;
+
+  if (STRONG_FINANCE_INDICATORS.some((re) => re.test(rawQuery))) scores.finance += 3;
+  if (AMBIGUOUS_FINANCE_INDICATORS.some((re) => re.test(rawQuery))) scores.finance += 1;
+
+  if (STRONG_RESEARCH_INDICATORS.some((re) => re.test(rawQuery))) scores.research += 3;
+  if (AMBIGUOUS_RESEARCH_INDICATORS.some((re) => re.test(rawQuery))) scores.research += 1;
+
+  if (STRONG_NEWS_INDICATORS.some((re) => re.test(rawQuery))) scores.news += 3;
+  if (AMBIGUOUS_NEWS_INDICATORS.some((re) => re.test(rawQuery))) scores.news += 1;
+
+  const candidates: Array<[SearchTopic, number]> = [
+    ["code", scores.code],
+    ["finance", scores.finance],
+    ["research", scores.research],
+    ["news", scores.news],
+  ];
+  candidates.sort((a, b) => b[1] - a[1]);
+
+  const [topTopic, topScore] = candidates[0];
+  const secondScore = candidates[1][1];
+
+  if (topScore >= 2 && topScore > secondScore) {
+    topic = topTopic;
   }
 
   // 4. Extract freshness preset:
@@ -309,7 +446,9 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
   let country: string | undefined;
   const isGlobalScope = GLOBAL_SCOPE_INDICATORS.some((re) => re.test(rawQuery));
   if (!isGlobalScope) {
-    const matchedCountries = EXPLICIT_COUNTRY_PATTERNS.filter((p) => p.re.test(rawQuery)).map((p) => p.country);
+    const matchedCountries = EXPLICIT_COUNTRY_PATTERNS.filter(
+      (p) => p.namesRe.test(rawQuery) || p.codeRe.test(rawQuery),
+    ).map((p) => p.country);
     const uniqueCountries = [...new Set(matchedCountries)];
     if (uniqueCountries.length === 1) {
       country = uniqueCountries[0];
@@ -330,6 +469,7 @@ export function extractSearchHints(query: string, now: Date = new Date()): Searc
     platform,
     platformExplicit: platformExplicit ? true : undefined,
     freshness,
+    sort,
     domains,
     locale,
     cleanQuery,

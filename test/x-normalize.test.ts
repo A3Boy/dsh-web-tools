@@ -46,14 +46,14 @@ test("P7.2-A: extracts real tweets directly from the SearchTimeline full GraphQL
   assert.equal(second.author?.name, "LinearUncle");
   assert.equal(second.author?.handle, "@LinearUncle");
   assert.equal(second.url, "https://x.com/LinearUncle/status/2091712775324381209");
-  assert.deepEqual(second.images, ["https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg"]);
+  assert.deepEqual(second.images, ["https://pbs.twimg.com/media/HQc_eMGbYAII57c.jpg?format=jpg&name=orig"]);
 
   // Entry 2: animated_gif poster via extended_entities.media
   const third = items[2];
   assert.equal(third.author?.name, "Mete Polat");
   assert.equal(third.author?.handle, "@metedata");
   assert.deepEqual(third.images, [
-    "https://pbs.twimg.com/tweet_video_thumb/HPvf3PMWUAAH5u1.jpg",
+    "https://pbs.twimg.com/tweet_video_thumb/HPvf3PMWUAAH5u1.jpg?format=jpg&name=orig",
   ]);
   assert.equal(third.coverImage, third.images![0]);
 });

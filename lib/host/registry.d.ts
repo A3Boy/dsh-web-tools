@@ -1,4 +1,5 @@
 import { type SearchRoutingPolicy } from "./routing-policy.ts";
+import { type RetrievalStrategy } from "../shared/api-types.ts";
 import { PoolEntry } from "./pool.ts";
 import type { StoredProviderOptions } from "../shared/provider-options.ts";
 import type { ProviderHealthStore } from "./provider-health.ts";
@@ -13,16 +14,53 @@ export interface WebSearchProviderLike {
     search(request: {
         query: string;
         maxResults?: number;
+        sort?: string;
+        sortBy?: string;
     }, signal?: AbortSignal): Promise<{
         content?: string;
         sources: Array<{
             url: string;
             title?: string;
             snippet?: string;
+            summary?: string;
             publishedAt?: string;
         }>;
         truncated: boolean;
+        /** Which provider(s) served the answer (`a+b` for a fused answer). */
+        backend?: string;
+        /** Per-provider attempt ledger (diagnostics / settings card). */
+        attempts?: Array<{
+            provider: string;
+            outcome: string;
+            latencyMs?: number;
+        }>;
+        /** True when the result merged two providers with RRF. */
+        fused?: boolean;
+        /** Set when a platform query was served by a general web fallback. */
+        degraded?: {
+            code: string;
+            message: string;
+            platform?: string;
+        };
+        /** Channel diagnostics (why a platform fast path was skipped). */
+        diagnostics?: string[];
     }>;
+}
+export interface WebFetchResponse {
+    url: string;
+    statusCode: number;
+    body: {
+        kind: "html" | "text";
+        content: string;
+    };
+    truncated: boolean;
+    backend?: string;
+    metadata?: {
+        title?: string;
+        author?: string;
+        publishedAt?: string;
+        description?: string;
+    };
 }
 /** Structural mirror of the seam's WebFetchProvider contract. */
 export interface WebFetchProviderLike {
@@ -30,22 +68,7 @@ export interface WebFetchProviderLike {
     available(): boolean;
     fetch(request: {
         url: string;
-    }, signal?: AbortSignal): Promise<{
-        url: string;
-        statusCode: number;
-        body: {
-            kind: "html" | "text";
-            content: string;
-        };
-        truncated: boolean;
-        backend?: string;
-        metadata?: {
-            title?: string;
-            author?: string;
-            publishedAt?: string;
-            description?: string;
-        };
-    }>;
+    }, signal?: AbortSignal): Promise<WebFetchResponse>;
 }
 /** A classified failure the executor throws (WebError-compatible shape). */
 export declare class WebToolsWebError extends Error {
@@ -65,6 +88,10 @@ export interface WebToolsRuntimeConfig {
     fallbackOrder: string[];
     /** Search routing policy — how the runtime picks the starting provider per query. */
     searchRoutingPolicy?: SearchRoutingPolicy;
+    /** Cross-provider retrieval strategy (single/hedged/fused). */
+    retrievalStrategy?: RetrievalStrategy;
+    /** Hedged mode only: delay before the second lane starts. Default 1200ms. */
+    hedgeDelayMs?: number;
     providerBaseUrls: Record<string, string>;
     enabledProviders: Record<string, boolean>;
     providerOptions?: StoredProviderOptions;
@@ -125,6 +152,9 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
         outcome: string;
         latencyMs: number;
     }) => void;
+    summary?: () => {
+        byProvider: Record<string, import("./routing-policy.ts").ProviderMetrics>;
+    };
 }, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, resolveSnapshot?: () => ProviderSnapshot): WebSearchProviderLike;
 /**
  * Build a `WebFetchProvider` for `ctx.web.registerFetchProvider`.
@@ -133,4 +163,19 @@ export declare function createSearchProvider(resolveConfig: () => WebToolsRuntim
  * back to the built-in generic HTTP fetcher (with SSRF guard + Defuddle Markdown
  * parsing) when native providers are unavailable, keyless, or fail.
  */
-export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage, resolveSnapshot?: () => ProviderSnapshot): WebFetchProviderLike;
+export declare function createFetchProvider(resolveConfig: () => WebToolsRuntimeConfig, resolveKeys: (providerName: string) => Promise<string>, adapterRegistry?: Record<string, ProviderAdapterLike>, poolStore?: PoolStore, healthStore?: ProviderHealthStore, genericFetcher?: typeof fetchGenericWebPage, resolveSnapshot?: () => ProviderSnapshot, stats?: {
+    record: (entry: {
+        provider: string;
+        outcome: string;
+        latencyMs: number;
+    }) => void;
+}): WebFetchProviderLike;
+/**
+ * Best-effort page title from provider-extracted Markdown.
+ *
+ * Native extraction endpoints (Tavily/Exa/Firecrawl/Parallel/Jina) return a
+ * Markdown body with no metadata block. The first ATX heading is the only
+ * reliable signal; when there is none we return undefined rather than guessing
+ * a title from prose (a first paragraph makes a terrible title).
+ */
+export declare function inferTitleFromMarkdown(text: string): string | undefined;

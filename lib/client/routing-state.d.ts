@@ -11,13 +11,14 @@
  *    newer read may itself be discarded, leaving the page stale until reopened.
  * @module
  */
-import type { ConfigView, SearchRoutingPolicy } from "../shared/api-types.ts";
+import type { ConfigView, RetrievalStrategy, SearchRoutingPolicy } from "../shared/api-types.ts";
 /** The authoritative result a routing write returns. */
 export interface RoutingWriteResult {
     saved: boolean;
     policy: SearchRoutingPolicy;
     defaultProvider: string;
     fallbackOrder: string[];
+    retrievalStrategy: RetrievalStrategy;
 }
 /**
  * Merge a routing write's authoritative result into the current view.
@@ -34,9 +35,10 @@ export declare function applyRoutingResult(config: ConfigView | null, result: Ro
  * for the response makes the control feel dead.
  * @param ordered - The intended order; duplicates are dropped, keeping first.
  * @param policy - The routing policy to persist alongside it.
+ * @param retrievalStrategy - The cross-provider retrieval strategy to persist.
  * @returns The routing fields, shaped like the write response.
  */
-export declare function routingFields(ordered: readonly string[], policy: SearchRoutingPolicy): RoutingWriteResult;
+export declare function routingFields(ordered: readonly string[], policy: SearchRoutingPolicy, retrievalStrategy?: RetrievalStrategy): RoutingWriteResult;
 /**
  * Whether a completed read identified by `seq` may still be applied.
  * @param seq - Sequence number the read received when it started.

@@ -7,4 +7,4 @@ export interface XhsSearchNavigationOutcome {
     url: string;
 }
 /** Enter XHS search through the visible home-page controls, never a direct search URL. */
-export declare function navigateXhsSearchViaUi(page: CdpPageLease, query: string, signal?: AbortSignal): Promise<XhsSearchNavigationOutcome>;
+export declare function navigateXhsSearchViaUi(page: CdpPageLease, query: string, signal?: AbortSignal, sort?: string): Promise<XhsSearchNavigationOutcome>;

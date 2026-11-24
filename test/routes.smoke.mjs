@@ -175,7 +175,7 @@ test("platform/status automatically verifies persisted sessions before respondin
   const body = JSON.parse(res.body);
   assert.equal(body.ok, true);
   assert.deepEqual(verifyCalls.sort((a, b) => a.platform.localeCompare(b.platform)), [
-    { platform: "x", mode: "headless" },
+    { platform: "x", mode: "interactive" },
     { platform: "xiaohongshu", mode: "interactive" },
   ]);
   assert.equal(body.value.platforms.x.authenticated, true);
@@ -335,4 +335,64 @@ test("search-mode/set toggles and persists, rejecting invalid modes", async () =
   const invalid = await call("search-mode/set", { sessionId: "sess-2", mode: "banana" });
   assert.equal(invalid.status, 500);
   assert.equal(invalid.body.ok, false);
+});
+
+test("social-posts/recent returns formatted recent social posts", async () => {
+  const customDeps = {
+    ...deps,
+    getRecentSocialSearches: () => [
+      {
+        query: "西湖咖啡",
+        time: 1731300000000,
+        items: [
+          {
+            url: "https://www.xiaohongshu.com/discovery/item/note1",
+            title: "西湖小院",
+            platform: "xiaohongshu",
+            author: { handle: "momo" },
+            likes: 1200,
+            collects: 200,
+            coverImage: "https://sns-img.xhscdn.com/c1.jpg",
+            snippet: "正文摘要",
+            publishedAt: "2026-11-10",
+          },
+          {
+            url: "https://example.com/general",
+            title: "普通网页",
+            platform: "general",
+            snippet: "普通网页内容",
+          },
+        ],
+      },
+    ],
+  };
+  const { server, getHandler } = mockServer();
+  registerRoutes({ webServer: server }, customDeps);
+  const h = getHandler();
+  const { req, res } = fakeReqRes("POST", `${API_PREFIX}/social-posts/recent`, {});
+  await h(req, res);
+  assert.equal(res.statusCode, 200);
+  const json = JSON.parse(res.body);
+  assert.equal(json.ok, true);
+  assert.equal(json.value.recent.length, 1);
+  assert.equal(json.value.recent[0].posts.length, 1, "filters out general web items");
+  assert.equal(json.value.recent[0].posts[0].platform.label, "小红书");
+  assert.equal(json.value.recent[0].posts[0].author, "momo");
+  assert.equal(json.value.recent[0].posts[0].likes, 1200);
+});
+
+test("image-proxy validates domain and returns 400/403 appropriately", async () => {
+  const { server, getHandler } = mockServer();
+  registerRoutes({ webServer: server }, deps);
+  const h = getHandler();
+
+  // 1. Missing URL
+  const r1 = fakeReqRes("GET", `${API_PREFIX}/image-proxy`);
+  await h(r1.req, r1.res);
+  assert.equal(r1.res.statusCode, 400);
+
+  // 2. Disallowed domain
+  const r2 = fakeReqRes("GET", `${API_PREFIX}/image-proxy?url=https://evil.com/pic.jpg`);
+  await h(r2.req, r2.res);
+  assert.equal(r2.res.statusCode, 403);
 });

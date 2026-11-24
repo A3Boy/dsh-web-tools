@@ -157,3 +157,11 @@ export interface CustomSourceTestView {
         message: string;
     };
 }
+/** Pre-configured templates for common search backends and gateways. */
+export interface CustomPreset {
+    id: string;
+    name: string;
+    description: string;
+    draft: CustomProviderDraft;
+}
+export declare const CUSTOM_PRESETS: readonly CustomPreset[];

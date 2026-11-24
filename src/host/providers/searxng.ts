@@ -130,6 +130,12 @@ export const SearxngProvider: ProviderAdapter = {
       .filter((x: { url: string } | null): x is { url: string } => x !== null);
     const outcome: SearchOutcome = { sources };
     if (typeof raw?.answer === "string" && raw.answer) outcome.content = raw.answer;
+    // HTTP 200 also carries upstream timeouts/CAPTCHAs. Preserve usable partial
+    // results, but do not report an engine failure as a successful empty search.
+    if (sources.length === 0 && !outcome.content?.trim()
+      && Array.isArray(raw?.unresponsive_engines) && raw.unresponsive_engines.length > 0) {
+      throw providerError("server", `SearXNG returned no usable results; ${raw.unresponsive_engines.length} upstream engine(s) reported errors`);
+    }
     return outcome;
   },
 

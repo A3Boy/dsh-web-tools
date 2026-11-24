@@ -17,6 +17,7 @@ import type { TFunc } from "./WebToolsSection.tsx";
 import { SegmentedControl } from "./ui/SegmentedControl.tsx";
 import {
   PROTOCOL_DEFAULTS,
+  CUSTOM_PRESETS,
   accessModeOf,
   type AuthMode,
   type CustomMethod,
@@ -24,6 +25,7 @@ import {
   type CustomProtocol,
   type CustomProviderDraft,
   type CustomAccessMode,
+  type CustomPreset,
 } from "../shared/custom-provider-types.ts";
 import { IconChevronRightOutline14, IconTrashOutline16 } from "./icons.ts";
 
@@ -325,8 +327,43 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
     currentMode !== "template" &&
     (draft.endpoint.baseUrl.includes(":8080") || draft.endpoint.baseUrl.toLowerCase().includes("searx"));
 
+  const handleApplyPreset = (preset: CustomPreset) => {
+    onChange({
+      ...preset.draft,
+      enabled: draft.enabled ?? true,
+    });
+    setAdvancedOpen(preset.draft.protocol === "generic-json");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 0. Preset Templates Quick-Bar */}
+      <div>
+        <label style={labelStyle}>{t("presetTemplatesLabel")}</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {CUSTOM_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              style={{
+                ...secondaryBtnStyle,
+                padding: "3px 9px",
+                fontSize: 11,
+                borderRadius: 12,
+                cursor: "pointer",
+                border: `1px solid ${surface.border}`,
+                background: surface.layer2,
+                color: text.primary,
+              }}
+              title={p.description}
+              onClick={() => handleApplyPreset(p)}
+            >
+              + {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* 1. Access Mode Selection (Three Parallel Paths) */}
       <div>
         <label style={labelStyle}>{t("accessModeLabel")}</label>
@@ -415,7 +452,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
           <div style={{ fontSize: 13, fontWeight: 600, color: text.primary }}>{t("authMode")}</div>
           {currentMode === "template" && draft.auth.mode === "none" && (
             <span style={{ fontSize: 11, color: text.tertiary }}>
-              {t("searxngDefaultHint") || "默认无需密钥"}
+              {t("searxngDefaultHint")}
             </span>
           )}
         </div>
@@ -565,7 +602,7 @@ export function CustomProviderFields(props: CustomProviderFieldsProps) {
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>{t("httpMethod")}</label>
+                  <label style={labelStyle}>{t("method")}</label>
                   <select
                     style={{ ...inputStyle, cursor: "pointer" }}
                     value={draft.endpoint.method}

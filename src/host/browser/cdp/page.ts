@@ -24,14 +24,37 @@ export class CdpPage implements CdpPageLease {
     this.validateNavigation = validateNavigation;
   }
 
-  async navigate(url: string, signal?: AbortSignal, timeoutMs = 15000): Promise<void> {
+  async navigate(url: string, signal?: AbortSignal, timeoutMs = 15000, referrer?: string): Promise<void> {
     this.validateNavigation?.(url);
 
     await this.client.send("Page.enable", {}, this.sessionId, signal);
     await this.client.send("Runtime.enable", {}, this.sessionId, signal);
+    try {
+      await this.client.send(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+          source: `
+            try {
+              Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+                configurable: true,
+              });
+            } catch {}
+          `,
+        },
+        this.sessionId,
+        signal,
+      );
+    } catch {}
 
     // Send the navigation command
-    await this.client.send("Page.navigate", { url }, this.sessionId, signal, timeoutMs);
+    await this.client.send(
+      "Page.navigate",
+      { url, ...(referrer ? { referrer } : {}) },
+      this.sessionId,
+      signal,
+      timeoutMs,
+    );
 
     // Poll for a usable readyState (handles SPA that never fires loadEventFired)
     const start = Date.now();
@@ -127,6 +150,17 @@ export class CdpPage implements CdpPageLease {
     const serializedArgs = JSON.stringify(args);
     const expression = `(${fnSource})(...${serializedArgs})`;
     return this.evaluate<T>(expression, signal);
+  }
+
+  /**
+   * Bring the tab to the foreground.
+   *
+   * A background/minimized tab has its timers and rendering throttled, which
+   * can leave a heavy SPA (x.com) showing its shell without issuing the data
+   * requests the shell depends on.
+   */
+  async bringToFront(signal?: AbortSignal): Promise<void> {
+    await this.client.send("Page.bringToFront", {}, this.sessionId, signal);
   }
 
   async focus(selector: string, signal?: AbortSignal): Promise<boolean> {
@@ -267,6 +301,18 @@ export class CdpPage implements CdpPageLease {
         }),
       cancel: () => settle({ state: "timeout" }),
     };
+  }
+
+  async deleteCookies(name: string, domain?: string): Promise<void> {
+    try {
+      await this.client.send(
+        "Network.deleteCookies",
+        { name, ...(domain ? { domain } : {}) },
+        this.sessionId,
+      );
+    } catch {
+      // ignore
+    }
   }
 
   async close(): Promise<void> {

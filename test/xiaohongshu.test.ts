@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { XiaohongshuSource, setXhsNativeSearchEnabled } from "../src/host/sources/xiaohongshu.ts";
+import { XiaohongshuSource, setXhsNativeSearchEnabled, mapXhsApiNote, parseXhsCount, buildXhsSearchUrl, extractXhsNotesFromSearchPayload } from "../src/host/sources/xiaohongshu.ts";
 import type { NativeBrowserRuntime, CdpPageLease } from "../src/host/browser/types.ts";
 
 test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime when authenticated", async () => {
@@ -147,12 +147,17 @@ test("XiaohongshuSource: executes search and fetch through NativeBrowserRuntime 
   assert.equal(status.capabilities?.nativeSearch, true, "XHS native search must be enabled by default");
   assert.equal(status.capabilities?.nativeFetch, true, "XHS native fetch must be enabled");
 
-  // Production default: native search runs through the signed-in browser.
+  // Production default: the direct-URL channel sees the SSR-rendered notes and
+  // returns immediately — the UI typing flow is NOT needed for this case.
   const searchRes = await xhs.search("Gemini 3.7", { maxResults: 5 });
   assert.equal(searchRes.items.length, 1);
-  assert.deepEqual(nativeSearchQueries, ["Gemini 3.7"]);
   assert.equal(searchRes.items[0].id, "note123");
   assert.ok(searchRes.items[0].url.includes("xsec_token=token123"));
+  assert.deepEqual(
+    nativeSearchQueries,
+    [],
+    "SSR-ready results must not fall through to the slow UI typing flow",
+  );
 
   // Operators can still explicitly disable the native path when debugging.
   setXhsNativeSearchEnabled(false);
@@ -316,4 +321,105 @@ test("XiaohongshuSource: maps explore and post-submit login walls to different f
   } finally {
     setXhsNativeSearchEnabled(true);
   }
+});
+
+test("XHS API mapping: keeps xsec_token, metrics and author", () => {
+  const item = mapXhsApiNote({
+    id: "abc123",
+    xsec_token: "TOKEN/with+chars",
+    display_title: "GPTPLus 还值得开吗",
+    desc: "正文摘要",
+    user: { nickname: "小明", user_id: "u1" },
+    interact_info: { liked_count: "1.2万", collected_count: "345", comment_count: "67" },
+    cover: { url_default: "https://img.example/x.jpg" },
+  });
+  assert.ok(item);
+  assert.equal(item!.id, "abc123");
+  assert.ok(item!.url.includes("xsec_token=TOKEN%2Fwith%2Bchars"));
+  assert.equal(item!.likes, 12000);
+  assert.equal(item!.collects, 345);
+  assert.equal(item!.replies, 67);
+  assert.equal(item!.author?.name, "小明");
+  assert.equal(item!.author?.url, "https://www.xiaohongshu.com/user/profile/u1");
+
+  assert.equal(parseXhsCount("3,412"), 3412);
+  assert.equal(parseXhsCount("1.5k"), 1500);
+  assert.equal(parseXhsCount(88), 88);
+  assert.equal(mapXhsApiNote({}), null);
+});
+
+test("XHS API mapping: unwraps the real note_card envelope", () => {
+  const item = mapXhsApiNote({
+    id: "outer-id",
+    model_type: "note",
+    note_card: {
+      note_id: "6a15b99b000000000803df01",
+      type: "normal",
+      display_title: "ChatGPT Plus 重点是它适不适合你",
+      desc: "正文",
+      xsec_token: "ABwSzXwo6MZSBWNO0IlhUf8nJL9M",
+      user: { nickname: "作者A", user_id: "user123" },
+      interact_info: { liked_count: "2.3万", collected_count: "1200", comment_count: "88" },
+      cover: { url_default: "https://sns-img.example/cover.jpg" },
+    },
+  });
+  assert.ok(item);
+  assert.equal(item!.id, "6a15b99b000000000803df01");
+  assert.equal(item!.title, "ChatGPT Plus 重点是它适不适合你");
+  assert.ok(item!.url.includes("xsec_token=ABwSzXwo6MZSBWNO0IlhUf8nJL9M"));
+  assert.equal(item!.likes, 23000);
+  assert.equal(item!.collects, 1200);
+  assert.equal(item!.author?.name, "作者A");
+});
+
+test("XHS direct-URL channel: builds the search URL and reads captured payloads", () => {
+  const url = buildXhsSearchUrl("GPTPLus 值得开吗", {
+    hints: { platform: "xiaohongshu", cleanQuery: "GPTPLus", rawQuery: "小红书 GPTPLus 本周", freshness: { preset: "week" } },
+  });
+  assert.ok(url.startsWith("https://www.xiaohongshu.com/search_result?"));
+  assert.ok(url.includes("keyword=GPTPLus+%E5%80%BC%E5%BE%97%E5%BC%80%E5%90%97"));
+  assert.ok(url.includes("sort=time_descending"));
+
+  const notes = [{ id: "a", note_card: { note_id: "a" } }];
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ data: { items: notes } }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ items: notes }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({ data: { notes } }), notes);
+  assert.deepEqual(extractXhsNotesFromSearchPayload({}), []);
+  assert.deepEqual(extractXhsNotesFromSearchPayload(null), []);
+});
+
+test("XHS search sorting: extracts sort hints, cleans query, and configures search URL", async () => {
+  const { extractSearchHints, normalizeSearchSort } = await import("../src/host/search-hints.ts");
+
+  assert.equal(normalizeSearchSort("likes"), "popularity_descending");
+  assert.equal(normalizeSearchSort("time"), "time_descending");
+  assert.equal(normalizeSearchSort("comments"), "comment_descending");
+  assert.equal(normalizeSearchSort("collects"), "collect_descending");
+  assert.equal(normalizeSearchSort("general"), "general");
+
+  const hLikes = extractSearchHints("小红书 Python 最多点赞");
+  assert.equal(hLikes.platform, "xiaohongshu");
+  assert.equal(hLikes.sort, "popularity_descending");
+  assert.equal(hLikes.cleanQuery, "Python");
+
+  const hTime = extractSearchHints("小红书 DeepSeek 最新");
+  assert.equal(hTime.platform, "xiaohongshu");
+  assert.equal(hTime.sort, "time_descending");
+  assert.equal(hTime.cleanQuery, "DeepSeek");
+
+  const hComments = extractSearchHints("小红书 前端 按评论量排序");
+  assert.equal(hComments.platform, "xiaohongshu");
+  assert.equal(hComments.sort, "comment_descending");
+  assert.equal(hComments.cleanQuery, "前端");
+
+  const hCollects = extractSearchHints("小红书 摄影 最多收藏");
+  assert.equal(hCollects.platform, "xiaohongshu");
+  assert.equal(hCollects.sort, "collect_descending");
+  assert.equal(hCollects.cleanQuery, "摄影");
+
+  const urlPopularity = buildXhsSearchUrl("Python", { hints: hLikes });
+  assert.ok(urlPopularity.includes("sort=popularity_descending"));
+
+  const urlComments = buildXhsSearchUrl("前端", { hints: hComments });
+  assert.ok(urlComments.includes("sort=comment_descending"));
 });

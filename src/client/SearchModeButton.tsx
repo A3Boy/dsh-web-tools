@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-web-tools — web-search mode selector mounted in `conversation.input.left`.
  *
  * One compact trigger plus a popover menu (the composer tool-picker pattern),
@@ -151,6 +151,21 @@ export function SearchModeButton({
   const loading = mode === undefined;
   const current: SearchMode = mode ?? "auto";
 
+  // Keyboard shortcut: Alt+S cycles search modes (auto -> required -> off)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && (event.key === "s" || event.key === "S" || event.code === "KeyS")) {
+        event.preventDefault();
+        if (!available || pending || loading) return;
+        const curIdx = MODES.indexOf(current);
+        const nextMode = MODES[(curIdx + 1) % MODES.length];
+        void choose(nextMode);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const choose = async (next: SearchMode) => {
     setOpen(false);
     if (mode === undefined || pending || !available || next === mode) return;
@@ -194,7 +209,7 @@ export function SearchModeButton({
         aria-expanded={open}
         aria-busy={loading || pending || undefined}
         aria-label={shownLabel}
-        title={open ? undefined : shownLabel}
+        title={open ? undefined : `${shownLabel} (Alt+S)`}
         disabled={!available || loading || pending}
         onMouseDown={(event) => {
           // Keep the textarea caret: opening the menu must not steal compose focus.

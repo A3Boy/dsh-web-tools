@@ -43,3 +43,6 @@ export declare const FIRECRAWL_FETCH_OPTIONS: {
 };
 /** Jina engine options. */
 export declare const JINA_ENGINE_OPTIONS: readonly ["auto", "curl", "browser"];
+/** Providers that have configurable search / fetch preferences in the UI. */
+export declare const PROVIDERS_WITH_PREFERENCES: Set<string>;
+export declare function hasProviderPreferences(providerName?: string): boolean;

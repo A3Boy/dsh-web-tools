@@ -717,7 +717,7 @@ export async function createPinnedDispatcher(options: {
     });
   }
 
-  const connector = (opts: { hostname?: string; port?: string | number; servername?: string }, cb: (err: Error | null, socket: any) => void) => {
+  const connector = (opts: { protocol?: string; hostname?: string; port?: string | number; servername?: string }, cb: (err: Error | null, socket: any) => void) => {
     // undici passes the authority it is about to dial. It must be exactly the
     // authority this transport approved, otherwise the client resolved (or
     // was redirected to) something we never authorized.
@@ -728,7 +728,7 @@ export async function createPinnedDispatcher(options: {
       ? (options.useTls ? 443 : 80)
       : Number(opts.port);
     const requestedHost = String(opts.hostname ?? options.servername);
-    if (requestedHost !== options.servername || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
+    if (opts.protocol !== (options.useTls ? "https:" : "http:") || requestedHost !== options.servername || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
       const err = new TransportError(
         "destination-blocked",
         `Connection attempt for unapproved authority ${requestedHost}:${String(requestedPort)}`,

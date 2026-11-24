@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID, WebToolsWebError } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { CURRENT_VERSION, compareVersions } from "../shared/version.ts";
@@ -20,6 +20,11 @@ import type { VersionCheckView } from "../shared/api-types.ts";
 import { buildPool, selectIndex, markUsed, markUnhealthy, resetHealth } from "./pool.ts";
 import { credRefOf, getProvider, PROVIDER_LIST, quotaOf } from "./providers/index.ts";
 import { seedBraveQuota, setBraveQuotaPersist } from "./providers/brave.ts";
+import {
+  seedKeenableUsageCache,
+  setKeenableUsagePersist,
+  type KeenableUsageBucket,
+} from "./providers/keenable-usage.ts";
 import { createQuotaPersistScheduler } from "./quota-persist.ts";
 import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
@@ -29,6 +34,8 @@ import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDis
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
+import { createCachedSearchProvider, createCachedFetchProvider, runWithoutCache } from "./cached-web.ts";
+import { fingerprint as configFingerprint } from "./result-cache.ts";
 import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
@@ -48,17 +55,35 @@ import {
 import type { CustomProviderConfig, CustomSourceErrorCode, CustomSourceTestView, CustomProviderDraft } from "../shared/custom-provider-types.ts";
 
 import { SpecializedSourceRegistry } from "./sources/registry.ts";
-import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
+import {
+  XiaohongshuSource,
+  extractNoteIdFromUrl,
+  getCachedNoteItem,
+  rememberGlobalNote,
+} from "./sources/xiaohongshu.ts";
 import { XSource } from "./sources/x.ts";
 import { createNativeBrowserRuntime } from "./browser/index.ts";
 import { extractSearchHints } from "./search-hints.ts";
-import type { SourceFetchOutcome } from "./sources/types.ts";
+import {
+  toRoutedFetchResponse,
+  executeRoutedFetchWithRecovery,
+  describeDegradation,
+  formatPlatformSnippet,
+  toRoutedSearchResponse,
+} from "./sources/routed-response.ts";
+
+import {
+  createFetchPage,
+  type FetchedPage,
+  type FetchPage,
+} from "./fetch-page.ts";
+import { registerWebRead } from "./read/tool.ts";
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
 /** Services required by this plugin. */
-export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands"];
+export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands", "tools"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
@@ -72,49 +97,16 @@ const RELEASES_URL = "https://github.com/A3Boy/dsh-web-tools/releases";
 const VERSION_CACHE_MS = 6 * 60 * 60 * 1000;
 let versionCache: { fetchedAt: number; value: VersionCheckView } | null = null;
 
-export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) {
-  if (outcome.error) {
-    const error = new WebToolsWebError(
-      `platform fetch failed (${outcome.error.code}): ${outcome.error.message}`,
-    );
-    if (outcome.error.code === "aborted") error.code = "WEB_ABORTED";
-    throw error;
-  }
-
-  const item = outcome.item;
-  const rawContent = item?.text?.trim();
-  if (!item || !rawContent) {
-    throw new WebToolsWebError(`platform fetch returned empty content for ${url}`);
-  }
-
-  const sections: string[] = [];
-  if (item.title?.trim() && !rawContent.startsWith(item.title.trim())) {
-    sections.push(`# ${item.title.trim()}`);
-  }
-
-  const metadata: string[] = [];
-  const author = item.author?.handle || item.author?.name;
-  if (author) metadata.push(`Author: ${author}`);
-  if (item.publishedAt) metadata.push(`Published: ${item.publishedAt}`);
-  const engagement = [
-    typeof item.likes === "number" ? `likes ${item.likes}` : undefined,
-    typeof item.collects === "number" ? `collects ${item.collects}` : undefined,
-    typeof item.retweets === "number" ? `retweets ${item.retweets}` : undefined,
-    typeof item.replies === "number" ? `comments/replies ${item.replies}` : undefined,
-  ].filter(Boolean);
-  if (engagement.length > 0) metadata.push(`Engagement: ${engagement.join(", ")}`);
-  if (metadata.length > 0) sections.push(metadata.join("\n"));
-  sections.push(rawContent);
-  if (item.images?.length) sections.push(`Images: ${item.images.length} attached`);
-  const content = sections.join("\n\n");
-
-  return {
-    url,
-    statusCode: 200,
-    body: { kind: "text" as const, content },
-    truncated: false,
-  };
-}
+export {
+  toRoutedFetchResponse,
+  executeRoutedFetchWithRecovery,
+  describeDegradation,
+  formatPlatformSnippet,
+  toRoutedSearchResponse,
+  createFetchPage,
+  type FetchedPage,
+  type FetchPage,
+};
 
 /** Release lookup is best-effort: startup and settings must work offline. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -215,6 +207,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     void configHandle.write({ braveQuotaCache: cache }).catch(() => {});
   });
 
+  /** Coalesced writer for the Keenable per-call usage ledger. */
+  const keenableUsagePersist = createQuotaPersistScheduler<KeenableUsageBucket>((cache) => {
+    void configHandle.write({ keenableUsageCache: cache }).catch(() => {});
+  });
+
   // ---- ctx.web search + fetch providers ----------------------------------
   const resolveRuntimeConfig = () => {
     const cfg = readConfig();
@@ -224,6 +221,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       providerAttemptTimeoutMs: cfg.providerAttemptTimeoutMs,
       fallbackOrder: cfg.fallbackOrder,
       searchRoutingPolicy: cfg.searchRoutingPolicy,
+      retrievalStrategy: cfg.retrievalStrategy,
       providerBaseUrls: cfg.providerBaseUrls,
       enabledProviders: cfg.providerEnabled,
       providerOptions: cfg.providerOptions,
@@ -297,11 +295,31 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   const sourceRegistry = new SpecializedSourceRegistry();
 
-  const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
+  const rawSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
+    summary: () => stats.summary(),
   }, undefined, poolStore, healthStore, resolveSnapshot);
 
-  const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore, undefined, resolveSnapshot);
+  const rawFetchProvider = createFetchProvider(
+    resolveRuntimeConfig,
+    resolveKeys,
+    undefined,
+    poolStore,
+    healthStore,
+    undefined,
+    resolveSnapshot,
+    {
+      record: (e) => stats.record({ ...e, at: Date.now() }),
+    },
+  );
+
+  // Short-lived result cache + in-flight coalescing for the GENERAL chain only
+  // (platform sources stay uncached). Any provider / routing / endpoint /
+  // custom-source change alters the fingerprint, which invalidates old entries.
+  const cacheFingerprint = () =>
+    configFingerprint({ runtime: resolveRuntimeConfig(), config: readConfig() });
+  const generalSearchProvider = createCachedSearchProvider(rawSearchProvider, { fingerprint: cacheFingerprint });
+  const generalFetchProvider = createCachedFetchProvider(rawFetchProvider, { fingerprint: cacheFingerprint });
 
   sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
 
@@ -314,6 +332,12 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   });
 
   // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
+  const recentSocialSearches: Array<{
+    query: string;
+    time: number;
+    items: import("./sources/types.ts").SourceItem[];
+  }> = [];
+
   const routedSearchProvider = {
     id: PROVIDER_ID,
     available: () => generalSearchProvider.available(),
@@ -326,15 +350,20 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
       if (outcome.error) {
         throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
       }
-      return {
-        sources: outcome.items.map((item) => ({
-          url: item.url,
-          title: item.title,
-          snippet: item.snippet,
-          publishedAt: item.publishedAt,
-        })),
-        truncated: false,
-      };
+      if (outcome.items && outcome.items.some((item) => item.platform !== "general")) {
+        recentSocialSearches.unshift({
+          query: request.query,
+          time: Date.now(),
+          items: outcome.items,
+        });
+        for (const item of outcome.items) {
+          rememberGlobalNote(item);
+        }
+        if (recentSocialSearches.length > 20) {
+          recentSocialSearches.pop();
+        }
+      }
+      return toRoutedSearchResponse(outcome, { target: "dsh" });
     },
   };
   ctx.web.registerSearchProvider(routedSearchProvider as never);
@@ -344,11 +373,46 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     id: `${PROVIDER_ID}-fetch`,
     available: () => generalFetchProvider.available(),
     fetch: async (request: { url: string }, signal?: AbortSignal) => {
-      const outcome = await sourceRegistry.fetch(request.url, signal);
-      return toRoutedFetchResponse(request.url, outcome);
+      return executeRoutedFetchWithRecovery(
+        request.url,
+        () => sourceRegistry.fetch(request.url, signal),
+        {
+          lookupCache: (url) => {
+            const noteId = extractNoteIdFromUrl(url);
+            if (noteId) {
+              const item = getCachedNoteItem(noteId);
+              if (item) return item;
+            }
+            if (recentSocialSearches.length > 0) {
+              for (const entry of recentSocialSearches) {
+                const match = entry.items.find(
+                  (it) => it.url === url || (noteId && (it.id === noteId || it.url.includes(noteId))),
+                );
+                if (match) return match;
+              }
+            }
+            return undefined;
+          },
+          searchFallback: async (url) => {
+            const noteId = extractNoteIdFromUrl(url);
+            if (!noteId) return undefined;
+            const res = await routedSearchProvider.search(
+              { query: `site:xiaohongshu.com ${noteId}`, maxResults: 1 },
+              signal,
+            );
+            const found = res.sources?.[0];
+            return found?.snippet || found?.title;
+          },
+        },
+      );
     },
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
+
+  // Register focused page reading tool on host ctx.tools
+  if (readConfig().webReadEnabled !== false) {
+    registerWebRead(ctx, createFetchPage(routedFetchProvider));
+  }
 
   // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
   const nativeRuntime = createNativeBrowserRuntime();
@@ -425,13 +489,21 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   async function testFullSearch(query: string) {
     const started = Date.now();
     try {
-      const result = await routedSearchProvider.search(
-        { query, maxResults: 5 },
-        undefined, // no caller signal for a manual card test
+      // Manual card test must measure the real chain, never a cached answer.
+      const result = await runWithoutCache(() =>
+        routedSearchProvider.search(
+          { query, maxResults: 5 },
+          undefined, // no caller signal for a manual card test
+        ),
       );
+      const hints = extractSearchHints(query);
       return {
         ok: true,
         backend: (result as unknown as { backend?: string }).backend,
+        fused: (result as unknown as { fused?: boolean }).fused === true,
+        degraded: (result as unknown as { degraded?: { code: string; message: string; platform?: string } }).degraded,
+        hints: { platform: hints.platform, cleanQuery: hints.cleanQuery },
+        diagnostics: (result as unknown as { diagnostics?: string[] }).diagnostics,
         latencyMs: Date.now() - started,
         resultCount: result.sources.length,
         results: result.sources.slice(0, 5).map((s: any) => ({ title: s.title ?? s.url, url: s.url, snippet: s.snippet ?? "" })),
@@ -543,6 +615,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     for (const [key, snap] of Object.entries(braveCache)) {
       if (key && snap && typeof snap === "object") seedBraveQuota(key, snap as QuotaSnapshot);
     }
+    const keenableCache = (cfg.keenableUsageCache ?? {}) as Record<string, KeenableUsageBucket>;
+    seedKeenableUsageCache(keenableCache);
+    keenableUsagePersist.seed(keenableCache);
   });
   // Coalesced: a settings write costs ~2.5s on DSH 0.1.7 (profile patch +
   // Loader reconciliation under hmr.runExclusive), and Brave reports quota in
@@ -552,6 +627,69 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   ctx.effect(
     () => () => braveQuotaPersist.dispose(),
     "dsh-web-tools: brave quota persistence",
+  );
+  // Keenable reports the charge of every call in the response body; the
+  // ledger that accumulates those numbers is display-only and persisted the
+  // same coalesced way as Brave's header snapshots.
+  setKeenableUsagePersist((apiKey, bucket) => keenableUsagePersist.record(apiKey, bucket));
+  ctx.effect(
+    () => () => keenableUsagePersist.dispose(),
+    "dsh-web-tools: keenable usage persistence",
+  );
+
+  // ---- Platform session keep-alive ----------------------------------------
+  // 小红书 `web_session` and X `auth_token` expire when the profile is idle for
+  // a long time, so a signed-in setup silently degrades to web results after a
+  // day. A low-frequency visit to each signed-in platform lets the site refresh
+  // its own cookies. Only platforms that currently report a usable session are
+  // touched, and `sessionKeepAliveHours = 0` disables the sweep entirely.
+  ctx.effect(
+    () => {
+      let disposed = false;
+      let timer: NodeJS.Timeout | undefined;
+
+      const sweep = async () => {
+        if (disposed) return;
+        const hours = readConfig().sessionKeepAliveHours ?? 8;
+        if (!Number.isFinite(hours) || hours <= 0) return;
+        try {
+          const statuses = await sourceRegistry.getPlatformStatuses();
+          for (const status of statuses) {
+            if (disposed) return;
+            if (!status.enabled || !status.sessionEstablished || !status.authenticated) continue;
+            const url = status.id === "xiaohongshu"
+              ? "https://www.xiaohongshu.com/explore"
+              : "https://x.com/home";
+            try {
+              const page = await nativeRuntime.openPage(status.id, url, undefined, "interactive");
+              await page.close();
+            } catch {
+              // A failed refresh must never disturb the runtime.
+            }
+          }
+        } catch {
+          // Status probing is best-effort.
+        }
+      };
+
+      const schedule = () => {
+        if (disposed) return;
+        const hours = readConfig().sessionKeepAliveHours ?? 8;
+        if (!Number.isFinite(hours) || hours <= 0) return;
+        timer = setTimeout(async () => {
+          await sweep();
+          schedule();
+        }, hours * 3600_000);
+        timer.unref?.();
+      };
+
+      schedule();
+      return () => {
+        disposed = true;
+        if (timer) clearTimeout(timer);
+      };
+    },
+    "dsh-web-tools: platform session keep-alive",
   );
 
   // ---- Search Mode (per-session "required web search" turn policy) ---------
@@ -612,6 +750,8 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   function forgetSource(sourceId: string) {
     healthStore.deleteCooldown(sourceId);
     poolStore.forget(sourceId);
+    generalSearchProvider.clear();
+    generalFetchProvider.clear();
   }
 
   /** Remove every credential ref a deleted source owned. */
@@ -820,7 +960,11 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           syncGlobalOutboundAuthorizations();
         },
         readCredential: (ref) => readCredential(ctx, ref),
-        writeCredential: (ref, value) => writeCredential(ctx, ref, value),
+        writeCredential: async (ref, value) => {
+          await writeCredential(ctx, ref, value);
+          generalSearchProvider.clear();
+          generalFetchProvider.clear();
+        },
         testProviderSearch,
         testFullSearch,
         describeQuotas,
@@ -834,6 +978,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
         testSource,
         revokeSourceCredentials: (sourceId) => revokeSourceCredentials(sourceId),
         forgetSource: (sourceId) => forgetSource(sourceId),
+        getRecentSocialSearches: () => recentSocialSearches,
       }),
     "dsh-web-tools: /web-tools/api routes",
   );

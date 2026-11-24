@@ -296,23 +296,33 @@ export function createSearchModeMessages(
 }
 
 /**
- * Decide which pre-step Search Mode message (if any) to inject for one step.
- * Pure and one-shot: ONLY step 1 injects — the research policy (required
- * turns), the optional-use criterion (auto turns), or the "switched off" notice
- * (off turns). Later steps inject NOTHING: the web tool result(s) are the
- * freshest context, and enforcement happens at the tool gate, not by
- * re-reminding the model every step.
- * @returns undefined (no injection) outside step 1 or without a turn state.
+ * Required/off notices apply on step 1. Auto guidance is present once in the
+ * effective model history, rather than tracked in process memory: resume can
+ * reuse it, and compaction that removes it causes it to be restored.
  */
 export function searchModeStepMessage(
   state: TurnState | undefined,
   step: number,
   messages: SearchModeMessages,
+  history: readonly unknown[] = [],
 ): unknown | undefined {
   if (!state) return undefined;
-  if (step !== 1) return undefined;
-  if (state.disabled) return messages.disabled();
-  if (state.required) return messages.required();
+  if (state.disabled) return step === 1 ? messages.disabled() : undefined;
+  if (state.required) return step === 1 ? messages.required() : undefined;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const message = history[i] as {
+      role?: string;
+      source?: { kind?: string; plugin?: string; form?: string; sections?: Array<{ name: string; text: string }> };
+      content?: Array<{ type: string; text?: string }>;
+    };
+    if (message?.role !== "user" || message.source?.kind !== "plugin:dsh-web-tools" || message.source.plugin !== "dsh-web-tools") continue;
+    const section = message.source.form === "snapshot"
+      ? message.source.sections?.find((s) => s.name === "web-search-mode") : undefined;
+    if (section) return section.text === SEARCH_AUTO_TEXT ? undefined : messages.auto();
+    // Off notices supersede older Auto snapshots. Corrections and unrelated
+    // plugin messages do not change the current mode criterion.
+    if (message.source.form === "notice" && message.content?.some((c) => c.type === "text" && c.text === SEARCH_DISABLED_TEXT)) return messages.auto();
+  }
   return messages.auto();
 }
 
@@ -327,14 +337,15 @@ interface AgentScopedCtx {
   };
 }
 
-/** The two model-facing web tools this plugin owns the policy for. */
-export const WEB_TOOL_NAMES: readonly string[] = ["web_search", "web_fetch"];
+/** The model-facing web tools this plugin owns the policy for. */
+export const WEB_TOOL_NAMES: readonly string[] = ["web_search", "web_fetch", "web_read"];
 
 /** Denial reason shown to the model when it calls a web tool while OFF. */
 export const WEB_DISABLED_DENIAL =
   "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";
 interface ScopedAgent {
   id: string;
+  session: { deriveMessages(): readonly unknown[] };
   ctx: AgentScopedCtx;
   steer(input: unknown): void;
   cancel(cause: unknown): void;
@@ -357,10 +368,6 @@ export function installSearchModeRuntime(
     // Register this agent's listeners inside its own scope so scope-filtered
     // dispatch reaches them; cleaning up when the agent scope unwinds.
     return agent.ctx.effect(() => {
-      // These snapshots become session history. Keep the auto criterion once
-      // while the mode stays unchanged; re-send it after required/off so the
-      // model sees that the previous restriction has been lifted.
-      let lastInjectedMode: SearchMode | undefined;
       // ---- layer 1: hide the web tools from this agent's tool list ---------
       // Scoped, so other sessions keep their tools. Applied at turn start and
       // lifted as soon as the mode leaves `off`.
@@ -390,11 +397,8 @@ export function installSearchModeRuntime(
           if (payload.signal?.aborted) return decision;
           const state = runtime.beginTurn(agent.id, payload.turn);
           syncRestriction();
-          const inject = searchModeStepMessage(state, payload.step, messages);
+          const inject = searchModeStepMessage(state, payload.step, messages, agent.session.deriveMessages());
           if (!inject) return decision;
-          const mode: SearchMode = state.disabled ? "off" : state.required ? "required" : "auto";
-          if (mode === "auto" && lastInjectedMode === "auto") return decision;
-          lastInjectedMode = mode;
           const entered = decision as { kind: "enter"; messages: unknown[] };
           // Prepend so the Search Mode policy sits before the user's direct
           // message (the model's last user-role input remains the user query).
@@ -411,7 +415,7 @@ export function installSearchModeRuntime(
           if (!exec.agent?.id) return;
           const succeeded = result?.isError === false;
           if (exec?.name === "web_search") runtime.markSearchResult(exec.agent.id, succeeded);
-          else if (exec?.name === "web_fetch") runtime.markFetchResult(exec.agent.id, succeeded);
+          else if (exec?.name === "web_fetch" || exec?.name === "web_read") runtime.markFetchResult(exec.agent.id, succeeded);
         },
       );
 

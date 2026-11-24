@@ -17,6 +17,7 @@ test("ProcessManager: safe args enforce security invariants, start-minimized and
     assert.ok(args.includes("--user-data-dir=C:\\profiles\\xhs"));
     assert.ok(args.includes("--remote-debugging-address=127.0.0.1"));
     assert.ok(args.includes("--remote-debugging-port=9222"));
+    assert.ok(args.includes("--disable-blink-features=AutomationControlled"));
     assert.ok(!args.some((a) => a.includes("--disable-web-security")));
     assert.ok(!args.some((a) => a.includes("--no-sandbox")));
     assert.ok(!args.some((a) => a.includes("--remote-allow-origins=*")));

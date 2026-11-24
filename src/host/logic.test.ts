@@ -20,11 +20,11 @@ import { mergePoolQuota } from "./quota.ts";
 import { buildProviderOptionView, sanitizeProviderOptions, resolveEffectiveOptions } from "./provider-options.ts";
 import { extractSearchHints } from "./search-hints.ts";
 import { buildFirecrawlSearchBody } from "./providers/firecrawl.ts";
-import { buildTavilySearchBody } from "./providers/tavily.ts";
+import { buildTavilySearchBody, tavilyCountryName } from "./providers/tavily.ts";
 import { buildYouSearchBody } from "./providers/you.ts";
 import { buildBraveLlmContextBody } from "./providers/brave.ts";
 import { buildExaSearchBody } from "./providers/exa.ts";
-import { buildSearxngUrl, buildSearxngAuth } from "./providers/searxng.ts";
+import { buildSearxngUrl, buildSearxngAuth, SearxngProvider } from "./providers/searxng.ts";
 import { createSearchProvider } from "./registry.ts";
 
 test("buildPool splits on comma/whitespace/newline and dedupes empties", () => {
@@ -65,6 +65,22 @@ test("resetHealth restores the pool", () => {
   markUnhealthy(p, 1);
   resetHealth(p);
   assert.equal(selectIndex(p), 0);
+});
+
+test("selectIndex auto-recovers unhealthy keys after TTL expires", () => {
+  const p = buildPool("a,b");
+  const t0 = 1000000;
+  markUnhealthy(p, 0, t0);
+  markUnhealthy(p, 1, t0);
+
+  // Before TTL: still throws
+  assert.throws(() => selectIndex(p, t0 + 1000), /no healthy/);
+
+  // After 15m TTL (e.g. 16 minutes): auto-recovers
+  const tLater = t0 + 16 * 60 * 1000;
+  const picked = selectIndex(p, tLater);
+  assert.equal(picked, 0);
+  assert.equal(p[0].healthy, true);
 });
 
 test("hintOf masks keys", () => {
@@ -138,12 +154,14 @@ test("parseJinaSearchJson: normalizes the official { data: [...] } envelope", ()
       url: "https://example.com/",
       title: "Example Domain",
       snippet: "This domain is for use in illustrative examples.",
+      summary: "full page text…",
       publishedAt: "2026-01-01T00:00:00Z",
     },
     {
       url: "https://example.org/",
       title: "Second Result",
       snippet: "Another snippet",
+      summary: "Another snippet",
     },
   ]);
 });
@@ -391,6 +409,37 @@ test("buildTavilySearchBody forwards explicit date filters without time_range", 
   assert.equal(body.end_date, "2026-08-20");
 });
 
+test("buildTavilySearchBody sends a Tavily country NAME, never an ISO code", () => {
+  // Regression: Tavily's `country` enum only accepts lowercase country names.
+  // Sending "US"/"CN" produced 400 "Invalid country. Must be a valid country
+  // name from the list of supported countries" and killed the whole search
+  // (bad-request is non-retryable, so no fallback).
+  const cn = extractSearchHints("国内 A股 最新行情");
+  assert.equal(buildTavilySearchBody("国内 A股 最新行情", 5, undefined, cn).country, "china");
+
+  const us = extractSearchHints("美国 2026 年 AI 监管政策");
+  assert.equal(buildTavilySearchBody("美国 2026 年 AI 监管政策", 5, undefined, us).country, "united states");
+
+  // No country in the query -> no country param at all.
+  const plain = extractSearchHints("React 19 新特性");
+  assert.equal(buildTavilySearchBody("React 19 新特性", 5, undefined, plain).country, undefined);
+
+  // A valid name passes through; an unsupported code is dropped instead of 400.
+  assert.equal(tavilyCountryName("united kingdom"), "united kingdom");
+  assert.equal(tavilyCountryName("GB"), "united kingdom");
+  assert.equal(tavilyCountryName("HK"), undefined);
+  assert.equal(tavilyCountryName(undefined), undefined);
+});
+
+test("buildTavilySearchBody omits country when topic is not general", () => {
+  // Tavily: country is "available only if topic is general".
+  const hints = extractSearchHints("美股 财报");
+  assert.equal(hints.topic, "finance");
+  const body = buildTavilySearchBody("美股 财报", 5, undefined, hints);
+  assert.equal(body.topic, "finance");
+  assert.equal(body.country, undefined);
+});
+
 // ---- You.com deep adaptation tests ----
 
 test("buildYouSearchBody maps soft prefer to boost_domains and sets freshness", () => {
@@ -433,6 +482,54 @@ test("buildExaSearchBody maps research topic to publication category and startPu
 });
 
 // ---- SearXNG deep adaptation tests ----
+
+test("SearXNG rejects empty results with upstream engine failures instead of reporting success", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    results: [],
+    answer: "  ",
+    unresponsive_engines: [["google cse", "timeout"], ["duckduckgo", "CAPTCHA"]],
+  }));
+  await assert.rejects(
+    SearxngProvider.search("SQLite WAL", 5, "", "http://127.0.0.1:8888"),
+    (error: any) => error.code === "server" && /upstream engine/i.test(error.message),
+  );
+});
+
+test("SearXNG preserves genuine empty results and usable partial results or answers", async (t) => {
+  let body: Record<string, unknown> = { results: [], unresponsive_engines: [] };
+  t.mock.method(globalThis, "fetch", async () => Response.json(body));
+  assert.deepEqual(await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888"), { sources: [] });
+  body = { results: [{ url: "https://sqlite.org/wal.html", title: "WAL" }], unresponsive_engines: [["duckduckgo", "CAPTCHA"]] };
+  assert.equal((await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888")).sources.length, 1);
+  body = { results: [], answer: "An answer", unresponsive_engines: [["duckduckgo", "CAPTCHA"]] };
+  assert.equal((await SearxngProvider.search("q", 5, "", "http://127.0.0.1:8888")).content, "An answer");
+});
+
+test("SearXNG upstream failure reaches the existing fallback chain as a failed attempt", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    results: [], unresponsive_engines: [["google cse", "timeout"]],
+  }));
+  const records: Array<{ provider: string; outcome: string }> = [];
+  const provider = createSearchProvider(
+    () => ({
+      enabled: true, defaultProvider: "searxng", providerAttemptTimeoutMs: 5000,
+      fallbackOrder: ["brave"], providerBaseUrls: { searxng: "http://127.0.0.1:8888" },
+      enabledProviders: { searxng: true, brave: true },
+    }),
+    async () => "test-key",
+    { record: (record) => records.push(record) },
+    {
+      searxng: SearxngProvider,
+      brave: {
+        ...SearxngProvider, name: "brave", needsBaseUrl: false,
+        async search() { return { sources: [{ url: "https://sqlite.org/wal.html", title: "WAL" }] }; },
+      },
+    },
+  );
+  const result = await provider.search({ query: "SQLite WAL", maxResults: 5 });
+  assert.equal(result.backend, "brave");
+  assert.ok(records.some(record => record.provider === "searxng" && record.outcome === "failed:server"));
+});
 
 test("buildSearxngUrl maps code topic but omits unsupported week time_range", () => {
   const hints = extractSearchHints("TypeScript compiler error this week");

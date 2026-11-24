@@ -15,6 +15,7 @@
  */
 export type SearchTopic = "general" | "news" | "finance" | "code" | "research";
 export type PlatformHint = "xiaohongshu" | "x";
+export type SearchSort = "general" | "time_descending" | "popularity_descending" | "comment_descending" | "collect_descending";
 export type FreshnessPreset = "day" | "week" | "month" | "year";
 export interface FreshnessHint {
     preset?: FreshnessPreset;
@@ -43,6 +44,7 @@ export interface SearchHints {
     /** Whether the query explicitly targeted the platform (e.g. "小红书", "推特", "site:x.com") */
     platformExplicit?: boolean;
     freshness?: FreshnessHint;
+    sort?: SearchSort;
     domains?: DomainHints;
     locale?: LocaleHint;
     /** Cleaned query string with explicit operators (e.g. site:) removed */
@@ -58,6 +60,22 @@ export declare function formatDateYMD(d: Date): string;
  * Calculate an after_date string from a preset relative to a reference date.
  */
 export declare function calculateAfterDate(preset: FreshnessPreset, now?: Date): string;
+/**
+ * Normalize an arbitrary sort string into canonical SearchSort.
+ */
+export declare function normalizeSearchSort(raw: unknown): SearchSort | undefined;
+/**
+ * Strip conversational tails that hurt IN-PLATFORM keyword search.
+ *
+ * Platform search (X, Xiaohongshu) matches literal tokens: "GPTPLus 还值得开吗"
+ * asks the platform for posts containing 还/值得/开, which mostly returns
+ * unrelated opinion posts. General web engines handle natural language fine, so
+ * this refinement is applied ONLY to the native platform query.
+ *
+ * Deliberately conservative: only well-known question/opinion tails and
+ * leading politeness are removed; everything else is left intact.
+ */
+export declare function refinePlatformQuery(query: string): string;
 /**
  * Extract structured SearchHints from a raw query.
  * Pure function: deterministic, fast, testable, zero side-effects.

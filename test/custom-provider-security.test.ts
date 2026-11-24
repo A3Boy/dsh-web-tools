@@ -50,7 +50,8 @@ test("Security: pinned connector accepts default ports and rejects a different a
           const origin = `${protocol}//search.example.com${explicit ? `:${port}` : ""}`;
           await assert.rejects(dispatcher.request({ origin, path: "/", method: "GET" }), (err) => err === connected);
           assert.equal(calls, 1);
-          const deniedOrigins = [`${protocol}//other.example.com:${port}`, `${protocol}//search.example.com:${port + 1}`, `${protocol}//search.example.com:0`];
+          const otherProtocol = protocol === "https:" ? "http:" : "https:";
+          const deniedOrigins = [`${protocol}//other.example.com:${port}`, `${protocol}//search.example.com:${port + 1}`, `${protocol}//search.example.com:0`, `${otherProtocol}//search.example.com:${port}`];
           if (port === 8443) deniedOrigins.push(`${protocol}//search.example.com`);
           for (const origin of deniedOrigins) {
             await assert.rejects(dispatcher.request({ origin, path: "/", method: "GET" }), /unapproved authority/);

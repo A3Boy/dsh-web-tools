@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { allocateRandomPort } from "./port.ts";
 import type { BrowserInfo } from "./types.ts";
 
@@ -23,6 +23,7 @@ export function buildSafeLaunchArgs(
     `--remote-debugging-port=${port}`,
     `--no-first-run`,
     `--no-default-browser-check`,
+    `--disable-blink-features=AutomationControlled`,
   ];
 
   if (headless) {
@@ -78,4 +79,16 @@ export function isPidAlive(pid: number): boolean {
   } catch (e: any) {
     return e.code === "EPERM";
   }
+}
+
+export function killProcessTree(pid: number): void {
+  try {
+    if (process.platform === "win32") {
+      try {
+        execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+        return;
+      } catch {}
+    }
+    process.kill(pid);
+  } catch {}
 }

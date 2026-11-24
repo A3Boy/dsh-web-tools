@@ -9,8 +9,48 @@
 import type { ProviderOptionView } from "./provider-options.ts";
 import type { OutboundAuthorization } from "./custom-provider-types.ts";
 
-/** Search routing policy — how the host picks which provider to try first. */
-export type SearchRoutingPolicy = "ordered" | "round-robin" | "random";
+/**
+ * Search routing policy — how the host picks which provider to try first.
+ *
+ * Kept as a runtime array so the config schema, the HTTP validator and the
+ * settings card all validate against ONE list: adding a policy cannot leave a
+ * valid value rejected by whichever layer was forgotten (the exact defect that
+ * made adaptive/fastest/cheapest unreachable from the UI and the API).
+ */
+export const SEARCH_ROUTING_POLICIES = [
+  "ordered",
+  "round-robin",
+  "random",
+  "adaptive",
+  "fastest",
+  "cheapest",
+] as const;
+
+export type SearchRoutingPolicy = (typeof SEARCH_ROUTING_POLICIES)[number];
+
+/** Whether a wire value is a known routing policy. */
+export function isSearchRoutingPolicy(value: unknown): value is SearchRoutingPolicy {
+  return typeof value === "string" && (SEARCH_ROUTING_POLICIES as readonly string[]).includes(value);
+}
+
+/**
+ * Retrieval orchestration strategy for one search request.
+ *
+ *  - single: try providers in the resolved order, one at a time (default).
+ *  - hedged: start the first provider; if it is still running after
+ *    `hedgeDelayMs`, start the second one in parallel. First success wins and
+ *    the loser is CANCELLED so it stops consuming quota.
+ *  - fused:  start two providers in parallel and merge both ranked lists with
+ *    Reciprocal Rank Fusion. Wider recall at roughly double the cost.
+ */
+export const RETRIEVAL_STRATEGIES = ["single", "hedged", "fused"] as const;
+
+export type RetrievalStrategy = (typeof RETRIEVAL_STRATEGIES)[number];
+
+/** Whether a wire value is a known retrieval strategy. */
+export function isRetrievalStrategy(value: unknown): value is RetrievalStrategy {
+  return typeof value === "string" && (RETRIEVAL_STRATEGIES as readonly string[]).includes(value);
+}
 
 /** One provider as surfaced to the settings card. */
 export interface ProviderView {
@@ -76,8 +116,10 @@ export interface ConfigView {
     /** Proxy desired but undici unavailable → degraded to direct fetch. */
     degraded: boolean;
   };
-  /** Search routing policy (ordered/round-robin/random). */
+  /** Search routing policy (ordered/round-robin/random/adaptive/fastest/cheapest). */
   searchRoutingPolicy?: SearchRoutingPolicy;
+  /** Cross-provider retrieval strategy (single/hedged/fused). */
+  retrievalStrategy?: RetrievalStrategy;
   /** Operator-granted outbound destinations for internal gateways / private IPs. */
   outboundAuthorizations?: OutboundAuthorization[];
 }
@@ -101,11 +143,26 @@ export interface QuotaView {
 export interface TestSearchView {
   ok: boolean;
   backend?: string;
+  /** True when the answer merged two providers with RRF. */
+  fused?: boolean;
+  /** Set when a platform query was served by a general web fallback. */
+  degraded?: TextSearchDegradation;
+  /** How the query was interpreted (routing diagnostics for the card). */
+  hints?: { platform?: string; cleanQuery?: string };
+  /** Channel diagnostics (e.g. why the 小红书 fast path was skipped). */
+  diagnostics?: string[];
   latencyMs?: number;
   resultCount?: number;
   results?: Array<{ title: string; url: string; snippet: string }>;
   attempts?: Array<{ provider: string; outcome: string; latencyMs?: number }>;
   error?: { code: string; message: string };
+}
+
+/** Why a platform search was served by web results instead of native data. */
+export interface TextSearchDegradation {
+  code: string;
+  message: string;
+  platform?: string;
 }
 
 /** Result of a single-provider connection test. */

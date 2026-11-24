@@ -12,6 +12,7 @@ export interface Source {
   url: string;
   title?: string;
   snippet?: string;
+  summary?: string;
   publishedAt?: string;
 }
 
@@ -32,7 +33,9 @@ export type ProviderErrorCode =
   | "network"
   | "config"
   | "aborted"
-  | "invalid-response";
+  | "invalid-response"
+  | "low-quality"
+  | "empty";
 
 /** Classified failure raised by adapters (never thrown raw). */
 export interface ProviderError extends Error {

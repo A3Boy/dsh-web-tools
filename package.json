@@ -1,12 +1,15 @@
 {
   "name": "dsh-web-tools",
-  "version": "0.3.10",
-  "description": "Multi-provider Web Search & Fetch for DeepSeek Harness — 9 deeply adapted providers, SearchHints, resilient fallback, and native X / Xiaohongshu retrieval",
+  "version": "0.5.0",
+  "description": "Multi-provider Web Search & Fetch for DeepSeek Harness — 10 deeply adapted providers, SearchHints, resilient fallback, and native X / Xiaohongshu retrieval",
   "icon": "assets/logo-icon.png",
   "author": "A3Boy",
   "license": "MIT",
   "type": "module",
   "main": "./lib/host/index.js",
+  "bin": {
+    "dsh-web-tools-mcp": "./bin/mcp-server.js"
+  },
   "exports": {
     ".": {
       "types": "./lib/host/index.d.ts",
@@ -16,10 +19,15 @@
       "types": "./lib/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./mcp": {
+      "types": "./lib/mcp/server.d.ts",
+      "default": "./lib/mcp/server.js"
+    },
     "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "lib",
     "assets/logo-icon.png",
     "locale",
@@ -46,10 +54,10 @@
     }
   },
   "dependencies": {
-    "defuddle": "^0.19.3",
-    "linkedom": "^0.18.13",
-    "undici": "^6.26.0",
-    "ws": "^8.18.0"
+    "defuddle": "^0.19.6",
+    "linkedom": "^0.18.15",
+    "undici": "^6.29.1",
+    "ws": "^8.18.2"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -62,6 +70,7 @@
     "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/dsh-web": "^0.1.0-rc.6 || ^0.2.0-0 || ^0.2.1-0",
     "@deepseek-ai/schemastery": "^3.18.1",
     "react": "^18.2.0"
@@ -71,6 +80,9 @@
     "prepack": "npm run build",
     "bundle": "tsdown",
     "test": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs test/*.smoke.mjs src/host/logic.test.ts",
+    "bench": "node --experimental-strip-types bench/run-eval.ts",
+    "bench:m4": "node --experimental-strip-types --no-warnings bench/m4/run.ts",
+    "bench:m4:fetch": "node --experimental-strip-types --no-warnings bench/m4/fetch-fixtures.ts",
     "smoke": "node --experimental-strip-types --test test/*.test.ts test/*.test.mjs test/*.smoke.mjs src/host/logic.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },

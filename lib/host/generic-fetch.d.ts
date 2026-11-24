@@ -4,6 +4,8 @@ import { type DnsLookupFn } from "./fetch-security.ts";
 export declare const MAX_FETCH_BYTES: number;
 /** Maximum redirect hops before aborting. */
 export declare const MAX_REDIRECT_HOPS = 5;
+/** Threshold character count above which an automatic Table of Contents is prepended. */
+export declare const TOC_CHAR_THRESHOLD = 8000;
 /** Default per-attempt timeout for generic fetch (10 seconds). */
 export declare const DEFAULT_GENERIC_FETCH_TIMEOUT_MS = 10000;
 /** Classified error codes for generic web fetch operations. */
@@ -37,6 +39,11 @@ export interface GenericFetchOptions {
     customFetchWithProxy?: typeof fetchWithProxy;
     customDnsLookup?: DnsLookupFn;
 }
+/**
+ * Scan markdown headings (# H1, ## H2, ### H3) and build a Table of Contents outline.
+ * Returns undefined if content is shorter than threshold or has fewer than 2 headings.
+ */
+export declare function generateMarkdownToc(markdown: string, threshold?: number): string | undefined;
 /**
  * Fetch a web page using built-in HTTP client with proxy support, redirect security, DNS SSRF guard, and local-only Defuddle parsing.
  */

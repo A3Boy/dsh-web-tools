@@ -14,6 +14,6 @@
     "noUnusedParameters": true,
     "types": ["node"]
   },
-  "include": ["src/host/**/*.ts", "src/shared/**/*.ts", "src/types/**/*.d.ts"],
+  "include": ["src/host/**/*.ts", "src/shared/**/*.ts", "src/mcp/**/*.ts", "src/types/**/*.d.ts"],
   "exclude": ["src/client", "node_modules"]
 }

@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "frozenAt": "2026-11-15T03:27:02.404Z",
+  "entries": {
+    "rfc6749-auth-code-test": {
+      "caseHash": "e9f1b05389b4ac2d7c7ef24cbfa2131c431c2a24d869c73f76920d90b323af94",
+      "fixtureHash": "30c62047073e87dbe83e0c036e28a2c3b6279fbe8113127cca9bbe0722a88ea7"
+    },
+    "rfc6749-csrf-bearer-test": {
+      "caseHash": "b2a8502e535bccd260856767b9b153ba5cf91b5a3b3daa2f89b4ac3f2abb73a1",
+      "fixtureHash": "30c62047073e87dbe83e0c036e28a2c3b6279fbe8113127cca9bbe0722a88ea7"
+    },
+    "rfc6749-unauth-client-test": {
+      "caseHash": "2ec63beffb9cce65d5465f4fe1806ea6c4aa4ec5503fce1b1c16c5e47cbd6597",
+      "fixtureHash": "30c62047073e87dbe83e0c036e28a2c3b6279fbe8113127cca9bbe0722a88ea7"
+    },
+    "rfc6749-negative-kerberos-test": {
+      "caseHash": "1da3ad8b3e673700443c952e3dc2c637da747432fbcebbd0a14796d1d1bbd00f",
+      "fixtureHash": "30c62047073e87dbe83e0c036e28a2c3b6279fbe8113127cca9bbe0722a88ea7"
+    },
+    "rfc9113-goaway-test": {
+      "caseHash": "e8292d422f61b8656a5ed8613792d70d73adc8a3462fe60fb5c7b363822b2dc4",
+      "fixtureHash": "3eb97c19565d5087636a7cf2b2faf695f049992df6133ced60d359ff090d1656"
+    },
+    "rfc9113-frame-size-test": {
+      "caseHash": "0a502ec6030fac414db1d35b019e64220a233237dc6e3e84b739e451b5cfa1f7",
+      "fixtureHash": "3eb97c19565d5087636a7cf2b2faf695f049992df6133ced60d359ff090d1656"
+    },
+    "rfc9113-window-update-test": {
+      "caseHash": "cc51af2c093f8d6cc0c6fac38b7b206f99fa6def7be40cb77738096811ae83b0",
+      "fixtureHash": "3eb97c19565d5087636a7cf2b2faf695f049992df6133ced60d359ff090d1656"
+    },
+    "rfc9113-preface-code-test": {
+      "caseHash": "325617f06397770b81daa2f231f32e474fd588160903c23bd4c5c68b25a0d16f",
+      "fixtureHash": "3eb97c19565d5087636a7cf2b2faf695f049992df6133ced60d359ff090d1656"
+    },
+    "clone2-vm-flag-test": {
+      "caseHash": "4bfa38de058f010fe85192ad424398b243fba9acb2df15c2db2b9d2131c51474",
+      "fixtureHash": "1fb06aa612c066b07dab7990d5fafea2379effd530665764839fd98ad6e54d9d"
+    },
+    "clone2-namespaces-test": {
+      "caseHash": "339217059d1721905e3550dd7a8b8e0a2dfc2af07f9e3e9e94544db4e000fc0e",
+      "fixtureHash": "1fb06aa612c066b07dab7990d5fafea2379effd530665764839fd98ad6e54d9d"
+    },
+    "clone2-files-share-test": {
+      "caseHash": "015a5184d3e271fc2968a3bd57ac14f3762b38df3c1efbb40bad41f0a10da232",
+      "fixtureHash": "1fb06aa612c066b07dab7990d5fafea2379effd530665764839fd98ad6e54d9d"
+    },
+    "capabilities7-bind-service-test": {
+      "caseHash": "832acd64296551834fea50b92070dd063a41ffb2ba318ed088c7266c06e1c8d6",
+      "fixtureHash": "afe1b5caa8e08d92cb022b5041f5754b1675a437cda802c24e4c275e5db042d6"
+    },
+    "capabilities7-dac-override-test": {
+      "caseHash": "26828b7aaabbf11b88b904263c0ed5690d609b1cf0b5b7ca8d9f42d91a7b1151",
+      "fixtureHash": "afe1b5caa8e08d92cb022b5041f5754b1675a437cda802c24e4c275e5db042d6"
+    },
+    "capabilities7-ptrace-test": {
+      "caseHash": "4995ce68cc73f5b4adc1f852960a7a55aed183c9d5232cb15c4e1b6eccd104c1",
+      "fixtureHash": "afe1b5caa8e08d92cb022b5041f5754b1675a437cda802c24e4c275e5db042d6"
+    },
+    "docker-dotcloud-test": {
+      "caseHash": "42157f634c235834a0d0bade58e999a56d9dbc0bcadda2ebc13c9f27cb31c1bc",
+      "fixtureHash": "85fcc18d7583c479f40702d230e8d56a0fafedac704317494e2607480d8019ef"
+    },
+    "docker-namespaces-cgroups-test": {
+      "caseHash": "b9c6443387c3bdd3cf68d89dbac1d7bf8e3156b4a6e991033066b08067b78802",
+      "fixtureHash": "85fcc18d7583c479f40702d230e8d56a0fafedac704317494e2607480d8019ef"
+    },
+    "docker-negative-paxos-test": {
+      "caseHash": "db64a788988664ca37ba527b116e2a9cce4bd348c32c7ee88b8584aa5a10285e",
+      "fixtureHash": "85fcc18d7583c479f40702d230e8d56a0fafedac704317494e2607480d8019ef"
+    },
+    "redis-creator-test": {
+      "caseHash": "dacadd92290be402a971621167c68b2ab89a653b2945bbcabb1986dd88015b49",
+      "fixtureHash": "f9a8507752ec2ed3e5f8e2b8f7b02ad6cb02a6bcd5307f801ae8b30dda72cc87"
+    },
+    "redis-persistence-rdb-aof-test": {
+      "caseHash": "b9db70f9f1fd62d7f520ea34a99d966e8fcc201d577499d3b662abc206be28da",
+      "fixtureHash": "f9a8507752ec2ed3e5f8e2b8f7b02ad6cb02a6bcd5307f801ae8b30dda72cc87"
+    },
+    "redis-sync-master-slave-test": {
+      "caseHash": "c20449b2d2aa69532bac67ed8a27ccf111748f77641d393ca7ed5b0855d67823",
+      "fixtureHash": "f9a8507752ec2ed3e5f8e2b8f7b02ad6cb02a6bcd5307f801ae8b30dda72cc87"
+    }
+  }
+}

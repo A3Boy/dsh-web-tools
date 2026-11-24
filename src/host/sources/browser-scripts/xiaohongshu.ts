@@ -55,6 +55,16 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
     return undefined;
   }
 
+  /** First non-empty line, collapsed and truncated (title substitute). */
+  function firstLine(text: string | null | undefined): string {
+    if (!text) return "";
+    const line = text
+      .split(/\r?\n/)
+      .map((part) => part.trim())
+      .find((part) => part.length > 0);
+    return (line ?? "").replace(/\s+/g, " ").slice(0, 60);
+  }
+
   const results: XhsNoteExtraction[] = [];
   const noteElements = Array.from(document.querySelectorAll("section.note-item"));
 
@@ -94,13 +104,17 @@ export function extractVisibleXhsSearch(): XhsNoteExtraction[] {
 
     const imgEl = el.querySelector("img.cover") || el.querySelector("img");
     const coverImage = imgEl ? (imgEl.getAttribute("src") || imgEl.getAttribute("data-src") || undefined) : undefined;
+    // Search cards without a title still carry the note text in the cover's
+    // alt attribute; use it instead of an opaque placeholder.
+    const altText = imgEl ? imgEl.getAttribute("alt") : undefined;
+    const resolvedTitle = title || firstLine(altText) || "小红书笔记";
 
-    if (title || id) {
+    if (title || altText || id) {
       results.push({
         id,
-        title: title || "无标题笔记",
+        title: resolvedTitle,
         url: fullUrl,
-        snippet: title,
+        snippet: title || firstLine(altText),
         authorName,
         authorUrl,
         likes,
@@ -123,6 +137,8 @@ export function extractXhsDetailState(noteId: string): {
   collects?: number;
   comments?: number;
   images?: string[];
+  videoUrl?: string;
+  tags?: string[];
 } {
   const state = (window as any).__INITIAL_STATE__;
   const rawMap = state?.note?.noteDetailMap;
@@ -176,6 +192,20 @@ export function extractXhsDetailState(noteId: string): {
         .filter(Boolean)
     : undefined;
 
+  // Video notes carry a direct MP4 (no app watermark) on the CDN.
+  const videoUrl: string | undefined =
+    note.video?.media?.stream?.h264?.[0]?.masterUrl ||
+    note.video?.consumer?.originVideoKey
+      ? note.video?.media?.stream?.h264?.[0]?.masterUrl ||
+        `https://sns-video-hw.xhscdn.com/${note.video.consumer.originVideoKey}`
+      : undefined;
+
+  const tags: string[] | undefined = Array.isArray(note.tagList)
+    ? note.tagList
+        .map((tag: any) => (typeof tag?.name === "string" ? tag.name.trim() : ""))
+        .filter((name: string) => name.length > 0)
+    : undefined;
+
   return {
     available: true,
     title: note.title || note.displayTitle,
@@ -187,6 +217,8 @@ export function extractXhsDetailState(noteId: string): {
     collects: parseCount(interact?.collectedCount),
     comments: parseCount(interact?.commentCount),
     images: images && images.length > 0 ? images : undefined,
+    videoUrl,
+    tags: tags && tags.length > 0 ? tags : undefined,
   };
 }
 
@@ -251,11 +283,11 @@ export function extractXhsNoteDetail(): {
   const descEl = document.querySelector("#detail-desc") || document.querySelector(".desc") || document.querySelector(".content");
   const text = descEl ? (descEl.textContent || "").trim() : undefined;
 
-  const restrictionCopy = `${document.title || ""}\n${title || ""}\n${text || ""}`;
+  const restrictionCopy = `${document.title || ""}\n${title || ""}\n${text || ""}\n${document.body?.innerText || ""}`;
   if (
     isSecurity ||
     title === "安全限制" ||
-    /IP存在风险|访问受限|异常访问|操作频繁/.test(restrictionCopy)
+    /IP存在风险|访问受限|异常访问|操作频繁|安全原因|无法访问|网络异常|风控/.test(restrictionCopy)
   ) {
     return { isBlocked: true };
   }

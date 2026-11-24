@@ -18,8 +18,10 @@ export declare class PoolEntry {
     inFlight: number;
     /** Searches dispatched through this key so far. */
     uses: number;
-    /** False after a failed call; skipped by selection until a full reset. */
+    /** False after a failed call; skipped by selection until TTL recovery or a full reset. */
     healthy: boolean;
+    /** Timestamp (ms) when marked unhealthy. Used for TTL auto-recovery. */
+    unhealthyAt?: number;
     constructor(key: string, order: number);
 }
 /**
@@ -28,14 +30,21 @@ export declare class PoolEntry {
  * key without revealing a significant secret prefix.
  */
 export declare function hintOf(key: string): string;
+/** Default TTL after which an auth-unhealthy key is tentatively retried (15 minutes). */
+export declare const DEFAULT_KEY_UNHEALTHY_TTL_MS: number;
+/**
+ * Check if a pool entry is usable: healthy or whose unhealthy cooldown TTL has expired.
+ */
+export declare function isEntryUsable(entry: PoolEntry, now?: number, ttlMs?: number): boolean;
 /**
  * Select the next key index: among healthy entries, lowest inFlight first,
  * then fewest total uses; ties broken by fixed `order`. Deterministic & concurrency-aware.
  * @param entries
+ * @param now current timestamp for TTL evaluation.
  * @returns index into `entries`.
  * @throws {Error} empty pool or no healthy key.
  */
-export declare function selectIndex(entries: readonly PoolEntry[]): number;
+export declare function selectIndex(entries: readonly PoolEntry[], now?: number): number;
 /** Reserve one dispatch slot through `index` (increments inFlight). */
 export declare function reserveKey(entries: PoolEntry[], index: number): void;
 /** Release one dispatch slot through `index` (decrements inFlight). */
@@ -43,8 +52,8 @@ export declare function releaseKey(entries: PoolEntry[], index: number): void;
 /** Record one successful dispatch through `index`. */
 export declare function markUsed(entries: PoolEntry[], index: number): void;
 /** Record one failed dispatch through `index`. */
-export declare function markUnhealthy(entries: PoolEntry[], index: number): void;
-/** Reset every entry to healthy (called when the whole pool is exhausted). */
+export declare function markUnhealthy(entries: PoolEntry[], index: number, now?: number): void;
+/** Reset every entry to healthy (called when the whole pool is exhausted or quota is refreshed). */
 export declare function resetHealth(entries: PoolEntry[]): void;
 /**
  * Build pool entries from a configured key string.

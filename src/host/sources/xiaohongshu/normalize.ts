@@ -30,6 +30,16 @@ export function isNoteFeed(feed: XhsRawSearchFeed): boolean {
   return feed?.modelType === "note" && typeof feed?.id === "string" && feed.id.trim().length > 0;
 }
 
+/** First non-empty line, whitespace-collapsed and truncated. */
+export function firstLine(text: string | undefined, max = 60): string {
+  if (!text) return "";
+  const line = text
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .find((part) => part.length > 0);
+  return (line ?? "").replace(/\s+/g, " ").slice(0, max);
+}
+
 export function normalizeXhsFeed(feed: XhsRawSearchFeed): SourceItem | null {
   if (!isNoteFeed(feed)) return null;
 
@@ -38,7 +48,11 @@ export function normalizeXhsFeed(feed: XhsRawSearchFeed): SourceItem | null {
   const user = card?.user;
   const interact = card?.interactInfo;
 
-  const title = (card?.displayTitle || "").trim() || "小红书笔记";
+  // Many life-log notes ship no title at all; showing "小红书笔记" hides the
+  // only text a reader (or an LLM) could use to judge relevance. Fall back to
+  // the first line of the body.
+  const desc = (card?.desc || "").trim();
+  const title = (card?.displayTitle || "").trim() || firstLine(desc) || "小红书笔记";
   const url = buildXhsNoteUrl(noteId, feed.xsecToken);
 
   const authorName = (user?.nickname || user?.nickName || "").trim();
@@ -55,7 +69,7 @@ export function normalizeXhsFeed(feed: XhsRawSearchFeed): SourceItem | null {
     id: noteId,
     title,
     url,
-    snippet: title,
+    snippet: desc ? desc.replace(/\s+/g, " ").slice(0, 200) : title,
     author: authorName ? { name: authorName, url: authorUrl } : undefined,
     likes,
     coverImage,
