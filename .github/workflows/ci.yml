@@ -82,6 +82,7 @@ jobs:
             @deepseek-ai/dsh-client-ui-primitives@${{ matrix.dsh }} \
             @deepseek-ai/dsh-client-ui-settings@${{ matrix.dsh }} \
             @deepseek-ai/dsh-client-ui-slots@${{ matrix.dsh }} \
+            @deepseek-ai/dsh-tools@${{ matrix.dsh }} \
             typescript@5.9.3 \
             @types/node@22.10.0 \
             @types/react@18.3.31 \
