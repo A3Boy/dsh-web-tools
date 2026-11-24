@@ -284,6 +284,12 @@ When using Docker or self-hosted SearXNG, if you encounter `no usable provider` 
    Restart your SearXNG container (`docker restart searxng`) to apply changes.
 2. **Keyless Setup**: SearXNG is keyless by default — leave the API Key field empty in the settings card. Enter your instance URL in the `Base URL` field (e.g. `http://127.0.0.1:8080`) and click "Test Search" to verify connectivity.
 
+### A custom HTTPS source reports `unapproved authority <host>:0`?
+This is a transport bug in affected versions: Undici's empty default-port value was interpreted as port 0. Adding `:443` to the URL does not work around it because URL normalization removes default ports. Install a version containing the default-port fix and restart the host; changing your API key or weakening outbound permissions is unnecessary for this error.
+
+### Does Auto mode append its web-search criterion every turn?
+The criterion is now appended once per agent lifetime while Auto remains active, and again when returning from Required or Off mode. Required mode still adds its instruction each turn because that turn must complete a web tool call.
+
 ### Cache & Reinstallation
 
 If cache issues occur after upgrading via local path or symlinks, reinstall from the profile directory:

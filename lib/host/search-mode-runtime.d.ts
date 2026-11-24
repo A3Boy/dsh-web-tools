@@ -122,7 +122,7 @@ export interface SearchModeMessages {
 /** One-shot notice injected on step 1 of an `off` turn. */
 export declare const SEARCH_DISABLED_TEXT = "Web search is switched OFF for this session. Do not call web_search or web_fetch; answer from the context you already have. If a question truly requires fresh web data, say what could not be verified.";
 /**
- * One-shot policy injected on step 1 of an `auto` turn.
+ * Policy injected on the first `auto` turn and when returning to `auto`.
  *
  * Auto used to inject NOTHING, and the observed result was that the model never
  * reached for the tools: DSH's own tool-web guidance only covers how to treat a

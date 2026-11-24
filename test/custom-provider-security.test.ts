@@ -22,10 +22,47 @@ import {
   isLoopbackUrl,
   preflightDns,
   transact,
+  createPinnedDispatcher,
   TransportError,
   type OutboundPolicy,
 } from "../src/host/provider-transport.ts";
 import { configPlaneTrust } from "../src/host/routes.ts";
+
+test("Security: pinned connector accepts default ports and rejects a different authority (#18)", async (t) => {
+  for (const [protocol, port] of [["https:", 443], ["http:", 80], ["https:", 8443]] as const) {
+    for (const explicit of [false, true]) {
+      if (port === 8443 && !explicit) continue;
+      await t.test(`${protocol} port ${port}, explicit=${explicit}`, async () => {
+        const connected = new Error("validated connection reached");
+        let calls = 0;
+        const dispatcher: any = await createPinnedDispatcher({
+          address: "93.184.216.34", port, servername: "search.example.com",
+          useTls: protocol === "https:", connectTimeoutMs: 1000,
+          signal: new AbortController().signal,
+          connect: (options) => {
+            calls++;
+            assert.equal(options.port, port);
+            assert.equal(options.address, "93.184.216.34");
+            throw connected;
+          },
+        });
+        try {
+          const origin = `${protocol}//search.example.com${explicit ? `:${port}` : ""}`;
+          await assert.rejects(dispatcher.request({ origin, path: "/", method: "GET" }), (err) => err === connected);
+          assert.equal(calls, 1);
+          const deniedOrigins = [`${protocol}//other.example.com:${port}`, `${protocol}//search.example.com:${port + 1}`, `${protocol}//search.example.com:0`];
+          if (port === 8443) deniedOrigins.push(`${protocol}//search.example.com`);
+          for (const origin of deniedOrigins) {
+            await assert.rejects(dispatcher.request({ origin, path: "/", method: "GET" }), /unapproved authority/);
+          }
+          assert.equal(calls, 1, "mismatched authority must never reach the socket connector");
+        } finally {
+          await dispatcher.destroy();
+        }
+      });
+    }
+  }
+});
 
 test("Security: assertEndpointUrl enforces strict HTTP(S) structure", () => {
   // Valid endpoints
