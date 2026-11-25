@@ -489,4 +489,74 @@ test("slash /search and the UI button write the same runtime", () => {
   assert.equal(r.getMode(id), "auto");
 });
 
+test("off mode deduplicates consecutive turns, restores mode across session resume, and works without deriveMessages", async () => {
+  const r = runtime();
+  const history: unknown[] = [];
+  const listeners = new Map<string, (...args: any[]) => any>();
+  let cleanup: (() => void) | undefined;
+  let restrictedCount = 0;
+  const ctx: any = {
+    on: (event: string, listener: (...args: any[]) => any) => {
+      listeners.set(event, listener);
+      return () => listeners.delete(event);
+    },
+  };
+  const agent: any = {
+    id: "s-resume-off",
+    session: { deriveMessages: () => history },
+    ctx: {
+      on: ctx.on,
+      effect: (fn: () => () => void) => { cleanup = fn(); },
+      tools: {
+        restrict: () => {
+          restrictedCount++;
+          return () => { restrictedCount--; };
+        },
+      },
+    },
+  };
+  const messages = createSearchModeMessages((input) => ({ role: "user", ...(input as object) }));
+  const dispose = installSearchModeRuntime(ctx, { searchAvailable: () => true }, r, messages);
+  listeners.get("agent/created")!({ agent });
+
+  const step = async (turn: number, stepNum = 1) => {
+    const result = await listeners.get("agent/pre-step")!({ turn, step: stepNum }, async () => ({ kind: "enter", messages: ["q"] }));
+    history.push(...result.messages);
+    return result.messages.filter((m: any) => m !== "q");
+  };
+
+  try {
+    r.setMode("s-resume-off", "off");
+    assert.equal((await step(1)).length, 1, "first off turn injects notice");
+    assert.equal((await step(2)).length, 0, "consecutive off turn reuses visible notice");
+    assert.equal(restrictedCount, 1);
+
+    // Simulate host restart / agent disposal & resume:
+    cleanup!();
+    assert.equal(r.getMode("s-resume-off"), "auto", "disposed agent cleared in-memory mode");
+    listeners.get("agent/created")!({ agent });
+    assert.equal(r.getMode("s-resume-off"), "off", "resumed session restores off mode from history");
+    assert.equal(restrictedCount, 1, "resumed off session immediately restricts web tools");
+    assert.equal((await step(3)).length, 0, "resumed off session does not duplicate notice");
+
+    // Older host without session.deriveMessages: must not throw and must deduplicate auto/off
+    cleanup!();
+    const legacyAgent: any = {
+      id: "s-legacy",
+      ctx: { on: ctx.on, effect: (fn: () => () => void) => { cleanup = fn(); } },
+    };
+    listeners.get("agent/created")!({ agent: legacyAgent });
+    const legacyStep = async (turn: number) => {
+      const res = await listeners.get("agent/pre-step")!({ turn, step: 1 }, async () => ({ kind: "enter", messages: ["q"] }));
+      return res.messages.filter((m: any) => m !== "q");
+    };
+    assert.equal((await legacyStep(1)).length, 1, "legacy host injects initial auto criterion");
+    assert.equal((await legacyStep(2)).length, 0, "legacy host deduplicates consecutive auto turns");
+  } finally {
+    cleanup?.();
+    dispose();
+  }
+});
+
+
 

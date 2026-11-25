@@ -146,8 +146,8 @@ export interface TransportResponse {
 export interface TransportDeps {
     lookupAll: LookupAllFn;
     connect: ConnectFn;
-    /** Resolve a proxy URL, or undefined when no proxy is configured. */
-    proxyUrl?: () => string | undefined;
+    /** Resolve a proxy URL for a target URL, or undefined when bypassed / unconfigured. */
+    proxyUrl?: (url: string) => string | undefined;
     /** Build a dispatcher for a proxy URL (undici ProxyAgent). */
     proxyDispatcher?: (proxyUrl: string) => Promise<unknown>;
     /** Bound the whole request (tests inject an instant timer). */

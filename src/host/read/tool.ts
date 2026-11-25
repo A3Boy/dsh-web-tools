@@ -8,8 +8,13 @@
  * @module
  */
 import type { Context } from "@deepseek-ai/cordis";
-import { defineTool, type ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
+
+const dshToolsMod = (await import("@deepseek-ai/dsh-tools").catch(() => null)) as
+  | typeof import("@deepseek-ai/dsh-tools")
+  | null;
+const defineTool = dshToolsMod?.defineTool;
 import { UnknownSectionError, PageChangedError, readPage, type ReadPageResult } from "./pipeline.ts";
 import { renderWebRead } from "./render.ts";
 import type { FetchPage, FetchedPage } from "../fetch-page.ts";

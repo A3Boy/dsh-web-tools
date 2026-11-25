@@ -102,6 +102,7 @@ export const REQUIRED_SEARCH_CORRECTION_TEXT =
  */
 export class SearchModeRuntime {
   private readonly modes = new Map<string, SearchMode>();
+  private readonly explicitModes = new Set<string>();
   private readonly turns = new Map<string, TurnState>();
   private readonly searchAvailable: () => boolean;
 
@@ -114,6 +115,17 @@ export class SearchModeRuntime {
   }
 
   setMode(sessionId: string, mode: SearchMode): void {
+    this.explicitModes.add(sessionId);
+    if (mode === "auto") this.modes.delete(sessionId);
+    else this.modes.set(sessionId, mode);
+  }
+
+  /**
+   * Seed the session's mode from durable session history when an agent is
+   * created/resumed, unless the user already set a mode explicitly in memory.
+   */
+  restoreModeIfUnset(sessionId: string, mode: SearchMode | undefined): void {
+    if (!mode || this.explicitModes.has(sessionId)) return;
     if (mode === "auto") this.modes.delete(sessionId);
     else this.modes.set(sessionId, mode);
   }
@@ -184,6 +196,7 @@ export class SearchModeRuntime {
   /** Drop every state for a disposed agent/session. */
   clear(sessionId: string): void {
     this.modes.delete(sessionId);
+    this.explicitModes.delete(sessionId);
     this.turns.delete(sessionId);
   }
 
@@ -296,19 +309,11 @@ export function createSearchModeMessages(
 }
 
 /**
- * Required/off notices apply on step 1. Auto guidance is present once in the
- * effective model history, rather than tracked in process memory: resume can
- * reuse it, and compaction that removes it causes it to be restored.
+ * Inspect effective session history (newest-first) and return the last active
+ * Search Mode policy visible to the model, or `undefined` if none is present
+ * (e.g. fresh session or removed by context compaction).
  */
-export function searchModeStepMessage(
-  state: TurnState | undefined,
-  step: number,
-  messages: SearchModeMessages,
-  history: readonly unknown[] = [],
-): unknown | undefined {
-  if (!state) return undefined;
-  if (state.disabled) return step === 1 ? messages.disabled() : undefined;
-  if (state.required) return step === 1 ? messages.required() : undefined;
+export function deriveModeFromHistory(history: readonly unknown[]): SearchMode | undefined {
   for (let i = history.length - 1; i >= 0; i--) {
     const message = history[i] as {
       role?: string;
@@ -317,13 +322,44 @@ export function searchModeStepMessage(
     };
     if (message?.role !== "user" || message.source?.kind !== "plugin:dsh-web-tools" || message.source.plugin !== "dsh-web-tools") continue;
     const section = message.source.form === "snapshot"
-      ? message.source.sections?.find((s) => s.name === "web-search-mode") : undefined;
-    if (section) return section.text === SEARCH_AUTO_TEXT ? undefined : messages.auto();
-    // Off notices supersede older Auto snapshots. Corrections and unrelated
-    // plugin messages do not change the current mode criterion.
-    if (message.source.form === "notice" && message.content?.some((c) => c.type === "text" && c.text === SEARCH_DISABLED_TEXT)) return messages.auto();
+      ? message.source.sections?.find((s) => s.name === "web-search-mode")
+      : undefined;
+    if (section) {
+      return section.text === SEARCH_AUTO_TEXT || section.text.startsWith("Web search is available but not required.")
+        ? "auto"
+        : "required";
+    }
+    // Off notices supersede older snapshots. Corrections and unrelated plugin
+    // messages do not alter the standing session mode.
+    if (message.source.form === "notice" && message.content?.some((c) => c.type === "text" && c.text === SEARCH_DISABLED_TEXT)) {
+      return "off";
+    }
   }
-  return messages.auto();
+  return undefined;
+}
+
+/**
+ * Decide which Search Mode message (if any) to inject before a model step:
+ *  - `required`: step 1 of every required turn (turn-scoped obligation).
+ *  - `off`: step 1 when entering `off` or after compaction removes the notice,
+ *    avoiding duplicate notices across consecutive `off` turns.
+ *  - `auto`: once while visible in effective model history (reused across turns
+ *    and session resume; restored if compaction removes it or after leaving
+ *    `required`/`off`).
+ */
+export function searchModeStepMessage(
+  state: TurnState | undefined,
+  step: number,
+  messages: SearchModeMessages,
+  history: readonly unknown[] = [],
+): unknown | undefined {
+  if (!state) return undefined;
+  if (state.required) return step === 1 ? messages.required() : undefined;
+  const visibleMode = deriveModeFromHistory(history);
+  if (state.disabled) {
+    return step === 1 && visibleMode !== "off" ? messages.disabled() : undefined;
+  }
+  return visibleMode === "auto" ? undefined : messages.auto();
 }
 
 /** An agent-scoped context that can subscribe to its own pre-step result. */
@@ -345,7 +381,7 @@ export const WEB_DISABLED_DENIAL =
   "Web search is switched OFF for this session, so this tool call was denied. Answer from the existing context and state what could not be verified.";
 interface ScopedAgent {
   id: string;
-  session: { deriveMessages(): readonly unknown[] };
+  session?: { deriveMessages?(): readonly unknown[] };
   ctx: AgentScopedCtx;
   steer(input: unknown): void;
   cancel(cause: unknown): void;
@@ -368,9 +404,15 @@ export function installSearchModeRuntime(
     // Register this agent's listeners inside its own scope so scope-filtered
     // dispatch reaches them; cleaning up when the agent scope unwinds.
     return agent.ctx.effect(() => {
+      const readHistory = (): readonly unknown[] | undefined =>
+        typeof agent.session?.deriveMessages === "function" ? agent.session.deriveMessages() : undefined;
+
+      // Fallback tracker for older hosts where `session.deriveMessages()` is unavailable.
+      let fallbackLastMode: SearchMode | undefined;
+
       // ---- layer 1: hide the web tools from this agent's tool list ---------
-      // Scoped, so other sessions keep their tools. Applied at turn start and
-      // lifted as soon as the mode leaves `off`.
+      // Scoped, so other sessions keep their tools. Applied on resume/turn
+      // start and lifted as soon as the mode leaves `off`.
       let liftRestriction: (() => void) | undefined;
       const syncRestriction = () => {
         const off = runtime.isOff(agent.id);
@@ -381,6 +423,15 @@ export function installSearchModeRuntime(
           liftRestriction = undefined;
         }
       };
+
+      // Restore the session's last committed mode across resume / host restart
+      // unless the user already changed this session's mode explicitly.
+      const initialHistory = readHistory();
+      if (initialHistory !== undefined) {
+        runtime.restoreModeIfUnset(agent.id, deriveModeFromHistory(initialHistory));
+        syncRestriction();
+      }
+
       // ---- layer 2: monotonic gate -----------------------------------------
       // Model inertia can still emit a call from history after a toggle; the
       // guard denies it before the body runs and cannot be re-allowed by a
@@ -397,7 +448,17 @@ export function installSearchModeRuntime(
           if (payload.signal?.aborted) return decision;
           const state = runtime.beginTurn(agent.id, payload.turn);
           syncRestriction();
-          const inject = searchModeStepMessage(state, payload.step, messages, agent.session.deriveMessages());
+          const history = readHistory();
+          let inject: unknown | undefined;
+          if (history !== undefined) {
+            inject = searchModeStepMessage(state, payload.step, messages, history);
+          } else if (payload.step === 1) {
+            const currentMode: SearchMode = state.disabled ? "off" : state.required ? "required" : "auto";
+            if (currentMode === "required" || fallbackLastMode !== currentMode) {
+              inject = searchModeStepMessage(state, 1, messages, []);
+              if (inject) fallbackLastMode = currentMode;
+            }
+          }
           if (!inject) return decision;
           const entered = decision as { kind: "enter"; messages: unknown[] };
           // Prepend so the Search Mode policy sits before the user's direct

@@ -689,6 +689,8 @@ export function WebToolsSection(props: SectionProps) {
   };
 
   const setEnabled = (enabled: boolean) => save({ enabled }, (prev) => ({ ...prev, enabled }));
+  const setWebReadEnabled = (webReadEnabled: boolean) =>
+    save({ webReadEnabled }, (prev) => ({ ...prev, webReadEnabled }));
 
   // Dedicated Browser Profile Login
   const loginPlatform = async (platform: "xiaohongshu" | "x") => {
@@ -1149,6 +1151,9 @@ export function WebToolsSection(props: SectionProps) {
             isLast
           />
         </SettingsGroup>
+        <div style={{ marginTop: 6, padding: "0 4px", fontSize: 12, lineHeight: 1.5, color: stateColor.warning }}>
+          {t("platformRiskNotice")}
+        </div>
       </section>
 
       {/* Providers: unified group container */}
@@ -1263,8 +1268,21 @@ export function WebToolsSection(props: SectionProps) {
         </SettingsGroup>
         {diagnosticsOpen && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8, padding: "14px", borderRadius: 12, background: surface.layer1, border: `1px solid ${surface.border}` }}>
-            {/* Timeout */}
+            {/* web_read toggle */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("webReadToggleLabel")}</span>
+                <span style={{ fontSize: 12, color: text.tertiary }}>{t("webReadToggleHint")}</span>
+              </div>
+              <Switch
+                checked={config.webReadEnabled !== false}
+                onChange={setWebReadEnabled}
+                label={t("webReadToggleLabel")}
+              />
+            </div>
+
+            {/* Timeout */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, paddingTop: 10, borderTop: `1px solid ${surface.border}` }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <span style={{ fontSize: 13, fontWeight: 500, color: text.primary }}>{t("attemptTimeoutLabel")}</span>
                 <span style={{ fontSize: 12, color: text.tertiary }}>{t("attemptTimeoutHint")}</span>

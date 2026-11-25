@@ -34,6 +34,7 @@ import {
   TransportError,
   type OutboundPolicy,
 } from "./provider-transport.ts";
+import { isPrivateOrRestrictedIp } from "./fetch-security.ts";
 import { PROVIDER_ENDPOINTS } from "./endpoints.ts";
 
 /**
@@ -376,7 +377,10 @@ export async function fetchWithProxy(
       },
     });
 
-    const proxyUrl = shouldBypassProxy(url) ? undefined : (proxyFromEnv() ?? proxyFromSystem());
+    const privateDestination = preflight.addresses.some((record) => isPrivateOrRestrictedIp(record.address));
+    const proxyUrl = (shouldBypassProxy(url) || privateDestination)
+      ? undefined
+      : (proxyFromEnv() ?? proxyFromSystem());
     if (proxyUrl !== undefined) {
       // Through a proxy the final DNS/connection happens at the proxy, so a
       // local preflight cannot substantiate the destination. Fail closed unless

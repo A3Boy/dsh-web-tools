@@ -415,3 +415,92 @@ test("Security: isLoopbackUrl recognizes localhost and IPv4/IPv6 loopback", () =
   assert.equal(isLoopbackUrl("https://192.168.1.10/search"), false);
   assert.equal(isLoopbackUrl("https://example.com/search"), false);
 });
+
+test("Security: pinned connector accepts IPv6 bracketed origins and rejects unapproved IPv6 ports (#18)", async () => {
+  const connected = new Error("ipv6 validated connection reached");
+  let calls = 0;
+  const dispatcher: any = await createPinnedDispatcher({
+    address: "2606:4700:4700::1111",
+    port: 443,
+    servername: "[2606:4700:4700::1111]",
+    useTls: true,
+    connectTimeoutMs: 1000,
+    signal: new AbortController().signal,
+    connect: (options) => {
+      calls++;
+      assert.equal(options.address, "2606:4700:4700::1111");
+      assert.equal(options.port, 443);
+      assert.equal(options.servername, "2606:4700:4700::1111");
+      throw connected;
+    },
+  });
+  try {
+    await assert.rejects(
+      dispatcher.request({ origin: "https://[2606:4700:4700::1111]", path: "/search", method: "GET" }),
+      (err) => err === connected,
+    );
+    assert.equal(calls, 1);
+    await assert.rejects(
+      dispatcher.request({ origin: "https://[2606:4700:4700::1111]:8443", path: "/search", method: "GET" }),
+      /unapproved authority/,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    await dispatcher.destroy();
+  }
+});
+
+test("Security: transact falls back to authorized proxy when local DNS cannot resolve a public domain, but never swallows destination-blocked", async () => {
+  let proxyUsed = "";
+  const fakeAgent = {
+    dispatch(_opts: any, handler: any) {
+      handler.onHeaders?.(200, ["content-type", "application/json"], () => {}, "OK");
+      handler.onData?.(Buffer.from(JSON.stringify({ proxied: true })));
+      handler.onComplete?.([]);
+      return true;
+    },
+  };
+
+  // 1. Local DNS fails with ENOTFOUND on public domain, allowProxy: true -> uses proxyDispatcher
+  const okRes = await transact(
+    {
+      url: "https://blocked-dns.example.com/search",
+      method: "GET",
+      headers: { accept: "application/json" },
+      label: "proxied public custom source",
+      trust: "public",
+      policy: { authorizations: [], allowProxy: true },
+    },
+    {
+      lookupAll: async () => { throw new Error("ENOTFOUND blocked-dns.example.com"); },
+      proxyUrl: (u) => (u.includes("blocked-dns.example.com") ? "http://127.0.0.1:7890" : undefined),
+      proxyDispatcher: async (p) => {
+        proxyUsed = p;
+        return fakeAgent;
+      },
+    },
+  );
+  assert.equal(proxyUsed, "http://127.0.0.1:7890");
+  assert.deepEqual(okRes.json, { proxied: true });
+
+  // 2. Local DNS resolves to cloud metadata (169.254.169.254) -> MUST still throw destination-blocked immediately!
+  await assert.rejects(
+    () =>
+      transact(
+        {
+          url: "https://rebind-metadata.example.com/search",
+          method: "GET",
+          headers: { accept: "application/json" },
+          label: "metadata rebind",
+          trust: "public",
+          policy: { authorizations: [], allowProxy: true },
+        },
+        {
+          lookupAll: async () => [{ address: "169.254.169.254", family: 4 }],
+          proxyUrl: () => "http://127.0.0.1:7890",
+          proxyDispatcher: async () => fakeAgent,
+        },
+      ),
+    (err: unknown) => err instanceof TransportError && err.code === "destination-blocked",
+  );
+});

@@ -17,7 +17,7 @@ import { toRoutedFetchResponse, executeRoutedFetchWithRecovery, describeDegradat
 import { createFetchPage, type FetchedPage, type FetchPage } from "./fetch-page.ts";
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "dsh-web-tools";
-/** Services required by this plugin. */
+/** Services required by this plugin (`tools` is injected optionally so older DSH hosts without `dsh-tools` still mount search/fetch). */
 export declare const inject: string[];
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.

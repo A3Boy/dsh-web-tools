@@ -426,6 +426,7 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
 
   return {
     enabled,
+    webReadEnabled: cfg.webReadEnabled !== false,
     defaultProvider,
     providerAttemptTimeoutMs: (cfg.providerAttemptTimeoutMs as number) ?? 10000,
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
@@ -442,6 +443,7 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   const p = (payload ?? {}) as Record<string, unknown>;
   const patch: Record<string, unknown> = {};
   if (typeof p.enabled === "boolean") patch.enabled = p.enabled;
+  if (typeof p.webReadEnabled === "boolean") patch.webReadEnabled = p.webReadEnabled;
   if (typeof p.defaultProvider === "string") patch.defaultProvider = p.defaultProvider;
   if (typeof p.providerAttemptTimeoutMs === "number") patch.providerAttemptTimeoutMs = p.providerAttemptTimeoutMs;
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;

@@ -222,3 +222,24 @@ test("registry: real status URLs still route native, and public-api labels are p
     "a source-declared public-api channel must not be relabelled native-browser",
   );
 });
+
+test("XSource.fetch: signed-in browser block still falls back to public syndication/FxTwitter", async () => {
+  setSyndicationFetcher(async () => SYNDICATION_PAYLOAD);
+  setFxTwitterFetcher(async () => FX_PAYLOAD);
+  try {
+    const blockedBrowserRuntime: any = {
+      verifyAuthenticationForOperation: async () => true,
+      openPage: async () => {
+        throw new Error("X rate-limited browser tab");
+      },
+    };
+    const source = new XSource(blockedBrowserRuntime);
+    const outcome = await source.fetch(TWEET_URL);
+    assert.ok(outcome.item, "signed-in user must still get public fallback when browser tab fails");
+    assert.equal(outcome.retrievalMode, "public-api");
+    assert.equal(outcome.item?.id, SYNDICATION_PAYLOAD.id_str);
+  } finally {
+    setSyndicationFetcher(async () => null);
+    setFxTwitterFetcher(async () => null);
+  }
+});

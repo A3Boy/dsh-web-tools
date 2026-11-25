@@ -825,6 +825,7 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     }
 
     const isAuth = await verifyPlatformSession(this.runtime, "x", signal, "interactive");
+    if (signal?.aborted) return { error: { code: "aborted", message: "X fetch aborted", retryable: false } };
 
     // RICH FIRST when signed in: only the browser path carries the reply tree,
     // the original-size images and the MP4 source. The public endpoint below is
@@ -833,11 +834,8 @@ export class XSource implements SpecializedSource {  readonly id = "x" as const;
     if (isAuth) {
       browserOutcome = await this.fetchViaBrowser(url, targetTweetId, signal);
       if (browserOutcome && !browserOutcome.error) return browserOutcome;
-      if (
-        browserOutcome?.error &&
-        (browserOutcome.error.code === "aborted" || browserOutcome.error.code === "blocked")
-      ) {
-        return browserOutcome;
+      if (signal?.aborted || browserOutcome?.error?.code === "aborted") {
+        return browserOutcome ?? { error: { code: "aborted", message: "X fetch aborted", retryable: false } };
       }
     }
 

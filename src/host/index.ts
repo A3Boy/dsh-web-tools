@@ -30,13 +30,13 @@ import type { ProviderError } from "./providers/types.ts";
 import { isKeylessSelfHosted } from "./providers/types.ts";
 import type { QuotaSnapshot } from "./quota.ts";
 import { mergePoolQuota } from "./quota.ts";
-import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDispatcher } from "./fetch-proxy.ts";
+import { fetchWithProxy, proxyStatus, proxyFromEnv, proxyFromSystem, getProxyDispatcher, shouldBypassProxy } from "./fetch-proxy.ts";
 import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages } from "./search-mode-runtime.ts";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 import { createCachedSearchProvider, createCachedFetchProvider, runWithoutCache } from "./cached-web.ts";
 import { fingerprint as configFingerprint } from "./result-cache.ts";
-import { transact, setGlobalOutboundAuthorizations, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
+import { transact, setGlobalOutboundAuthorizations, hostMatchesAuthorization, isLocalOrPrivateHost, resolvesToPrivateIp, TransportError, type OutboundAuthorization } from "./provider-transport.ts";
 import {
   OUTBOUND_AUTHORIZATIONS,
   buildProviderSnapshot,
@@ -82,8 +82,8 @@ import { registerWebRead } from "./read/tool.ts";
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
-/** Services required by this plugin. */
-export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands", "tools"];
+/** Services required by this plugin (`tools` is injected optionally so older DSH hosts without `dsh-tools` still mount search/fetch). */
+export const inject = ["webServer", "settings", "credentials", "web", "agents", "commands"];
 
 /**
  * Plugin-level config: the same schemastery schema as the settings namespace.
@@ -257,8 +257,9 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     read: async (ref) => (ref ? ((await readCredential(ctx, ref)).value ?? "") : ""),
   };
 
-  /** The ambient proxy, if any (env var first, then the Windows system proxy). */
-  const currentProxyUrl = () => proxyFromEnv() ?? proxyFromSystem();
+  /** The ambient proxy, if any (env var first, then Windows system proxy), honoring NO_PROXY. */
+  const currentProxyUrl = (targetUrl: string) =>
+    shouldBypassProxy(targetUrl) ? undefined : (proxyFromEnv() ?? proxyFromSystem());
 
   /** All outbound requests for custom sources go through the guarded transport. */
   const secureTransport: TransportFn = (request) =>
@@ -409,10 +410,48 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
   };
   ctx.web.registerFetchProvider(routedFetchProvider as never);
 
-  // Register focused page reading tool on host ctx.tools
-  if (readConfig().webReadEnabled !== false) {
-    registerWebRead(ctx, createFetchPage(routedFetchProvider));
+  // Dynamically register/unregister `web_read` based on live settings (`enabled` & `webReadEnabled`),
+  // using optional `tools` injection so hosts without `dsh-tools` still mount `web_search`/`web_fetch`.
+  const fetchPageForRead = createFetchPage(routedFetchProvider);
+  let toolsTargetCtx: WebToolsContext | undefined =
+    (ctx as { tools?: { register?: unknown } }).tools?.register ? ctx : undefined;
+  let disposeWebRead: (() => void) | undefined;
+  let pluginDisposed = false;
+
+  const syncWebReadTool = () => {
+    const cfg = readConfig();
+    const shouldRegister = !pluginDisposed && cfg.enabled !== false && cfg.webReadEnabled !== false;
+    if (shouldRegister && toolsTargetCtx && !disposeWebRead) {
+      disposeWebRead = registerWebRead(toolsTargetCtx, fetchPageForRead);
+    } else if (!shouldRegister && disposeWebRead) {
+      try { disposeWebRead(); } catch {}
+      disposeWebRead = undefined;
+    }
+  };
+
+  if (typeof ctx.inject === "function") {
+    ctx.inject(["tools"], (tctx: any) => {
+      toolsTargetCtx = tctx;
+      syncWebReadTool();
+    });
+  } else if (toolsTargetCtx) {
+    syncWebReadTool();
   }
+
+  configHandle.onMounted(() => {
+    syncWebReadTool();
+  });
+
+  ctx.effect(
+    () => () => {
+      pluginDisposed = true;
+      if (disposeWebRead) {
+        try { disposeWebRead(); } catch {}
+        disposeWebRead = undefined;
+      }
+    },
+    "dsh-web-tools: web_read tool registration",
+  );
 
   // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
   const nativeRuntime = createNativeBrowserRuntime();
@@ -849,8 +888,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
       const isAlreadyAuthorized = existingAuths.some(
         (a) =>
-          (a.host.toLowerCase() === endpointUrl.hostname.toLowerCase() ||
-            (a.host.startsWith(".") && endpointUrl.hostname.toLowerCase().endsWith(a.host.toLowerCase()))) &&
+          hostMatchesAuthorization(endpointUrl.hostname, a) &&
           (a.port === undefined || a.port === endpointPort) &&
           (!isPrivateOrLoopback || a.allowPrivate) &&
           (!isHttp || a.allowHttp),
@@ -958,6 +996,7 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
           // to the shared network gate immediately, so a just-saved intranet
           // gateway starts working without a plugin reload.
           syncGlobalOutboundAuthorizations();
+          syncWebReadTool();
         },
         readCredential: (ref) => readCredential(ctx, ref),
         writeCredential: async (ref, value) => {

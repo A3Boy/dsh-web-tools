@@ -5,9 +5,28 @@ All notable changes to `dsh-web-tools` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0]
+## [0.5.1] - 2026-11-25
 
-> ⚠️ 账号风险提示：小红书检索基于真实登录会话模拟浏览器行为，平台风控可能导致账号被限制或封禁，请谨慎使用（建议小号、控制频率）；Twitter / X 亦受账号限额约束。 - 2026-11-24
+> **Account Risk Notice**: Xiaohongshu search operates your signed-in browser window directly; frequent automated searches or pagination may trigger platform rate limits or account bans. Use a secondary account and keep query frequency low. Twitter / X is similarly subject to per-account rate limits.
+
+### Fixed
+- **Transport & Custom Providers (#18)**:
+  - Normalize IPv6 bracketed hostnames (`[::1]`) and case in `createPinnedDispatcher`, `policyForCustomSource`, and `testSource` so IPv6 custom sources are not misclassified as unapproved authorities.
+  - Omit IP literals from TLS SNI `servername` per RFC 6066 to avoid Node TLS `DEP0123` warnings and strict handshake rejections.
+  - Honor `NO_PROXY` / `no_proxy` for custom search providers, and fall through to an authorized proxy dispatcher when local DNS cannot resolve a public custom endpoint.
+  - Bypass ambient system proxies when dialing authorized LAN/private overrides for built-in providers.
+- **Search Mode Policy Lifecycle (#17)**:
+  - Guard `agent.session?.deriveMessages?.()` safely with an in-memory per-agent fallback so older DSH hosts without `deriveMessages` never throw in `agent/pre-step`.
+  - Deduplicate consecutive `off`-mode notices from effective session history (restoring after compaction), matching `auto`-mode behavior.
+  - Restore a session's last committed mode (`auto` / `required` / `off`) from session history across agent disposal and host restarts, immediately re-applying tool restrictions when resuming an `off` session.
+- **`web_read` Lifecycle & Settings Wiring**:
+  - Load `@deepseek-ai/dsh-tools` optionally at runtime and remove `"tools"` from hard Cordis `inject` dependencies so older DSH hosts still mount `web_search` and `web_fetch`.
+  - Wire `webReadEnabled` end-to-end across `/web-tools/api/config`, the Settings UI switch, `onMounted()` boot sync, and live config updates without requiring a restart.
+- **Social Platform & UI Polish**:
+  - Allow signed-in `XSource.fetch` to fall back to public syndication / FxTwitter channels when the browser tab hits a temporary block/error page, and check caller abort immediately after session verification.
+  - Display the Xiaohongshu / X account risk warning directly in the Settings UI under Platform Search Sources, add one-click custom presets for Zhipu BigModel and Bocha Web Search, and complete zh/en dictionary parity.
+
+## [0.5.0] - 2026-11-24
 
 ### Fixed
 - Validate default ports and protocol together for pinned custom-provider connections (#18).

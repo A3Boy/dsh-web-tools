@@ -63,11 +63,17 @@ export declare const REQUIRED_SEARCH_CORRECTION_TEXT = "Web Search is required f
  */
 export declare class SearchModeRuntime {
     private readonly modes;
+    private readonly explicitModes;
     private readonly turns;
     private readonly searchAvailable;
     constructor(searchAvailable?: () => boolean);
     getMode(sessionId: string): SearchMode;
     setMode(sessionId: string, mode: SearchMode): void;
+    /**
+     * Seed the session's mode from durable session history when an agent is
+     * created/resumed, unless the user already set a mode explicitly in memory.
+     */
+    restoreModeIfUnset(sessionId: string, mode: SearchMode | undefined): void;
     /** True when this session has web search switched OFF. */
     isOff(sessionId: string): boolean;
     /** Whether a usable search provider currently exists (drives `available`). */
@@ -142,9 +148,19 @@ export declare const SEARCH_AUTO_TEXT = "Web search is available but not require
  */
 export declare function createSearchModeMessages(createUserMessage: (input: unknown) => unknown, platformsEnabled?: () => boolean): SearchModeMessages;
 /**
- * Required/off notices apply on step 1. Auto guidance is present once in the
- * effective model history, rather than tracked in process memory: resume can
- * reuse it, and compaction that removes it causes it to be restored.
+ * Inspect effective session history (newest-first) and return the last active
+ * Search Mode policy visible to the model, or `undefined` if none is present
+ * (e.g. fresh session or removed by context compaction).
+ */
+export declare function deriveModeFromHistory(history: readonly unknown[]): SearchMode | undefined;
+/**
+ * Decide which Search Mode message (if any) to inject before a model step:
+ *  - `required`: step 1 of every required turn (turn-scoped obligation).
+ *  - `off`: step 1 when entering `off` or after compaction removes the notice,
+ *    avoiding duplicate notices across consecutive `off` turns.
+ *  - `auto`: once while visible in effective model history (reused across turns
+ *    and session resume; restored if compaction removes it or after leaving
+ *    `required`/`off`).
  */
 export declare function searchModeStepMessage(state: TurnState | undefined, step: number, messages: SearchModeMessages, history?: readonly unknown[]): unknown | undefined;
 /** The model-facing web tools this plugin owns the policy for. */

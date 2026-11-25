@@ -165,3 +165,43 @@ test("Runtime Wiring: executeRoutedFetchWithRecovery returns graceful diagnostic
   assert.match(response.body.content, /当前笔记暂时无法浏览/);
   assert.match(response.metadata?.title ?? "", /300031/);
 });
+
+test("Runtime Wiring: web_read registration respects persisted webReadEnabled=false on mount", async () => {
+  let registeredTools = 0;
+  let settingsCb: ((sctx: any) => void) | undefined;
+
+  const mockCtx: any = {
+    webServer: { register: () => () => {}, registerUpgrade: () => () => {} },
+    webRuntime: { trustedHosts: ["127.0.0.1"] },
+    settings: {
+      register: () => ({
+        get: () => ({ enabled: true, webReadEnabled: false, defaultProvider: "exa", fallbackOrder: [] }),
+        watch: () => () => {},
+        update: async () => {},
+        replace: async () => {},
+      }),
+      describe: () => [],
+      update: async () => {},
+    },
+    credentials: { resolve: async () => ({}), set: async () => {}, unset: async () => {}, describe: async () => ({}) },
+    web: { registerSearchProvider: () => () => {}, registerFetchProvider: () => () => {} },
+    tools: {
+      register: () => {
+        registeredTools++;
+        return () => { registeredTools--; };
+      },
+    },
+    effect: (fn: any) => { fn(); },
+    inject: (services: string[], cb: any) => {
+      if (services.includes("settings")) settingsCb = cb;
+      else cb(mockCtx);
+    },
+    on: () => () => {},
+    emit: () => {},
+  };
+
+  apply(mockCtx);
+  // Before settings mount, default was true, then settings mount sets webReadEnabled=false -> unregistered!
+  settingsCb?.(mockCtx);
+  assert.equal(registeredTools, 0, "persisted webReadEnabled=false must unregister web_read once settings mount");
+});

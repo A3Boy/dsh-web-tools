@@ -23,6 +23,7 @@ import type { ProviderAdapter } from "./providers/types.ts";
 import type { CustomProviderConfig } from "../shared/custom-provider-types.ts";
 import {
   DEFAULT_MAX_RESPONSE_BYTES,
+  hostMatchesAuthorization,
   isLocalOrPrivateHost,
   OUTBOUND_AUTHORIZATIONS,
   type DestinationTrust,
@@ -110,12 +111,9 @@ export function policyForCustomSource(
 ): { policy: OutboundPolicy; trust: DestinationTrust } {
   const parsed = new URL(config.endpoint.baseUrl);
   const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
-  const host = parsed.hostname.toLowerCase();
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   const authorization = authorizations.find(
-    (entry) =>
-      (entry.host.toLowerCase().replace(/^\[|\]$/g, "") === host ||
-        (entry.host.startsWith(".") && (host === entry.host.slice(1) || host.endsWith(entry.host.toLowerCase())))) &&
-      (entry.port === undefined || entry.port === port),
+    (entry) => hostMatchesAuthorization(host, entry) && (entry.port === undefined || entry.port === port),
   );
 
   const officialHosts = Object.values(PROVIDER_ENDPOINTS)

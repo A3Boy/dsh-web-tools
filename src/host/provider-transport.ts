@@ -367,8 +367,17 @@ export type ConnectFn = (options: {
 /** Default connector: real TCP/TLS, pinned to one validated address. */
 export const defaultConnect: ConnectFn = ({ address, port, servername, useTls, timeoutMs, signal }) => {
   if (useTls) {
+    const cleanServername = servername.trim().toLowerCase().replace(/^\[|\]$/g, "");
+    // RFC 6066 forbids IP literals in TLS SNI (`servername`).
+    const sniServername = cleanServername && isIP(cleanServername) === 0 ? cleanServername : undefined;
     return tlsConnect(
-      { host: address, port, servername, rejectUnauthorized: true, ...(signal ? { signal } : {}) },
+      {
+        host: address,
+        port,
+        ...(sniServername ? { servername: sniServername } : {}),
+        rejectUnauthorized: true,
+        ...(signal ? { signal } : {}),
+      },
       undefined,
     );
   }
@@ -418,8 +427,8 @@ export interface TransportResponse {
 export interface TransportDeps {
   lookupAll: LookupAllFn;
   connect: ConnectFn;
-  /** Resolve a proxy URL, or undefined when no proxy is configured. */
-  proxyUrl?: () => string | undefined;
+  /** Resolve a proxy URL for a target URL, or undefined when bypassed / unconfigured. */
+  proxyUrl?: (url: string) => string | undefined;
   /** Build a dispatcher for a proxy URL (undici ProxyAgent). */
   proxyDispatcher?: (proxyUrl: string) => Promise<unknown>;
   /** Bound the whole request (tests inject an instant timer). */
@@ -528,17 +537,46 @@ export async function transact(
   // dialed directly even when Windows has a system proxy configured. Without
   // this, a self-hosted source on 192.168.x.x could be saved and authorized and
   // still fail every search with `proxy-required`.
-  const preflight = await preflightDns(parsed.hostname, request.trust, policy, deps);
-  const pinned = preflight.addresses[0];
+  //
+  // Conversely, when local ISP DNS fails on a non-local public domain while an
+  // authorized proxy is active (`allowProxy: true`), the proxy itself resolves
+  // DNS over CONNECT — do not abort before reaching the proxy gate. Any SSRF /
+  // destination-blocked denial from `preflightDns` still throws immediately.
   const useTls = parsed.protocol === "https:";
-  const privateDestination = preflight.addresses.some((record) => isPrivateOrRestrictedIp(record.address));
+  let preflight: DnsPreflight | undefined;
+  if (isLocalOrPrivateHost(parsed.hostname)) {
+    preflight = await preflightDns(parsed.hostname, request.trust, policy, deps);
+  } else {
+    try {
+      preflight = await preflightDns(parsed.hostname, request.trust, policy, deps);
+    } catch (dnsErr) {
+      const candidateProxy =
+        !(request.builtInOfficial === true) && !isLoopbackUrl(parsed.href)
+          ? deps.proxyUrl?.(parsed.href)
+          : undefined;
+      if (
+        isTransportError(dnsErr) &&
+        dnsErr.code === "network" &&
+        candidateProxy !== undefined &&
+        policy.allowProxy === true
+      ) {
+        preflight = undefined;
+      } else {
+        throw dnsErr;
+      }
+    }
+  }
+  const pinned = preflight?.addresses[0];
+  const privateDestination = preflight
+    ? preflight.addresses.some((record) => isPrivateOrRestrictedIp(record.address))
+    : false;
 
   // ---- 5. proxy decision (fail closed) ----------------------------------
   // Loopback and private destinations are connected directly: this only
   // bypasses proxy ROUTING, never the allowHttp/allowPrivate authorization or
   // the pinned connection below.
   const directDial = isLoopbackHost(parsed.hostname) || privateDestination;
-  const proxyUrl = directDial ? undefined : deps.proxyUrl?.();
+  const proxyUrl = directDial ? undefined : deps.proxyUrl?.(parsed.href);
   let dispatcher: unknown;
   if (proxyUrl !== undefined && !(request.builtInOfficial === true) && !isLoopbackUrl(parsed.href)) {
     if (policy.allowProxy !== true) {
@@ -572,6 +610,13 @@ export async function transact(
     // so the platform fetch resolves and connects normally. The redirect and
     // size guards above still apply.
   } else {
+    if (!pinned) {
+      signal.dispose();
+      throw new TransportError(
+        "network",
+        `DNS lookup failed for "${parsed.hostname}" and no usable proxy dispatcher was available`,
+      );
+    }
     // Operator-typed destination: always pinned to a pre-validated address.
     pinnedDispatcher = await createPinnedDispatcher({
       address: pinned.address,
@@ -717,18 +762,22 @@ export async function createPinnedDispatcher(options: {
     });
   }
 
+  const expectedHost = options.servername.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const expectedProtocol = options.useTls ? "https:" : "http:";
+  const tlsServername = expectedHost && isIP(expectedHost) === 0 ? expectedHost : undefined;
+
   const connector = (opts: { protocol?: string; hostname?: string; port?: string | number; servername?: string }, cb: (err: Error | null, socket: any) => void) => {
     // undici passes the authority it is about to dial. It must be exactly the
     // authority this transport approved, otherwise the client resolved (or
     // was redirected to) something we never authorized.
-    // Undici represents an omitted (or URL-normalized) default port as "".
-    // Resolve it from the scheme, not the approved port: an omitted :443
-    // must still be rejected when only :8443 was approved.
+    // Undici represents an omitted (or URL-normalized) default port as "", and
+    // strips square brackets from IPv6 literals before invoking the connector.
     const requestedPort = opts.port === undefined || opts.port === ""
       ? (options.useTls ? 443 : 80)
       : Number(opts.port);
-    const requestedHost = String(opts.hostname ?? options.servername);
-    if (opts.protocol !== (options.useTls ? "https:" : "http:") || requestedHost !== options.servername || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
+    const requestedHost = String(opts.hostname ?? expectedHost).trim().toLowerCase().replace(/^\[|\]$/g, "");
+    const protocolMismatch = opts.protocol !== undefined && opts.protocol !== expectedProtocol;
+    if (protocolMismatch || requestedHost !== expectedHost || !Number.isFinite(requestedPort) || requestedPort !== options.port) {
       const err = new TransportError(
         "destination-blocked",
         `Connection attempt for unapproved authority ${requestedHost}:${String(requestedPort)}`,
@@ -739,7 +788,7 @@ export async function createPinnedDispatcher(options: {
     }
 
     if (baseConnector) {
-      baseConnector(opts, cb);
+      baseConnector({ ...opts, servername: tlsServername }, cb);
       return;
     }
 
@@ -748,7 +797,7 @@ export async function createPinnedDispatcher(options: {
       const socket = options.connect({
         address: options.address,
         port: options.port,
-        servername: options.servername,
+        servername: expectedHost,
         useTls: options.useTls,
         timeoutMs: options.connectTimeoutMs,
         signal: options.signal,

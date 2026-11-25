@@ -100,6 +100,8 @@ export interface ProviderView {
 /** Full config snapshot for the card. */
 export interface ConfigView {
   enabled: boolean;
+  /** Whether the `web_read` focused page reading tool is enabled. */
+  webReadEnabled?: boolean;
   defaultProvider: string;
   providerAttemptTimeoutMs: number;
   fallbackOrder: string[];
