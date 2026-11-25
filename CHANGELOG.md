@@ -1,5 +1,7 @@
 # Changelog
 
+**English** | [简体中文](CHANGELOG.zh-CN.md)
+
 All notable changes to `dsh-web-tools` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -95,7 +97,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.3.9] - 2026-11-07
+## [0.3.10] - 2026-11-24
+
+### Fixed
+- Hotfix on the `0.3.9` line for default HTTPS port validation (#18) and repeated per-turn Auto-mode hints (#17).
+
+## [0.3.9] - 2026-11-04
 
 ### Added
 - Keenable search provider adapter with date filtering (`published_after`, `published_before`) and domain scoping.
@@ -103,10 +110,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Quota synchronization and key pooling diagnostics.
 
----
-
-## [0.3.5] - 2026-11-01
+## [0.3.8] - 2026-10-25
 
 ### Added
-- Custom search providers with 3 parallel access paths and SSRF defense.
-- Native Xiaohongshu and Twitter / X browser session retrieval.
+- Plugin display metadata (icon and localized title/description) for DSH 0.2.1-rc.3+.
+
+## [0.3.7] - 2026-10-18
+
+### Fixed
+- Added an on-demand criterion in Smart (`auto`) mode so models know when to reach for web tools.
+
+## [0.3.6] - 2026-10-18
+
+### Added
+- Custom search provider editor, DSH 0.2.1 compatibility, and three-state search mode (`auto` / `required` / `off`).
+
+## [0.3.5] - 2026-10-05
+
+### Added
+- DSH 0.1.7 / 0.2.x session v4 and settings compatibility (#6, #7), custom search provider outbound SSRF defense, and native Xiaohongshu / Twitter (X) browser session retrieval.
+
+## [0.3.3] - 2026-09-03
+
+### Added
+- Built-in generic web fetcher (local Defuddle extraction) with per-hop redirect and DNS SSRF guards.

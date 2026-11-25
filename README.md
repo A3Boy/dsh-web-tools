@@ -21,7 +21,7 @@ Automatic provider failover · Custom JSON search APIs · Focused page reading (
   <img src="https://img.shields.io/badge/Tests-700%2B%20Passing-brightgreen?style=flat-square" alt="Tests" />
 </p>
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) · [Changelog](CHANGELOG.md)
 
 </div>
 

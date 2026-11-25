@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Tests-700%2B%20Passing-brightgreen?style=flat-square" alt="Tests" />
 </p>
 
-[English](README.md) | **简体中文**
+[English](README.md) | **简体中文** · [中文更新日志](CHANGELOG.zh-CN.md)
 
 </div>
 
