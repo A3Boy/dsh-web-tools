@@ -6,6 +6,16 @@
 
 ---
 
+## [0.5.2] - 2026-11-25
+
+### 紧急修复
+- **修复插件激活报错 `Error: cannot get property "tools" without inject`**：
+  - 移除 `apply(ctx)` 同步阶段对未静态注入属性 `ctx.tools` 的直接读取，统一通过可选 `ctx.inject(["tools"], ...)` 获取带作用域的子上下文并在服务卸载时清理 `web_read`，修复 `v0.5.1` 将 `"tools"` 移出静态 `inject` 后触发 Cordis 4 `Context` Proxy 拦截导致插件无法激活的问题。
+  - 在 `registerWebRead` 与 `installSearchModeRuntime`（`agent/created`）中改用 `ctx.get("tools")` / `agent.ctx.get("tools")` 安全读取可选服务，避免因 `SessionController` 未静态注入 `"tools"` 而在创建会话时抛错。
+  - 会话处于「关闭联网（`off`）」模式调用 `tools.restrict` 前，先按 `tools.view(agent).restrictableNames` 过滤实际已注册的全局工具，避免关闭 `web_read` 开关后因传入未注册工具名触发异常。
+
+---
+
 ## [0.5.1] - 2026-11-25
 
 > ⚠️ **账号安全提醒**：小红书搜索会直接驱动你本地已登录的浏览器窗口执行搜索、滚动与翻页操作，高频或连续调用可能触发平台风控导致**限流甚至封号**。请务必使用小号登录并控制调用频率；Twitter / X 同样受账号速率配额限制。

@@ -128,7 +128,9 @@ export interface WebReadExecutionResult extends ReadPageResult {
 export function registerWebRead(ctx: WebToolsContext | Context, fetchPage: FetchPage): (() => void) | undefined {
   let toolsService: { register?: (def: unknown) => () => void } | undefined;
   try {
-    toolsService = (ctx as { tools?: { register?: (def: unknown) => () => void } }).tools;
+    toolsService = typeof (ctx as { get?: unknown }).get === "function"
+      ? ((ctx as { get: (name: string) => unknown }).get("tools") as { register?: (def: unknown) => () => void } | undefined)
+      : (ctx as { tools?: { register?: (def: unknown) => () => void } }).tools;
   } catch {
     toolsService = undefined;
   }

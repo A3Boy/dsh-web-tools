@@ -412,9 +412,10 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
 
   // Dynamically register/unregister `web_read` based on live settings (`enabled` & `webReadEnabled`),
   // using optional `tools` injection so hosts without `dsh-tools` still mount `web_search`/`web_fetch`.
+  // Never read `ctx.tools` directly here: `"tools"` is intentionally omitted from static `inject`,
+  // so Cordis's Context proxy throws `cannot get property "tools" without inject` on direct access.
   const fetchPageForRead = createFetchPage(routedFetchProvider);
-  let toolsTargetCtx: WebToolsContext | undefined =
-    (ctx as { tools?: { register?: unknown } }).tools?.register ? ctx : undefined;
+  let toolsTargetCtx: WebToolsContext | undefined;
   let disposeWebRead: (() => void) | undefined;
   let pluginDisposed = false;
 
@@ -433,9 +434,24 @@ export function apply(ctx: WebToolsContext, config?: unknown) {
     ctx.inject(["tools"], (tctx: any) => {
       toolsTargetCtx = tctx;
       syncWebReadTool();
+      return () => {
+        if (toolsTargetCtx === tctx) {
+          toolsTargetCtx = undefined;
+        }
+        if (disposeWebRead) {
+          try { disposeWebRead(); } catch {}
+          disposeWebRead = undefined;
+        }
+      };
     });
-  } else if (toolsTargetCtx) {
-    syncWebReadTool();
+  } else {
+    const fallbackTools = typeof ctx.get === "function"
+      ? (ctx.get("tools") as { register?: unknown } | undefined)
+      : (ctx as { tools?: { register?: unknown } }).tools;
+    if (fallbackTools?.register) {
+      toolsTargetCtx = ctx;
+      syncWebReadTool();
+    }
   }
 
   configHandle.onMounted(() => {

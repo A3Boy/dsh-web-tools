@@ -7,6 +7,14 @@ All notable changes to `dsh-web-tools` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-11-25
+
+### Fixed
+- **Cordis Activation Crash Hotfix (`cannot get property "tools" without inject`)**:
+  - Remove synchronous `ctx.tools` property reads from `apply(ctx)` and rely strictly on optional `ctx.inject(["tools"], ...)` (with unload cleanup), fixing the plugin activation failure introduced when `"tools"` was moved out of static `inject` in `v0.5.1`.
+  - Resolve optional `tools` via `ctx.get("tools")` in `registerWebRead` and `agent.ctx.get("tools")` in `installSearchModeRuntime` (`SessionController` does not inject `"tools"` on `agent.ctx`).
+  - Filter `tools.restrict({ deny })` against `tools.view(agent).restrictableNames` when Search Mode is `off` so disabling `web_read` never causes `dsh-tools` to throw on an unregistered global tool name.
+
 ## [0.5.1] - 2026-11-25
 
 > **Account Risk Notice**: Xiaohongshu search operates your signed-in browser window directly; frequent automated searches or pagination may trigger platform rate limits or account bans. Use a secondary account and keep query frequency low. Twitter / X is similarly subject to per-account rate limits.

@@ -366,10 +366,13 @@ export function searchModeStepMessage(
 interface AgentScopedCtx {
   on(event: string, listener: (...args: any[]) => unknown, options?: unknown): () => void;
   effect(fn: () => void | (() => void), label?: string): void;
-  /** Per-scope tool surface (may be absent on older hosts). */
+  /** Optional Cordis service lookup (`ctx.get("tools")`) that avoids un-injected proxy throws. */
+  get?(name: string): unknown;
+  /** Per-scope tool surface (may be absent on older hosts; only read on plain test mocks without `get`). */
   tools?: {
     restrict?(filter: { allow?: readonly string[]; deny?: readonly string[] }): () => void;
     guard?(guard: (execution: { name: string }) => string | undefined): () => void;
+    view?(scope?: unknown): { restrictableNames?: ReadonlySet<string> };
   };
 }
 
@@ -410,17 +413,50 @@ export function installSearchModeRuntime(
       // Fallback tracker for older hosts where `session.deriveMessages()` is unavailable.
       let fallbackLastMode: SearchMode | undefined;
 
+      // Resolve optional `tools` via `agent.ctx.get("tools")` on real Cordis contexts:
+      // `agent.ctx` inherits from SessionController, which does not inject `"tools"`,
+      // so direct `agent.ctx.tools` throws `cannot get property "tools" without inject`.
+      const resolveAgentTools = (): AgentScopedCtx["tools"] =>
+        typeof agent.ctx.get === "function"
+          ? (agent.ctx.get("tools") as AgentScopedCtx["tools"])
+          : agent.ctx.tools;
+
       // ---- layer 1: hide the web tools from this agent's tool list ---------
       // Scoped, so other sessions keep their tools. Applied on resume/turn
       // start and lifted as soon as the mode leaves `off`.
       let liftRestriction: (() => void) | undefined;
+      let restrictedSignature = "";
       const syncRestriction = () => {
         const off = runtime.isOff(agent.id);
-        if (off && liftRestriction === undefined) {
-          liftRestriction = agent.ctx.tools?.restrict?.({ deny: [...WEB_TOOL_NAMES] });
-        } else if (!off && liftRestriction !== undefined) {
+        if (!off) {
+          if (liftRestriction !== undefined) {
+            liftRestriction();
+            liftRestriction = undefined;
+            restrictedSignature = "";
+          }
+          return;
+        }
+        const tools = resolveAgentTools();
+        if (typeof tools?.restrict !== "function") return;
+        const known = typeof tools.view === "function" ? tools.view(agent)?.restrictableNames : undefined;
+        const deny = known ? WEB_TOOL_NAMES.filter((name) => known.has(name)) : [...WEB_TOOL_NAMES];
+        const nextSignature = deny.join(",");
+        if (nextSignature === restrictedSignature && (liftRestriction !== undefined || deny.length === 0)) {
+          return;
+        }
+        if (liftRestriction !== undefined) {
           liftRestriction();
           liftRestriction = undefined;
+          restrictedSignature = "";
+        }
+        if (deny.length > 0) {
+          try {
+            liftRestriction = tools.restrict({ deny });
+            restrictedSignature = nextSignature;
+          } catch {
+            liftRestriction = undefined;
+            restrictedSignature = "";
+          }
         }
       };
 
@@ -436,7 +472,7 @@ export function installSearchModeRuntime(
       // Model inertia can still emit a call from history after a toggle; the
       // guard denies it before the body runs and cannot be re-allowed by a
       // later listener.
-      const stopGuard = agent.ctx.tools?.guard?.((execution) =>
+      const stopGuard = resolveAgentTools()?.guard?.((execution) =>
         runtime.isOff(agent.id) && WEB_TOOL_NAMES.includes(execution.name) ? WEB_DISABLED_DENIAL : undefined,
       );
 
@@ -503,6 +539,7 @@ export function installSearchModeRuntime(
         if (liftRestriction !== undefined) {
           liftRestriction();
           liftRestriction = undefined;
+          restrictedSignature = "";
         }
         runtime.clear(agent.id);
       };

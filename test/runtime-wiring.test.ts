@@ -5,6 +5,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Context } from "@deepseek-ai/cordis";
+import * as hostPlugin from "../src/host/index.ts";
 import { apply, toRoutedFetchResponse, executeRoutedFetchWithRecovery } from "../src/host/index.ts";
 
 test("Runtime Wiring: apply(ctx) registers routed providers into ctx.web", async () => {
@@ -204,4 +206,125 @@ test("Runtime Wiring: web_read registration respects persisted webReadEnabled=fa
   // Before settings mount, default was true, then settings mount sets webReadEnabled=false -> unregistered!
   settingsCb?.(mockCtx);
   assert.equal(registeredTools, 0, "persisted webReadEnabled=false must unregister web_read once settings mount");
+});
+
+test("Runtime Wiring (real Cordis Context): activates without un-injected tools error and wires optional tools + agent scope safely", async () => {
+  const root = new Context();
+  const registeredTools = new Map<string, unknown>();
+  let searchProviderId: string | undefined;
+  let fetchProviderId: string | undefined;
+  let searchCommandHandler: ((inv: any) => any) | undefined;
+
+  await root.plugin({
+    name: "host-stubs",
+    apply(ctx: any) {
+      ctx.provide("webServer", { register: () => () => {}, registerUpgrade: () => () => {} });
+      ctx.provide("settings", { configure: () => () => {}, update: async () => {} });
+      ctx.provide("credentials", {
+        resolve: async () => undefined,
+        set: async () => {},
+        unset: async () => {},
+        describe: async () => ({}),
+      });
+      ctx.provide("web", {
+        registerSearchProvider: (p: any) => { searchProviderId = p.id; return () => {}; },
+        registerFetchProvider: (p: any) => { fetchProviderId = p.id; return () => {}; },
+      });
+      ctx.provide("agents", { get: () => undefined, list: () => [] });
+      ctx.provide("commands", {
+        register: (def: any) => {
+          if (def.name === "search") searchCommandHandler = def.handler;
+          return () => {};
+        },
+      });
+    },
+  });
+
+  // 1. Activate plugin on a real Cordis Context WITHOUT `tools` service registered at all:
+  //    must NOT throw `Error: cannot get property "tools" without inject`.
+  const pluginFiber = await root.plugin(hostPlugin as any, {
+    enabled: true,
+    webReadEnabled: true,
+    defaultProvider: "exa",
+    providerAttemptTimeoutMs: 10000,
+    fallbackOrder: [],
+    providerBaseUrls: {},
+    providerEnabled: {},
+    platformEnabled: { xiaohongshu: true, x: true },
+    providerOptions: {},
+    braveQuotaCache: {},
+    keenableUsageCache: {},
+    searchRoutingPolicy: "ordered",
+    retrievalStrategy: "single",
+    sessionKeepAliveHours: 0,
+    customProviders: [],
+    outboundAuthorizations: [],
+  });
+  assert.equal(pluginFiber.state, 2, "plugin fiber must reach active state (2) without tools service");
+  assert.equal(searchProviderId, "dsh-web-tools");
+  assert.equal(fetchProviderId, "dsh-web-tools-fetch");
+
+  // 2. Now provide `tools` dynamically: optional `ctx.inject(['tools'])` mounts `web_read`.
+  let restrictedDeny: readonly string[] | undefined;
+  let registeredGuard: ((exec: { name: string }) => string | undefined) | undefined;
+  const toolsFiber = await root.plugin({
+    name: "tools-stub",
+    apply(ctx: any) {
+      ctx.provide("tools", {
+        register: (def: any) => {
+          registeredTools.set(def.name, def);
+          return () => { registeredTools.delete(def.name); };
+        },
+        restrict: (filter: { deny?: readonly string[] }) => {
+          restrictedDeny = filter.deny;
+          return () => { restrictedDeny = undefined; };
+        },
+        guard: (fn: (exec: { name: string }) => string | undefined) => {
+          registeredGuard = fn;
+          return () => { registeredGuard = undefined; };
+        },
+        // Simulate web_read disabled/absent from global restrictable set (only web_search + web_fetch present)
+        view: () => ({ restrictableNames: new Set(["web_search", "web_fetch"]) }),
+      });
+    },
+  });
+  assert.ok(registeredTools.has("web_read"), "web_read must register once optional tools service mounts");
+
+  // 3. Simulate SessionController creating an agent WITHOUT injecting `tools` on its own fiber:
+  //    `agent.ctx` must NOT throw `cannot get property "tools" without inject` on `agent/created` or `agent/pre-step`.
+  let sessionOwnerCtx: any;
+  await root.plugin({
+    name: "session-controller-like",
+    inject: ["agents"],
+    apply(ctx: any) {
+      sessionOwnerCtx = ctx;
+    },
+  });
+  const agentScopeFiber = sessionOwnerCtx.plugin(() => {});
+  const fakeAgent = {
+    id: "sess-cordis-1",
+    session: { deriveMessages: () => [] },
+    ctx: agentScopeFiber.ctx,
+    steer: () => {},
+    cancel: () => {},
+  };
+
+  // Toggle session mode to `off` via /search command (auto -> required -> off)
+  assert.ok(searchCommandHandler, "/search command must be registered");
+  searchCommandHandler!({ agent: fakeAgent, rawInput: "" });
+  searchCommandHandler!({ agent: fakeAgent, rawInput: "" });
+
+  await (root as any).serial("agent/created", { agent: fakeAgent, source: "startup" });
+  assert.ok(registeredGuard, "guard must be installed via agent.ctx.get('tools') without inject error");
+  assert.deepEqual(
+    restrictedDeny,
+    ["web_search", "web_fetch"],
+    "restrict must filter out unregistered tools so dsh-tools does not throw on unknown global tool",
+  );
+  assert.ok(registeredGuard!({ name: "web_read" })?.includes("OFF"), "guard still blocks web_read when OFF");
+
+  // 4. Unloading `tools` cleans up `web_read` and allows re-registration on reload.
+  await toolsFiber.dispose();
+  assert.equal(registeredTools.has("web_read"), false);
+  await pluginFiber.dispose();
 });
